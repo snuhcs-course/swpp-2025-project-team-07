@@ -8,28 +8,43 @@ ALLOWED_HOSTS = [
     'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
 ]
 
-# AWS S3 Settings for Static and Media Files
-AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
-AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
-AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
+# django-storages configuration for S3
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "access_key": os.getenv('AWS_ACCESS_KEY_ID'),
+            "secret_key": os.getenv('AWS_SECRET_ACCESS_KEY'),
+            "bucket_name": os.getenv('AWS_S3_BUCKET_NAME'),
+            "region_name": os.getenv('AWS_S3_REGION', 'ap-northeast-2'),
+            "location": "media",
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": False,
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "access_key": os.getenv('AWS_ACCESS_KEY_ID'),
+            "secret_key": os.getenv('AWS_SECRET_ACCESS_KEY'),
+            "bucket_name": os.getenv('AWS_S3_BUCKET_NAME'),
+            "region_name": os.getenv('AWS_S3_REGION', 'ap-northeast-2'),
+            "location": "static",
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": False,
+        },
+    },
+}
 
-# S3 Configuration
-AWS_DEFAULT_ACL = None
-AWS_S3_FILE_OVERWRITE = False
-AWS_S3_VERIFY = True
-AWS_QUERYSTRING_AUTH = False
+# Static and Media URLs
+_AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
+_AWS_S3_REGION = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
+_AWS_S3_CUSTOM_DOMAIN = f'{_AWS_S3_BUCKET_NAME}.s3.{_AWS_S3_REGION}.amazonaws.com'
 
-# Static files (CSS, JavaScript, Images)
-AWS_LOCATION = 'static'
-STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/'
-STATICFILES_STORAGE = 'config.storages.StaticS3Boto3Storage'
-
-# Media files (separate from static)
-AWS_MEDIA_LOCATION = 'media'
-MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_MEDIA_LOCATION}/'
-DEFAULT_FILE_STORAGE = 'config.storages.MediaS3Boto3Storage'
+STATIC_URL = f'https://{_AWS_S3_CUSTOM_DOMAIN}/static/'
+MEDIA_URL = f'https://{_AWS_S3_CUSTOM_DOMAIN}/media/'
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
