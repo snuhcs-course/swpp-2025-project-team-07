@@ -1,5 +1,6 @@
 Django==5.2
 djangorestframework==3.16.1
+django-cors-headers==4.8.0
 mysqlclient==2.2.7
 
 # JWT Authentication
