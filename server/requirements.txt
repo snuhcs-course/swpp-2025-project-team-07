@@ -8,12 +8,17 @@ djangorestframework-simplejwt==5.5.1
 # Swagger/OpenAPI Docs
 drf-yasg==1.21.10
 
-# Required dependencies
+# Misc dependencies
 asgiref==3.8.1
 Pillow==11.3.0
 python-dotenv==1.0.1
 pytz==2025.2
 sqlparse==0.5.2
+gunicorn==23.0.0
+
+# AWS S3 Storage
+django-storages==1.14.2
+boto3==1.35.84
 
 # Formatting and Linting
 black==25.1.0
