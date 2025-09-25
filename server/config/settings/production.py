@@ -36,9 +36,10 @@ AWS_S3_FILE_OVERWRITE = False
 AWS_S3_VERIFY = True
 AWS_QUERYSTRING_AUTH = False
 
-# Static files (CSS, JavaScript, Images)
+# Static files (CSS, JavaScript, Images) - Override base.py settings for S3
 AWS_LOCATION = 'static'
 STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/'
+STATIC_ROOT = None  # Not needed when using S3
 STATICFILES_STORAGE = 'config.storages.StaticS3Boto3Storage'
 
 # Media files (separate from static)
