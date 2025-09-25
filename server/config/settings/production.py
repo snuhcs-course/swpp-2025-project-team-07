@@ -8,21 +8,48 @@ ALLOWED_HOSTS = [
     'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
 ]
 
-# AWS S3 Settings for Static and Media Files
+# django-storages configuration for S3
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
 AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
-AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
 
-# Static files (CSS, JavaScript, Images)
-AWS_LOCATION = 'static'
-STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/'
-STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "location": "media",
+            "access_key": AWS_ACCESS_KEY_ID,
+            "secret_key": AWS_SECRET_ACCESS_KEY,
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "region_name": AWS_S3_REGION_NAME,
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": False,
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "location": "static",
+            "access_key": AWS_ACCESS_KEY_ID,
+            "secret_key": AWS_SECRET_ACCESS_KEY,
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "region_name": AWS_S3_REGION_NAME,
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": False,
+        },
+    },
+}
 
-# Media files
-DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+# Static and Media URLs
+_AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
+_AWS_S3_REGION = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
+_AWS_S3_CUSTOM_DOMAIN = f'{_AWS_S3_BUCKET_NAME}.s3.{_AWS_S3_REGION}.amazonaws.com'
+
+STATIC_URL = f'https://{_AWS_S3_CUSTOM_DOMAIN}/static/'
+MEDIA_URL = f'https://{_AWS_S3_CUSTOM_DOMAIN}/media/'
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
