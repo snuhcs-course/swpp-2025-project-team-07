@@ -5,6 +5,7 @@ from .base import *
 DEBUG = False
 
 ALLOWED_HOSTS = [
+    '43.202.157.112',
     'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
 ]
 
