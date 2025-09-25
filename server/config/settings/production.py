@@ -5,6 +5,7 @@ from .base import *
 DEBUG = False
 
 ALLOWED_HOSTS = [
+    '43.202.157.112',
     'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
 ]
 
@@ -44,12 +45,11 @@ STORAGES = {
 }
 
 # Static and Media URLs
-_AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
-_AWS_S3_REGION = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
-_AWS_S3_CUSTOM_DOMAIN = f'{_AWS_S3_BUCKET_NAME}.s3.{_AWS_S3_REGION}.amazonaws.com'
+AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
 
-STATIC_URL = f'https://{_AWS_S3_CUSTOM_DOMAIN}/static/'
-MEDIA_URL = f'https://{_AWS_S3_CUSTOM_DOMAIN}/media/'
+STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
+MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
