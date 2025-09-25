@@ -5,8 +5,7 @@ from .base import *
 DEBUG = False
 
 ALLOWED_HOSTS = [
-    '3.38.186.170',
-    'ec2-3-38-186-170.ap-northeast-2.compute.amazonaws.com',
+    'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
 ]
 
 # AWS S3 Settings for Static and Media Files
