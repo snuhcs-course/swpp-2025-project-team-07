@@ -1,3 +1,5 @@
 # Macbook
 .DS_Store
 
+# IDE
+.idea
