@@ -8,6 +8,21 @@ ALLOWED_HOSTS = [
     'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
 ]
 
+# Production MySQL database using RDS (override base.py)
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USERNAME'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOSTNAME'),
+        'PORT': os.getenv('DB_PORT', '3306'),
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+        },
+    }
+}
+
 # AWS S3 Settings for Static and Media Files
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -15,14 +30,21 @@ AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
 AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
 AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
 
+# S3 Configuration
+AWS_DEFAULT_ACL = None
+AWS_S3_FILE_OVERWRITE = False
+AWS_S3_VERIFY = True
+AWS_QUERYSTRING_AUTH = False
+
 # Static files (CSS, JavaScript, Images)
 AWS_LOCATION = 'static'
 STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/'
-STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+STATICFILES_STORAGE = 'config.storages.StaticS3Boto3Storage'
 
-# Media files
-DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+# Media files (separate from static)
+AWS_MEDIA_LOCATION = 'media'
+MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_MEDIA_LOCATION}/'
+DEFAULT_FILE_STORAGE = 'config.storages.MediaS3Boto3Storage'
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
