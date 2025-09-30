@@ -6,21 +6,21 @@ server:
       - base: ['server']
       - head: ['server']
       - changed-files:
-          - 'server/**'
+          - any-glob-to-any-file: 'server/**'
 
 frontend:
   - any:
       - base: ['frontend']
       - head: ['frontend']
       - changed-files:
-          - 'frontend/**'
+          - any-glob-to-any-file: 'frontend/**'
 
 vectordb:
   - any:
       - base: ['vectordb']
       - head: ['vectordb']
       - changed-files:
-          - 'vectordb/**'
+          - any-glob-to-any-file: 'vectordb/**'
 
 # `release` label when target branch is `main`
 release:
