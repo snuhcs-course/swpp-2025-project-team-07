@@ -3,25 +3,25 @@
 #   - changes made to respective directories
 server:
   - any:
-      - base: ['server']
-      - head: ['server']
+      - base-branch: ['server']
+      - head-branch: ['server']
       - changed-files:
           - any-glob-to-any-file: 'server/**'
 
 frontend:
   - any:
-      - base: ['frontend']
-      - head: ['frontend']
+      - base-branch: ['frontend']
+      - head-branch: ['frontend']
       - changed-files:
           - any-glob-to-any-file: 'frontend/**'
 
 vectordb:
   - any:
-      - base: ['vectordb']
-      - head: ['vectordb']
+      - base-branch: ['vectordb']
+      - head-branch: ['vectordb']
       - changed-files:
           - any-glob-to-any-file: 'vectordb/**'
 
 # `release` label when target branch is `main`
 release:
-  - base: ['main']
+  - base-branch: ['main']
