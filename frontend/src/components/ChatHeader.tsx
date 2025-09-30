@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { ChatSession } from './ChatInterface';
+import { SettingsDialog } from './SettingsDialog';
 
 interface ChatHeaderProps {
   isSidebarOpen: boolean;
@@ -122,6 +123,8 @@ export function ChatHeader({ isSidebarOpen, onToggleSidebar, currentSession, onS
         </DropdownMenu>
       </div>
 
+      {/* Settings Dialog */}
+      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </motion.header>
   );
 }
