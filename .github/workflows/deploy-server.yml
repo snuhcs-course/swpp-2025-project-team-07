@@ -1,0 +1,75 @@
+name: Deploy Server to EC2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: swpp-api-server
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f server/docker/Dockerfile ./server
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f server/docker/Dockerfile ./server
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Login to ECR
+            aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+
+            # Stop and remove old container
+            docker stop swpp-api-server || true
+            docker rm swpp-api-server || true
+
+            # Pull new image
+            docker pull ${{ steps.login-ecr.outputs.registry }}/swpp-api-server:latest
+
+            # Run new container with environment variables
+            docker run -d \
+              --name swpp-api-server \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              -e DJANGO_SETTINGS_MODULE="config.settings.production" \
+              -e SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}" \
+              -e DB_NAME="${{ secrets.API_DB_NAME }}" \
+              -e DB_USERNAME="${{ secrets.API_DB_USERNAME }}" \
+              -e DB_PASSWORD="${{ secrets.API_DB_PASSWORD }}" \
+              -e DB_HOSTNAME="${{ secrets.API_DB_HOSTNAME }}" \
+              -e AWS_S3_BUCKET_NAME="${{ secrets.AWS_S3_BUCKET_NAME }}" \
+              -e AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
+              -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+              -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+              ${{ steps.login-ecr.outputs.registry }}/swpp-api-server:latest
+
+            # Clean up old images
+            docker image prune -f
