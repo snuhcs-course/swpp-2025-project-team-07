@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { Checkbox } from './ui/checkbox';
+import { signup, saveAuth } from '@/services/auth';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -67,12 +68,21 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
     if (!validateForm()) return;
     
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsLoading(false);
-    onAuthSuccess(formData.email);
+    try {
+      const res = await signup(
+        formData.email,
+        formData.name,
+        formData.password,
+        formData.confirmPassword
+      );
+      saveAuth({ access: res.access, refresh: res.refresh }, res.user);
+      onAuthSuccess(res.user.email);
+    } catch (err: any) {
+      const message = err.message || 'Signup failed';
+      setErrors(prev => ({ ...prev, form: message }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const updateFormData = (field: string, value: string) => {

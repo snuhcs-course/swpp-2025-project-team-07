@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { LoginForm } from './LoginForm';
 import { SignupForm } from './SignupForm';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
 import { WelcomeScreen } from './WelcomeScreen';
+import { loadAuth, getProfile, clearAuth } from '@/services/auth';
 
 type AuthState = 'login' | 'signup' | 'forgot-password' | 'welcome';
 
@@ -15,9 +16,14 @@ export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
   const [authState, setAuthState] = useState<AuthState>('login');
   const [userEmail, setUserEmail] = useState('');
 
-  const handleAuthSuccess = (email: string) => {
+  const handleLoginSuccess = (email: string) => {
     setUserEmail(email);
     setAuthState('welcome');
+  };
+
+  const handleSignupSuccess = (email: string) => {
+    setUserEmail(email);
+    setAuthState('login');
   };
 
   const handleWelcomeContinue = () => {
@@ -30,9 +36,25 @@ export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
     }
   };
 
+  useEffect(() => {
+    // Restore session if tokens exist
+    const { tokens, user } = loadAuth();
+    if (tokens && user) {
+      (async () => {
+        try {
+          await getProfile(tokens.access);
+          setUserEmail(user.email);
+          setAuthState('welcome');
+        } catch (_) {
+          clearAuth();
+        }
+      })();
+    }
+  }, []);
+
   const variants = {
-    enter: { opacity: 1, x: 0, transition: { duration: 0.4, ease: "easeOut" } },
-    exit: { opacity: 0, x: -20, transition: { duration: 0.3, ease: "easeIn" } }
+    enter: { opacity: 1, x: 0, transition: { duration: 0.4 } },
+    exit: { opacity: 0, x: -20, transition: { duration: 0.3 } }
   };
 
   return (
@@ -60,13 +82,13 @@ export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
             <LoginForm
               onSwitchToSignup={() => setAuthState('signup')}
               onSwitchToForgotPassword={() => setAuthState('forgot-password')}
-              onAuthSuccess={handleAuthSuccess}
+              onAuthSuccess={handleLoginSuccess}
             />
           )}
           {authState === 'signup' && (
             <SignupForm
               onSwitchToLogin={() => setAuthState('login')}
-              onAuthSuccess={handleAuthSuccess}
+              onAuthSuccess={handleSignupSuccess}
             />
           )}
           {authState === 'forgot-password' && (
