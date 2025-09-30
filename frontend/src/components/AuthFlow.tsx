@@ -3,10 +3,9 @@ import { motion } from 'motion/react';
 import { LoginForm } from './LoginForm';
 import { SignupForm } from './SignupForm';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
-import { WelcomeScreen } from './WelcomeScreen';
 import { loadAuth, getProfile, clearAuth } from '@/services/auth';
 
-type AuthState = 'login' | 'signup' | 'forgot-password' | 'welcome';
+type AuthState = 'login' | 'signup' | 'forgot-password';
 
 interface AuthFlowProps {
   onAuthSuccess?: () => void;
@@ -14,26 +13,15 @@ interface AuthFlowProps {
 
 export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
   const [authState, setAuthState] = useState<AuthState>('login');
-  const [userEmail, setUserEmail] = useState('');
 
-  const handleLoginSuccess = (email: string) => {
-    setUserEmail(email);
-    setAuthState('welcome');
-  };
-
-  const handleSignupSuccess = (email: string) => {
-    setUserEmail(email);
-    setAuthState('login');
-  };
-
-  const handleWelcomeContinue = () => {
+  const handleLoginSuccess = (_email: string) => {
     if (onAuthSuccess) {
       onAuthSuccess();
-    } else {
-      // Reset to login if no callback provided
-      setAuthState('login');
-      setUserEmail('');
     }
+  };
+
+  const handleSignupSuccess = (_email: string) => {
+    setAuthState('login');
   };
 
   useEffect(() => {
@@ -43,14 +31,15 @@ export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
       (async () => {
         try {
           await getProfile(tokens.access);
-          setUserEmail(user.email);
-          setAuthState('welcome');
+          if (onAuthSuccess) {
+            onAuthSuccess();
+          }
         } catch (_) {
           clearAuth();
         }
       })();
     }
-  }, []);
+  }, [onAuthSuccess]);
 
   const variants = {
     enter: { opacity: 1, x: 0, transition: { duration: 0.4 } },
@@ -94,12 +83,6 @@ export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
           {authState === 'forgot-password' && (
             <ForgotPasswordForm
               onSwitchToLogin={() => setAuthState('login')}
-            />
-          )}
-          {authState === 'welcome' && (
-            <WelcomeScreen
-              email={userEmail}
-              onContinue={handleWelcomeContinue}
             />
           )}
         </motion.div>
