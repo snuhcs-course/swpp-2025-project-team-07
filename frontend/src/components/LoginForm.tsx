@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
+import { login as apiLogin, saveAuth, getProfile } from '@/services/auth';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
@@ -18,7 +19,7 @@ export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword, onAuthSu
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -45,12 +46,16 @@ export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword, onAuthSu
     if (!validateForm()) return;
     
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsLoading(false);
-    onAuthSuccess(email);
+    try {
+      const res = await apiLogin(email, password);
+      
+      saveAuth({ access: res.access, refresh: res.refresh }, res.user);
+      onAuthSuccess(res.user.email);
+    } catch (err: any) {
+      setErrors(prev => ({ ...prev, form: err.message || 'Login failed' }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

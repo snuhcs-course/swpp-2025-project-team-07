@@ -8,19 +8,21 @@ import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { ScrollArea } from './ui/scroll-area';
-import { 
-  User, 
-  Settings, 
-  Bell, 
-  Palette, 
-  Shield, 
+import {
+  User,
+  Settings,
+  Bell,
+  Palette,
+  Shield,
   HelpCircle,
   Moon,
   Sun,
   Monitor
 } from 'lucide-react';
+import { type AuthUser } from '@/services/auth';
 
 interface SettingsDialogProps {
+  user: AuthUser | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -33,12 +35,12 @@ const tabs = [
   { value: 'privacy' as TabValue, label: 'Privacy', icon: Shield },
 ];
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({ user, open, onOpenChange }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<TabValue>('profile');
-  
+
   const [profile, setProfile] = useState({
-    name: 'Alex Johnson',
-    email: 'alex.johnson@example.com',
+    name: user?.username || '',
+    email: user?.email || '',
   });
 
   const [preferences, setPreferences] = useState({
