@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { 
-  Menu, 
-  Settings, 
-  LogOut, 
+import {
+  Menu,
+  Settings,
+  LogOut,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -16,17 +16,22 @@ import {
 } from './ui/dropdown-menu';
 import { ChatSession } from './ChatInterface';
 import { SettingsDialog } from './SettingsDialog';
+import { type AuthUser } from '@/services/auth';
+import { getUserInitials } from '@/utils/user';
 
 interface ChatHeaderProps {
+  user: AuthUser | null;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
   currentSession?: ChatSession;
   onSignOut?: () => void;
 }
 
-export function ChatHeader({ isSidebarOpen, onToggleSidebar, currentSession, onSignOut }: ChatHeaderProps) {
+export function ChatHeader({ user, isSidebarOpen, onToggleSidebar, currentSession, onSignOut }: ChatHeaderProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const userInitials = getUserInitials(user?.username, user?.email);
 
   return (
     <motion.header
@@ -79,7 +84,7 @@ export function ChatHeader({ isSidebarOpen, onToggleSidebar, currentSession, onS
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             >
               <Avatar className="h-9 w-9 bg-primary text-primary-foreground items-center justify-center">
-                JD
+                {userInitials}
               </Avatar>
               <motion.div
                 animate={{ scale: isProfileMenuOpen ? 1.05 : 1 }}
@@ -93,12 +98,12 @@ export function ChatHeader({ isSidebarOpen, onToggleSidebar, currentSession, onS
               <Avatar className="h-8 w-8">
                 <AvatarImage src="" alt="Profile" />
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  JD
+                  {userInitials}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">John Doe</p>
-                <p className="text-xs text-muted-foreground">john@example.com</p>
+                <p className="text-sm font-medium">{user?.username || 'User'}</p>
+                <p className="text-xs text-muted-foreground">{user?.email || ''}</p>
               </div>
             </div>
             <DropdownMenuItem 
@@ -124,7 +129,7 @@ export function ChatHeader({ isSidebarOpen, onToggleSidebar, currentSession, onS
       </div>
 
       {/* Settings Dialog */}
-      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+      <SettingsDialog user={user} open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </motion.header>
   );
 }

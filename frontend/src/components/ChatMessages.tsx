@@ -3,13 +3,18 @@ import { motion } from 'motion/react';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { ScrollArea } from './ui/scroll-area';
 import { Message } from './ChatInterface';
+import { type AuthUser } from '@/services/auth';
+import { getUserInitials } from '@/utils/user';
 
 interface ChatMessagesProps {
+  user: AuthUser | null;
   messages: Message[];
 }
 
-export function ChatMessages({ messages }: ChatMessagesProps) {
+export function ChatMessages({ user, messages }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const userInitials = getUserInitials(user?.username, user?.email);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -61,7 +66,7 @@ export function ChatMessages({ messages }: ChatMessagesProps) {
                 <Avatar className="h-8 w-8">
                   <AvatarImage src="" alt="User" />
                   <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                    JD
+                    {userInitials}
                   </AvatarFallback>
                 </Avatar>
               ) : (

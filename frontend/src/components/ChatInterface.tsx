@@ -4,6 +4,7 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
+import { type AuthUser } from '@/services/auth';
 
 export interface Message {
   id: string;
@@ -21,10 +22,11 @@ export interface ChatSession {
 }
 
 interface ChatInterfaceProps {
+  user: AuthUser | null;
   onSignOut?: () => void;
 }
 
-export function ChatInterface({ onSignOut }: ChatInterfaceProps = {}) {
+export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([
@@ -148,14 +150,15 @@ export function ChatInterface({ onSignOut }: ChatInterfaceProps = {}) {
       {/* Main chat area */}
       <div className="flex-1 flex flex-col relative z-10">
         <ChatHeader
+          user={user}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           currentSession={currentSession}
           onSignOut={onSignOut}
         />
-        
+
         <div className="flex-1 flex flex-col overflow-hidden">
-          <ChatMessages messages={currentSession?.messages || []} />
+          <ChatMessages user={user} messages={currentSession?.messages || []} />
           <ChatInput onSendMessage={handleSendMessage} />
         </div>
       </div>
