@@ -177,7 +177,7 @@ execution
 
 ## Demo Video
 
-<video src="./iteration1_demo.mov" controls width="700"></video>
+[iteration 1 demo video](./iteration1_demo.mov)
 
 The demo video showcases:
 1. Application startup
