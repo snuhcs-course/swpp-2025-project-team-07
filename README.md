@@ -1,4 +1,4 @@
-# Private-GPT - Iteration 1 Demo
+# Clone - Iteration 1 Demo
 
 ## Table of Contents
 - [Demo Overview](#demo-overview)
