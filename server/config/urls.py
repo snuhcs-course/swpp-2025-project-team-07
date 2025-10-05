@@ -22,9 +22,9 @@ from drf_yasg import openapi
 
 schema_view = get_schema_view(
    openapi.Info(
-      title="Private-GPT API",
+      title="Clone API Docs",
       default_version='1.0.0',
-      description="API docs for Private-GPT",
+      description="API docs for Clone, by SWPP Team 7",
    ),
    public=True,
    permission_classes=[permissions.AllowAny,],
