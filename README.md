@@ -1,5 +1,5 @@
 # Clone
-Clone is a desktop application that creates a personalized AI assistant by continuously recording and understanding your digital activities.
+Clone is a desktop app that creates a highly personalized AI assistant by continuously recording and understanding your digital activities.
 
 ## Collaboration
 ### Branch Management
