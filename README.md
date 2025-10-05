@@ -1,12 +1,5 @@
-# SNU-SWPP-Template
-
-You can use the README file to showcase and promote your mobile app. The template provided below is just a starting point. Feel free to craft your README as you see fit. 
-
-Please note that the README doesn't affect your grade and is not included in documentation(Wiki).
-
-# Private-GPT
-[Short application description here]
-
+# Clone
+Clone is a desktop application that creates a personalized AI assistant by continuously recording and understanding your digital activities.
 
 ## Collaboration
 ### Branch Management
