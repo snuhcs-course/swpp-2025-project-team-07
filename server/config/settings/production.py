@@ -60,7 +60,9 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
 # CORS settings for production
-CORS_ALLOW_ALL_ORIGINS = False
+# TODO: Disable allow all and specify origins.
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     # Add your frontend URLs here when you deploy frontend
     # "https://yourdomain.com",
