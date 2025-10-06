@@ -1,4 +1,7 @@
 # Clone
+
+<img width="300" height="300" alt="clone_logo_trans_hq" src="https://github.com/user-attachments/assets/2aa69400-38cc-4e3d-9e4d-1c2aae52299f" />
+
 **Clone** is a desktop app that creates a highly personalized AI assistant by continuously recording and understanding your digital activities.
 
 ## Collaboration
