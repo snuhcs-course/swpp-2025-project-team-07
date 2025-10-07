@@ -1,23 +1,22 @@
-import { useState } from 'react';
-import { motion } from 'motion/react';
-import {
-  Menu,
-  Settings,
-  LogOut,
-} from 'lucide-react';
-import { Button } from './ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { useState } from "react";
+import { motion } from "motion/react";
+import { Menu, Settings, LogOut, Circle, Square } from "lucide-react";
+
+import { Button } from "./ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu';
-import { ChatSession } from './ChatInterface';
-import { SettingsDialog } from './SettingsDialog';
-import { type AuthUser } from '@/services/auth';
-import { getUserInitials } from '@/utils/user';
+} from "./ui/dropdown-menu";
+import { ChatSession } from "./ChatInterface";
+import { SettingsDialog } from "./SettingsDialog";
+import { type AuthUser } from "@/services/auth";
+import { getUserInitials } from "@/utils/user";
+import { useRecorder } from '@/recording/provider';
+
 
 interface ChatHeaderProps {
   user: AuthUser | null;
@@ -27,9 +26,61 @@ interface ChatHeaderProps {
   onSignOut?: () => void;
 }
 
-export function ChatHeader({ user, isSidebarOpen, onToggleSidebar, currentSession, onSignOut }: ChatHeaderProps) {
+declare global {
+  interface Window {
+    recorder: {
+      listSources: () => Promise<Array<{ id: string; name: string }>>;
+      chooseSource: (id: string) => Promise<void>;
+      start: () => Promise<void>;
+      stop: () => Promise<void>;
+    };
+  }
+}
+
+export function ChatHeader({
+  user,
+  isSidebarOpen,
+  onToggleSidebar,
+  currentSession,
+  onSignOut,
+}: ChatHeaderProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [isRecording, setIsRecording] = useState(false);
+  const recorder = useRecorder();
+
+  async function handleStartRecording() {
+    try {
+      // const sources = await window.recorder.listSources();
+      // // 화면(Entire Screen / Screen) 우선 선택
+      // const screenFirst =
+      //   sources.find((s) => /screen/i.test(s.name)) ?? sources[0];
+      // if (!screenFirst) return;
+      // await window.recorder.chooseSource(screenFirst.id);
+      // await window.recorder.start();
+      const getSources = (recorder as any).getSources?.bind(recorder);
+      const chooseSource = (recorder as any).chooseSource?.bind(recorder);
+    if (getSources && chooseSource) {
+      const sources = await getSources();
+      const screen = sources.find((s: any) => /screen/i.test(s.name)) ?? sources[0];
+      if (screen) await chooseSource(screen.id);
+    }
+    await recorder.start();
+      setIsRecording(true);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleStopRecording() {
+    try {
+      // await window.recorder.stop(); // onstop에서 저장 다이얼로그 표시
+      await recorder.stop();
+    } finally {
+      setIsRecording(false);
+    }
+  }
 
   const userInitials = getUserInitials(user?.username, user?.email);
 
@@ -73,10 +124,35 @@ export function ChatHeader({ user, isSidebarOpen, onToggleSidebar, currentSessio
         )}
       </div>
 
-      {/* Right side - Chat options and profile */}
+      {/* Right side - Chat options, controls and profile */}
       <div className="flex items-center space-x-2">
+        {!isRecording ? (
+          <Button
+            size="sm"
+            onClick={handleStartRecording}
+            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+            title="Start screen recording"
+          >
+            <Circle className="w-4 h-4 mr-1" />
+            Start
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleStopRecording}
+            className="rounded-xl"
+            title="Stop and save"
+          >
+            <Square className="w-4 h-4 mr-1" />
+            Stop
+          </Button>
+        )}
         {/* Profile dropdown */}
-        <DropdownMenu open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen}>
+        <DropdownMenu
+          open={isProfileMenuOpen}
+          onOpenChange={setIsProfileMenuOpen}
+        >
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -102,11 +178,15 @@ export function ChatHeader({ user, isSidebarOpen, onToggleSidebar, currentSessio
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">{user?.username || 'User'}</p>
-                <p className="text-xs text-muted-foreground">{user?.email || ''}</p>
+                <p className="text-sm font-medium">
+                  {user?.username || "User"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.email || ""}
+                </p>
               </div>
             </div>
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="cursor-pointer"
               onClick={() => {
                 setIsSettingsOpen(true);
@@ -117,7 +197,7 @@ export function ChatHeader({ user, isSidebarOpen, onToggleSidebar, currentSessio
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="cursor-pointer text-destructive focus:text-destructive"
               onClick={onSignOut}
             >
@@ -129,7 +209,11 @@ export function ChatHeader({ user, isSidebarOpen, onToggleSidebar, currentSessio
       </div>
 
       {/* Settings Dialog */}
-      <SettingsDialog user={user} open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+      <SettingsDialog
+        user={user}
+        open={isSettingsOpen}
+        onOpenChange={setIsSettingsOpen}
+      />
     </motion.header>
   );
 }
