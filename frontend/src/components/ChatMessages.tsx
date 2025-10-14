@@ -48,8 +48,8 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
   }
 
   return (
-    <ScrollArea className="flex-1 p-4">
-      <div className="space-y-6 max-w-4xl mx-auto">
+    <ScrollArea className="flex-1 h-full p-4">
+      <div className="space-y-6 max-w-4xl mx-auto pb-4">
         {messages.map((message, index) => (
           <motion.div
             key={message.id}

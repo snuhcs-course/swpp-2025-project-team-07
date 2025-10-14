@@ -6,9 +6,10 @@ import { Textarea } from './ui/textarea';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
+  disabled?: boolean;
 }
 
-export function ChatInput({ onSendMessage }: ChatInputProps) {
+export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -56,8 +57,9 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Type your message..."
-                className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-0 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0"
+                placeholder={disabled ? "AI is thinking..." : "Type your message..."}
+                disabled={disabled}
+                className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-0 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
             </div>
@@ -65,9 +67,9 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
             {/* Send button */}
             <Button
               onClick={handleSend}
-              disabled={!message.trim()}
+              disabled={!message.trim() || disabled}
               className={`flex-shrink-0 transition-all duration-300 backdrop-blur-sm rounded-xl ${
-                message.trim()
+                message.trim() && !disabled
                   ? 'bg-gradient-to-br from-primary/90 to-primary hover:from-primary hover:to-primary/90 text-primary-foreground shadow-lg hover:shadow-xl'
                   : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
               }`}
