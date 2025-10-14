@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
