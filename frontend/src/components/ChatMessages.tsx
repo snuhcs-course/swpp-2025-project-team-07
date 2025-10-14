@@ -5,6 +5,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Message } from './ChatInterface';
 import { type AuthUser } from '@/services/auth';
 import { getUserInitials } from '@/utils/user';
+import { MarkdownMessage } from './MarkdownMessage';
 
 interface ChatMessagesProps {
   user: AuthUser | null;
@@ -88,10 +89,15 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
                     : 'mr-12'
                 }`}
               >
-                <p className="whitespace-pre-wrap break-words leading-relaxed text-primary">
-                  {message.content}
-                </p>
-                
+                {/* Render markdown for AI messages, plain text for user messages */}
+                {message.isUser ? (
+                  <p className="whitespace-pre-wrap break-words leading-relaxed text-primary">
+                    {message.content}
+                  </p>
+                ) : (
+                  <MarkdownMessage content={message.content} />
+                )}
+
                 {/* Message timestamp */}
                 <div className={`text-xs mt-3 text-muted-foreground/70`}>
                   {formatTime(message.timestamp)}
