@@ -6,9 +6,10 @@ import { Textarea } from './ui/textarea';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
+  disabled?: boolean;
 }
 
-export function ChatInput({ onSendMessage }: ChatInputProps) {
+export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -18,11 +19,13 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
       setMessage('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
+        // Re-focus after sending
+        textareaRef.current.focus();
       }
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -37,6 +40,17 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
     }
   }, [message]);
 
+  // Auto-focus on mount (with small delay for animation)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (textareaRef.current && !disabled) {
+        textareaRef.current.focus();
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [disabled]);
+
+
   return (
     <div className="border-t border-border bg-card/70 backdrop-blur-xl p-6">
       <div className="max-w-4xl mx-auto">
@@ -47,7 +61,7 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
           className="relative bg-background border border-border rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl"
         >
           {/* Input area */}
-          <div className="flex items-end space-x-3 py-4 px-6">
+          <div className="flex items-end space-x-3 py-3 px-4">
 
             {/* Text input */}
             <div className="flex-1 relative">
@@ -55,9 +69,10 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
                 ref={textareaRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type your message..."
-                className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-0 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0"
+                onKeyDown={handleKeyDown}
+                placeholder={disabled ? "AI is thinking..." : "Type your message..."}
+                disabled={disabled}
+                className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
             </div>
@@ -65,9 +80,9 @@ export function ChatInput({ onSendMessage }: ChatInputProps) {
             {/* Send button */}
             <Button
               onClick={handleSend}
-              disabled={!message.trim()}
+              disabled={!message.trim() || disabled}
               className={`flex-shrink-0 transition-all duration-300 backdrop-blur-sm rounded-xl ${
-                message.trim()
+                message.trim() && !disabled
                   ? 'bg-gradient-to-br from-primary/90 to-primary hover:from-primary hover:to-primary/90 text-primary-foreground shadow-lg hover:shadow-xl'
                   : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
               }`}

@@ -72,7 +72,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="truncate text-sm font-medium">{session.title}</h4>
-                      <p className="text-xs text-muted-foreground truncate mt-1">
+                      <p className="text-xs text-muted-foreground overflow-ellipsis line-clamp-1 mt-1">
                         {session.lastMessage}
                       </p>
                       <div className="flex items-center mt-2 text-xs text-muted-foreground/70">
