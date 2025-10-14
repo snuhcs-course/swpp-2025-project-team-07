@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { LLMManager } from './llm/manager';
+import { downloadModel, isModelDownloaded, getModelPath } from './llm/downloader';
 
 let selectedSourceId: string | null = null;
 
@@ -18,11 +20,23 @@ if (started) {
   app.quit();
 }
 
+let llmManager: LLMManager | null = null;
+let mainWindow: BrowserWindow | null = null;
+
 const createWindow = () => {
+  // Get primary display dimensions
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+
+  // Calculate 70% of viewport
+  const windowWidth = Math.floor(width * 0.8);
+  const windowHeight = Math.floor(height * 0.8);
+
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+  mainWindow = new BrowserWindow({
+    width: windowWidth,
+    height: windowHeight,
+    show: false, // Don't show until ready
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -40,16 +54,172 @@ const createWindow = () => {
     );
   }
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // Show window once content is ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
+
+  return mainWindow;
 };
+
+// Initialize LLM Manager
+async function initializeLLM() {
+  if (llmManager) {
+    console.log('LLM Manager already initialized');
+    return;
+  }
+
+  try {
+    const modelPath = getModelPath();
+    console.log('Initializing LLM with model:', modelPath);
+
+    llmManager = new LLMManager({
+      modelPath: modelPath,
+      onProgress: (progress) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('llm:loading-progress', progress);
+        }
+      }
+    });
+
+    await llmManager.initialize();
+    console.log('LLM initialized successfully');
+
+    if (mainWindow) {
+      mainWindow.webContents.send('llm:ready');
+    }
+  } catch (error: any) {
+    console.error('Failed to initialize LLM:', error);
+    if (mainWindow) {
+      mainWindow.webContents.send('llm:error', {
+        message: 'Failed to load AI model',
+        error: error.message
+      });
+    }
+    throw error;
+  }
+}
+
+// Setup IPC Handlers
+function setupLLMHandlers() {
+  // Chat handler (non-streaming)
+  ipcMain.handle('llm:chat', async (_event, message: string, options?: any) => {
+    if (!llmManager) throw new Error('LLM not initialized');
+    return await llmManager.chat(message, options);
+  });
+
+  // Streaming chat handler
+  ipcMain.handle('llm:stream-start', async (_event, message: string, options?: any) => {
+    if (!llmManager) throw new Error('LLM not initialized');
+
+    const sessionId = options?.sessionId || 'default';
+    const streamId = options?.streamId || 'default';
+
+    await llmManager.streamChat(message, {
+      ...options,
+      onChunk: (chunk: string) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('llm:stream-chunk', {
+            sessionId,
+            streamId,
+            chunk,
+            done: false
+          });
+        }
+      },
+      onComplete: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('llm:stream-end', sessionId);
+        }
+      }
+    });
+  });
+
+  // Session management
+  ipcMain.handle('llm:create-session', async (_event, systemPrompt?: string) => {
+    if (!llmManager) throw new Error('LLM not initialized');
+    return await llmManager.createSession(systemPrompt);
+  });
+
+  ipcMain.handle('llm:clear-session', async (_event, sessionId: string) => {
+    if (!llmManager) throw new Error('LLM not initialized');
+    await llmManager.clearSession(sessionId);
+  });
+
+  // Model info
+  ipcMain.handle('llm:model-info', async () => {
+    if (!llmManager) throw new Error('LLM not initialized');
+    return llmManager.getModelInfo();
+  });
+
+  // Model download handler (for download-on-first-run)
+  ipcMain.handle('model:start-download', async (_event) => {
+    if (!mainWindow) throw new Error('No window found');
+
+    try {
+      const modelPath = await downloadModel(mainWindow, {
+        modelName: 'Gemma-3-12B-IT',
+        modelUrl: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf',
+        modelFileName: 'gemma-3-12b-it-Q4_0.gguf'
+      });
+
+      // Initialize LLM after download
+      await initializeLLM();
+
+      mainWindow.webContents.send('model:download-complete');
+      return { success: true, path: modelPath };
+    } catch (error: any) {
+      mainWindow.webContents.send('model:download-error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Check if model is downloaded
+  ipcMain.handle('model:check-downloaded', async () => {
+    return {
+      downloaded: isModelDownloaded(),
+      initialized: llmManager !== null,
+      path: getModelPath()
+    };
+  });
+
+  console.log('LLM IPC handlers registered');
+}
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.on('ready', async () => {
   installDisplayMediaHook();
   createWindow();
+
+  // Setup IPC handlers first
+  setupLLMHandlers();
+
+  // Check if model exists and initialize
+  if (isModelDownloaded()) {
+    console.log('Model found, initializing LLM...');
+    try {
+      await initializeLLM();
+    } catch (error) {
+      console.error('LLM initialization failed:', error);
+      // App will still run, but LLM features won't work until model is downloaded
+    }
+  } else {
+    console.log('Model not found. User will need to download it.');
+    // Notify the renderer that model needs to be downloaded
+    if (mainWindow) {
+      mainWindow.webContents.send('llm:model-not-found');
+    }
+  }
+});
+
+// Cleanup on app quit
+app.on('before-quit', async () => {
+  if (llmManager) {
+    console.log('Cleaning up LLM Manager...');
+    await llmManager.cleanup();
+  }
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common
