@@ -1,9 +1,12 @@
-import { AppContainer } from './components/AppContainer';
+import { AppContainer } from "./components/AppContainer";
+import { RecorderProvider } from "./recording/provider";
 
 export default function App() {
   return (
-    <div className="size-full dark">
-      <AppContainer />
-    </div>
+    <RecorderProvider>
+      <div className="size-full dark">
+        <AppContainer />
+      </div>
+    </RecorderProvider>
   );
 }
