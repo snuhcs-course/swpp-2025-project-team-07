@@ -1,8 +1,8 @@
 {
-  "name": "swpp-2025-project-team-07",
-  "productName": "swpp-2025-project-team-07",
+  "name": "clone",
+  "productName": "Clone",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "Clone - highly personalized AI assistant",
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start",
