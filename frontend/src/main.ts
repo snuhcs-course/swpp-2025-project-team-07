@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { LLMManager } from './llm/manager';
@@ -13,10 +13,19 @@ let llmManager: LLMManager | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 const createWindow = () => {
+  // Get primary display dimensions
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+
+  // Calculate 70% of viewport
+  const windowWidth = Math.floor(width * 0.8);
+  const windowHeight = Math.floor(height * 0.8);
+
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: windowWidth,
+    height: windowHeight,
+    show: false, // Don't show until ready
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -33,10 +42,10 @@ const createWindow = () => {
     );
   }
 
-  // Open the DevTools in development
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.webContents.openDevTools();
-  }
+  // Show window once content is ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
 
   return mainWindow;
 };
