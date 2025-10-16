@@ -114,5 +114,8 @@ contextBridge.exposeInMainWorld('llmAPI', {
   onLLMError: (callback: (error: {message: string; error: string}) => void): void => {
     const listener = (_event: IpcRendererEvent, error: {message: string; error: string}) => callback(error);
     ipcRenderer.on('llm:error', listener);
-  }
+  },
+
+  // Embedding method
+  createChatEmbedding: (text: string): Promise<number[]> => ipcRenderer.invoke('llm:createChatEmbedding', text),
 });

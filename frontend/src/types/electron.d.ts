@@ -48,6 +48,7 @@ declare global {
         message: string,
         options?: LLMChatOptions
       ) => Promise<void>;
+      createChatEmbedding: (text: string) => Promise<number[]>;
 
       // Session management
       createSession: (systemPrompt?: string) => Promise<string>;
