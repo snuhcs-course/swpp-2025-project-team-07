@@ -7,14 +7,6 @@ import { downloadModel, isModelDownloaded, getModelPath } from './llm/downloader
 
 let selectedSourceId: string | null = null;
 
-function installDisplayMediaHook() {
-  session.defaultSession.setDisplayMediaRequestHandler(async (_req, callback) => {
-    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
-    const chosen = sources.find(s => s.id === selectedSourceId) ?? sources[0];
-    callback({ video: chosen });
-  });
-}
-
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
@@ -98,6 +90,36 @@ async function initializeLLM() {
     }
     throw error;
   }
+}
+
+// set to full screen recording
+async function registerDisplayMediaHandler() {
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    let called = false;
+    const safeCallback = (arg?: any) => {
+      if (called) return;
+      called = true;
+      callback(arg);
+    };
+
+    desktopCapturer.getSources({types: ['screen'], thumbnailSize: { width: 0, height: 0 },}).then((sources) => { if (!sources.length) {
+        console.error('[displayMedia] no screen sources');
+        return safeCallback();
+      }
+
+      const primaryId = String(screen.getPrimaryDisplay().id);
+  
+      const byDisplayId = sources.find(s => s.display_id === primaryId);
+      const byName = sources.find(s => /Entire Screen|Screen \d+/i.test(s.name));
+      const pick = byDisplayId ?? byName ?? sources[0];
+
+      safeCallback({ video: pick });
+    })
+    .catch((e) => {
+      console.error('[displayMedia] handler error:', e);
+      safeCallback();
+    });
+  });
 }
 
 // Setup IPC Handlers
@@ -190,7 +212,7 @@ function setupLLMHandlers() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  installDisplayMediaHook();
+  await registerDisplayMediaHandler();
   createWindow();
 
   // Setup IPC handlers first

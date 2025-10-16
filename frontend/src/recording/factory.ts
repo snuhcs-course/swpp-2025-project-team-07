@@ -1,15 +1,12 @@
 import type { BaseDesktopRecorder } from './base';
-import { NativeDesktopRecorder } from './native';
-import { RecallDesktopRecorder } from './recall';
-import { OWADesktopRecorder } from './owa';
+import { createNativeRecorder } from './native';
 
-export type RecorderKind = 'native' | 'recall' | 'owa';
+export type RecorderKind = 'native' | 'owa'; // extend later
 
-export function desktop_recorder_factory(kind: RecorderKind = 'native'): BaseDesktopRecorder {
+export function desktop_recorder_factory(kind: RecorderKind): BaseDesktopRecorder {
   switch (kind) {
-    case 'recall': return new RecallDesktopRecorder();
-    case 'owa':    return new OWADesktopRecorder();
     case 'native':
-    default:       return new NativeDesktopRecorder();
+    default:
+      return createNativeRecorder();
   }
 }
