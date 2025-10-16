@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
+// env 설정 없이 pipeline만 import
+import { pipeline, FeatureExtractionPipeline } from '@xenova/transformers';
 
 // Dynamic import types for node-llama-cpp
 type Llama = any;
@@ -8,7 +10,10 @@ type LlamaChatSession = any;
 
 export interface LLMManagerOptions {
   modelPath: string;
+  // ADDED: 사용할 임베딩 모델의 이름을 옵션으로 추가할 수 있습니다.
+  embeddingModel?: string;
   onProgress?: (progress: number) => void;
+  onEmbeddingProgress?: (status: string, progress?: number) => void;
 }
 
 export interface ChatOptions {
@@ -34,6 +39,7 @@ interface SessionData {
 export class LLMManager {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
+  private embeddingPipeline: FeatureExtractionPipeline | null = null;
   private sessions: Map<string, SessionData> = new Map();
   private options: LLMManagerOptions;
   private defaultSessionId: string = 'default';
@@ -66,6 +72,9 @@ export class LLMManager {
       });
 
       console.log('Model loaded successfully');
+      
+      // 임베딩 모델 로드
+      await this.initializeEmbeddingModel();
 
       // Create default session
       await this.createSession();
@@ -73,6 +82,53 @@ export class LLMManager {
     } catch (error) {
       console.error('Failed to initialize LLM:', error);
       throw error;
+    }
+  }
+
+  private async initializeEmbeddingModel(): Promise<void> {
+    // 💡 수정: 문제의 모델 이름 대신, 호환성이 검증된 새 모델 이름을 사용합니다.
+    const embeddingModelName = 'Xenova/all-MiniLM-L6-v2';
+    
+    try {
+      if (this.options.onEmbeddingProgress) {
+        this.options.onEmbeddingProgress('Initializing embedding model...', 0);
+      }
+      
+      console.log('Loading embedding model:', embeddingModelName);
+      
+      // ✅ 가장 간단한 원래의 코드로 복귀
+      // 이 코드 하나로 다운로드부터 로딩까지 모두 자동으로 처리됩니다.
+      this.embeddingPipeline = await pipeline(
+        'feature-extraction', 
+        embeddingModelName,
+        {
+          progress_callback: (progress: any) => {
+            if (progress.status === 'progress' && progress.file) {
+              const percent = (progress.loaded / progress.total) * 100;
+              console.log(`Downloading ${progress.file}: ${percent.toFixed(1)}%`);
+              
+              if (this.options.onEmbeddingProgress) {
+                this.options.onEmbeddingProgress(
+                  `Downloading ${progress.file}...`,
+                  percent
+                );
+              }
+            } else if (progress.status === 'done') {
+              console.log(`Downloaded: ${progress.file}`);
+            }
+          }
+        }
+      );
+      
+      if (this.options.onEmbeddingProgress) {
+        this.options.onEmbeddingProgress('Embedding model ready', 100);
+      }
+      
+      console.log('Embedding model loaded successfully');
+      
+    } catch (error) {
+      console.error('Failed to load embedding model:', error);
+      throw new Error(`Failed to initialize embedding model: ${error}`);
     }
   }
 
@@ -179,6 +235,42 @@ export class LLMManager {
     }
   }
 
+    /**
+   * Generates an embedding vector for the given text.
+   * @param text The input text to create an embedding for.
+   * @returns A promise that resolves to an array of numbers (the embedding vector).
+   */
+  async createEmbedding(text: string): Promise<number[]> {
+    if (!this.embeddingPipeline) {
+      throw new Error('Embedding model not loaded. Cannot create embedding.');
+    }
+
+    try {
+      // 파이프라인을 실행하여 텍스트로부터 임베딩 텐서를 생성합니다.
+      // pooling: 'mean' 과 normalize: true 는 문장 임베딩 생성 시 표준적인 옵션입니다.
+      const embeddingTensor = await this.embeddingPipeline(text, {
+        pooling: 'mean',
+        normalize: true,
+      });
+      
+      // 텐서 데이터를 일반 JavaScript 배열로 변환하여 반환합니다.
+      const embedding = Array.from(embeddingTensor.data as Float32Array);
+      // 💡 수정: slice(0, 10)을 사용해 배열의 첫 10개 요소를 가져와 로그에 추가합니다.
+      // toFixed(4)로 소수점 4자리까지만 표시하여 가독성을 높였습니다.
+      const preview = embedding.slice(0, 10).map(n => n.toFixed(4)).join(', ');
+      console.log(`Generated embedding vector (dim: ${embedding.length}): [${preview}...]`);
+      
+      return embedding;
+    } catch (error) {
+      console.error('Failed to create embedding:', error);
+      throw new Error('An error occurred while generating the embedding.');
+    }
+  }
+
+  isEmbeddingModelReady(): boolean {
+    return this.embeddingPipeline !== null;
+  }
+
   getModelInfo() {
     if (!this.model) {
       return {
@@ -186,7 +278,8 @@ export class LLMManager {
         size: 0,
         quantization: 'Unknown',
         contextSize: 0,
-        loaded: false
+        loaded: false,
+        embeddingModelReady: false
       };
     }
 
@@ -195,7 +288,8 @@ export class LLMManager {
       size: 6_909_282_656, // ~6.4GB
       quantization: 'Q4_0',
       contextSize: 8192,
-      loaded: true
+      loaded: true,
+      embeddingModelReady: this.isEmbeddingModelReady()
     };
   }
 
@@ -212,6 +306,14 @@ export class LLMManager {
     if (this.model) {
       this.model.dispose();
       this.model = null;
+    }
+
+    // Dispose embedding pipeline
+    if (this.embeddingPipeline) {
+      if (typeof (this.embeddingPipeline.model as any).dispose === 'function') {
+        await (this.embeddingPipeline.model as any).dispose();
+      }
+      this.embeddingPipeline = null;
     }
 
     this.llama = null;

@@ -4,8 +4,10 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { LLMManager } from './llm/manager';
 import { downloadModel, isModelDownloaded, getModelPath } from './llm/downloader';
+import { ChatEmbedder } from './embedders/ChatEmbedder';
 
 let selectedSourceId: string | null = null;
+let chatEmbedder: ChatEmbedder | null = null; 
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -67,15 +69,30 @@ async function initializeLLM() {
 
     llmManager = new LLMManager({
       modelPath: modelPath,
+      embeddingModel: 'nvidia/dragon-multiturn-query-encoder', // 임베딩 모델 지정
       onProgress: (progress) => {
         if (mainWindow) {
           mainWindow.webContents.send('llm:loading-progress', progress);
         }
+      },
+      // 임베딩 모델 다운로드/로딩 진행 상황
+      onEmbeddingProgress: (status, progress) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('embedding:loading-progress', {
+            status,
+            progress: progress || 0
+          });
+        }
+        console.log(`Embedding: ${status} ${progress ? `(${progress.toFixed(1)}%)` : ''}`);
       }
     });
 
     await llmManager.initialize();
-    console.log('LLM initialized successfully');
+    
+    // LLM이 초기화된 후 ChatEmbedder 생성
+    chatEmbedder = new ChatEmbedder(llmManager); 
+    
+    console.log('LLM and embedding model initialized successfully');
 
     if (mainWindow) {
       mainWindow.webContents.send('llm:ready');
@@ -172,6 +189,24 @@ function setupLLMHandlers() {
   ipcMain.handle('llm:model-info', async () => {
     if (!llmManager) throw new Error('LLM not initialized');
     return llmManager.getModelInfo();
+  });
+
+  // Embedding handlers
+  ipcMain.handle('llm:createChatEmbedding', async (_event, text: string) => {
+    if (!chatEmbedder) throw new Error('ChatEmbedder not initialized');
+    return await chatEmbedder.embed(text);
+  });
+
+  // 직접 임베딩 생성 (ChatEmbedder 없이)
+  ipcMain.handle('llm:createEmbedding', async (_event, text: string) => {
+    if (!llmManager) throw new Error('LLM not initialized');
+    return await llmManager.createEmbedding(text);
+  });
+
+  // 임베딩 모델 상태 확인
+  ipcMain.handle('llm:embedding-ready', async () => {
+    if (!llmManager) return false;
+    return llmManager.isEmbeddingModelReady();
   });
 
   // Model download handler (for download-on-first-run)
