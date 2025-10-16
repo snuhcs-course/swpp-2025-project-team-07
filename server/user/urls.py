@@ -15,5 +15,5 @@ urlpatterns = [
     path('collections/', views.mock_collections, name='mock_collections'),
     path('collections/<str:collection_id>/keys/', views.mock_store_keys, name='mock_store_keys'),
     path('collections/search/', views.mock_search_collections, name='mock_search_collections'),
-    path('collections/<str:collection_id>/retrieve/', views.mock_retrieve_from_collection, name='mock_retrieve_from_collection'),
+    path('collections/<str:collection_id>/return/', views.mock_return_from_collection, name='mock_retrieve_from_collection'),
 ]

@@ -361,14 +361,14 @@ def mock_search_collections(request):
 
 @swagger_auto_schema(
     method='post',
-    operation_description="[MOCK] Retrieve top-k results using PIR. Returns AES-encrypted data and metadata.",
+    operation_description="[MOCK] Return top-k results using PIR. Returns AES-encrypted data and metadata.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
             'indices': openapi.Schema(
                 type=openapi.TYPE_ARRAY,
                 items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                description="Top-k indices to retrieve"
+                description="Top-k indices to return"
             ),
             'collection_type': openapi.Schema(
                 type=openapi.TYPE_STRING,
@@ -409,7 +409,7 @@ def mock_search_collections(request):
     security=[{'Bearer': []}]
 )
 @api_view(['POST'])
-def mock_retrieve_from_collection(request, collection_id):
+def mock_return_from_collection(request, collection_id):
     """[MOCK] PIR retrieval endpoint - returns mock encrypted data"""
     indices = request.data.get('indices', [])
     collection_type = request.data.get('collection_type', 'TEXT')
