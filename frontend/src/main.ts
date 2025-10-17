@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { LLMManager } from './llm/manager';
-import { downloadModel, isModelDownloaded, getModelPath } from './llm/downloader';
+import { downloadFile } from './utils/downloader';
 import { ChatEmbedder } from './embedders/ChatEmbedder';
 
 let selectedSourceId: string | null = null;
@@ -12,6 +13,39 @@ let chatEmbedder: ChatEmbedder | null = null;
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
+}
+
+// --- [추가된 함수] ---
+// LLM 모델에 대한 정보를 한 곳에서 관리합니다.
+const LLM_MODEL_INFO = {
+  fileName: 'gemma-3-12b-it-Q4_0.gguf',
+  directory: 'models',
+  expectedSize: 6_909_282_656,
+  url: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf'
+};
+
+/**
+ * LLM 모델 파일의 전체 경로를 반환합니다.
+ */
+function getModelPath(): string {
+  // 개발용 로컬 경로 (기존 로직 유지)
+  const devModelPath = path.join(process.cwd(), LLM_MODEL_INFO.directory, LLM_MODEL_INFO.fileName);
+  if (existsSync(devModelPath)) {
+    return devModelPath;
+  }
+  // 프로덕션용 userData 경로
+  return path.join(
+    app.getPath('userData'),
+    LLM_MODEL_INFO.directory,
+    LLM_MODEL_INFO.fileName
+  );
+}
+
+/**
+ * LLM 모델이 다운로드되었는지 확인합니다.
+ */
+function isModelDownloaded(): boolean {
+  return existsSync(getModelPath());
 }
 
 let llmManager: LLMManager | null = null;
@@ -83,7 +117,7 @@ async function initializeLLM() {
             progress: progress || 0
           });
         }
-        console.log(`Embedding: ${status} ${progress ? `(${progress.toFixed(1)}%)` : ''}`);
+        // console.log(`Embedding: ${status} ${progress ? `(${progress.toFixed(1)}%)` : ''}`);
       }
     });
 
@@ -209,15 +243,17 @@ function setupLLMHandlers() {
     return llmManager.isEmbeddingModelReady();
   });
 
-  // Model download handler (for download-on-first-run)
+  // setupLLMHandlers 함수 내부
   ipcMain.handle('model:start-download', async (_event) => {
     if (!mainWindow) throw new Error('No window found');
 
     try {
-      const modelPath = await downloadModel(mainWindow, {
-        modelName: 'Gemma-3-12B-IT',
-        modelUrl: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf',
-        modelFileName: 'gemma-3-12b-it-Q4_0.gguf'
+      const modelPath = await downloadFile(mainWindow, { // 함수명 변경
+        downloadUrl: LLM_MODEL_INFO.url,
+        targetFileName: LLM_MODEL_INFO.fileName,
+        targetDirectory: LLM_MODEL_INFO.directory,
+        expectedSize: LLM_MODEL_INFO.expectedSize,
+        // onProgress 콜백은 downloader 내부에서 자동으로 처리됨
       });
 
       // Initialize LLM after download
