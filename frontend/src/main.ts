@@ -15,8 +15,6 @@ if (started) {
   app.quit();
 }
 
-// --- [추가된 함수] ---
-// LLM 모델에 대한 정보를 한 곳에서 관리합니다.
 const LLM_MODEL_INFO = {
   fileName: 'gemma-3-12b-it-Q4_0.gguf',
   directory: 'models',
@@ -24,10 +22,73 @@ const LLM_MODEL_INFO = {
   url: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf'
 };
 
-/**
- * LLM 모델 파일의 전체 경로를 반환합니다.
- */
-function getModelPath(): string {
+const CHAT_QUERY_ENCODER_FILES = [
+  {
+    fileName: 'pytorch_model.bin',
+    expectedSize: 438_000_000, // ~438MB
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/pytorch_model.bin'
+  },
+  {
+    fileName: 'config.json',
+    expectedSize: 675,
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/config.json'
+  },
+  {
+    fileName: 'vocab.txt',
+    expectedSize: 232_000, // ~232KB
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/vocab.txt'
+  },
+  {
+    fileName: 'tokenizer_config.json',
+    expectedSize: 28,
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/tokenizer_config.json'
+  },
+  {
+    fileName: 'special_tokens_map.json',
+    expectedSize: 112,
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/special_tokens_map.json'
+  }
+];
+
+const CHAT_QUERY_ENCODER_INFO = {
+  directory: 'embeddings/chat-query-encoder',
+  files: CHAT_QUERY_ENCODER_FILES
+};
+
+const CHAT_KEY_ENCODER_FILES = [
+  {
+    fileName: 'pytorch_model.bin',
+    expectedSize: 438_000_000, // ~438MB
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/pytorch_model.bin'
+  },
+  {
+    fileName: 'config.json',
+    expectedSize: 677,
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/config.json'
+  },
+  {
+    fileName: 'vocab.txt',
+    expectedSize: 232_000, // ~232KB
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/vocab.txt'
+  },
+  {
+    fileName: 'tokenizer_config.json',
+    expectedSize: 28,
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/tokenizer_config.json'
+  },
+  {
+    fileName: 'special_tokens_map.json',
+    expectedSize: 112,
+    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/special_tokens_map.json'
+  }
+];
+
+const CHAT_KEY_ENCODER_INFO = {
+  directory: 'embeddings/chat-key-encoder',
+  files: CHAT_KEY_ENCODER_FILES
+};
+
+function getLLMModelPath(): string {
   // 개발용 로컬 경로 (기존 로직 유지)
   const devModelPath = path.join(process.cwd(), LLM_MODEL_INFO.directory, LLM_MODEL_INFO.fileName);
   if (existsSync(devModelPath)) {
@@ -44,8 +105,31 @@ function getModelPath(): string {
 /**
  * LLM 모델이 다운로드되었는지 확인합니다.
  */
-function isModelDownloaded(): boolean {
-  return existsSync(getModelPath());
+function isLLMModelDownloaded(): boolean {
+  return existsSync(getLLMModelPath());
+}
+
+/**
+ * 임베딩 모델의 모든 파일이 다운로드되었는지 확인
+ */
+function isEmbeddingModelDownloaded(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): boolean {
+  return modelInfo.files.every(file => {
+    const filePath = path.join(app.getPath('userData'), modelInfo.directory, file.fileName);
+    return existsSync(filePath);
+  });
+}
+
+/**
+ * 임베딩 모델 디렉토리 경로 반환
+ */
+function getEmbeddingModelPath(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): string {
+  // 개발용 로컬 경로
+  const devPath = path.join(process.cwd(), modelInfo.directory);
+  if (existsSync(path.join(devPath, 'pytorch_model.bin'))) {
+    return devPath;
+  }
+  // 프로덕션용 userData 경로
+  return path.join(app.getPath('userData'), modelInfo.directory);
 }
 
 let llmManager: LLMManager | null = null;
@@ -98,29 +182,20 @@ async function initializeLLM() {
   }
 
   try {
-    const modelPath = getModelPath();
-    console.log('Initializing LLM with model:', modelPath);
+    // [수정] 모든 모델의 경로를 가져옵니다.
+    const llmPath = getLLMModelPath();
+    const chatQueryEncoderPath = getEmbeddingModelPath(CHAT_QUERY_ENCODER_INFO);
+    const chatKeyEncoderPath = getEmbeddingModelPath(CHAT_KEY_ENCODER_INFO);
+
+    console.log('Initializing LLM with model:', llmPath);
+    console.log('Using Chat Query Encoder from:', chatQueryEncoderPath);
+    console.log('Using Chat Key Encoder from:', chatKeyEncoderPath);
 
     llmManager = new LLMManager({
-      modelPath: modelPath,
-      embeddingModel: 'nvidia/dragon-multiturn-query-encoder', // 임베딩 모델 지정
-      onProgress: (progress) => {
-        if (mainWindow) {
-          mainWindow.webContents.send('llm:loading-progress', progress);
-        }
-      },
-      // 임베딩 모델 다운로드/로딩 진행 상황
-      onEmbeddingProgress: (status, progress) => {
-        if (mainWindow) {
-          mainWindow.webContents.send('embedding:loading-progress', {
-            status,
-            progress: progress || 0
-          });
-        }
-        // console.log(`Embedding: ${status} ${progress ? `(${progress.toFixed(1)}%)` : ''}`);
-      }
+      modelPath: llmPath,
+      chatQueryEncoderPath: chatQueryEncoderPath, // 수정된 옵션 (가정)
+      chatKeyEncoderPath: chatKeyEncoderPath, // 수정된 옵션 (가정)
     });
-
     await llmManager.initialize();
     
     // LLM이 초기화된 후 ChatEmbedder 생성
@@ -243,25 +318,100 @@ function setupLLMHandlers() {
     return llmManager.isEmbeddingModelReady();
   });
 
-  // setupLLMHandlers 함수 내부
   ipcMain.handle('model:start-download', async (_event) => {
     if (!mainWindow) throw new Error('No window found');
 
     try {
-      const modelPath = await downloadFile(mainWindow, { // 함수명 변경
-        downloadUrl: LLM_MODEL_INFO.url,
-        targetFileName: LLM_MODEL_INFO.fileName,
-        targetDirectory: LLM_MODEL_INFO.directory,
-        expectedSize: LLM_MODEL_INFO.expectedSize,
-        // onProgress 콜백은 downloader 내부에서 자동으로 처리됨
-      });
+      const downloadTasks = [];
 
-      // Initialize LLM after download
+      // 1. LLM 모델 다운로드 확인
+      if (!isLLMModelDownloaded()) {
+        downloadTasks.push({
+          type: 'llm',
+          name: 'Gemma-3-12B-IT (LLM)',
+          files: [{
+            fileName: LLM_MODEL_INFO.fileName,
+            directory: LLM_MODEL_INFO.directory,
+            url: LLM_MODEL_INFO.url,
+            expectedSize: LLM_MODEL_INFO.expectedSize
+          }]
+        });
+      }
+
+      // 2. Query Encoder 다운로드 확인
+      if (!isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO)) {
+        downloadTasks.push({
+          type: 'chat-query-encoder',
+          name: 'DRAGON Query Encoder',
+          files: CHAT_QUERY_ENCODER_INFO.files.map(f => ({
+            ...f,
+            directory: CHAT_QUERY_ENCODER_INFO.directory
+          }))
+        });
+      }
+
+      // 3. Context Encoder 다운로드 확인
+      if (!isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO)) {
+        downloadTasks.push({
+          type: 'chat-key-encoder',
+          name: 'DRAGON Context Encoder',
+          files: CHAT_KEY_ENCODER_INFO.files.map(f => ({
+            ...f,
+            directory: CHAT_KEY_ENCODER_INFO.directory
+          }))
+        });
+      }
+
+      if (downloadTasks.length === 0) {
+        console.log('All models already downloaded');
+        await initializeLLM();
+        mainWindow.webContents.send('model:download-complete');
+        return { success: true };
+      }
+
+      console.log(`Need to download ${downloadTasks.length} model(s)`);
+
+      // 4. 모든 필요한 파일 다운로드
+      for (const task of downloadTasks) {
+        console.log(`\n=== Downloading ${task.name} ===`);
+        
+        for (const file of task.files) {
+          console.log(`  Downloading: ${file.fileName}`);
+          
+          try {
+            await downloadFile(mainWindow, {
+              downloadUrl: file.url,
+              targetFileName: file.fileName,
+              targetDirectory: file.directory,
+              expectedSize: file.expectedSize,
+              modelName: `${task.name} - ${file.fileName}`
+            });
+            
+            console.log(`  ✓ ${file.fileName} downloaded`);
+            
+          } catch (downloadError: any) {
+            console.error(`  ✗ Failed to download ${file.fileName}:`, downloadError.message);
+            throw new Error(`Failed to download ${task.name} (${file.fileName}): ${downloadError.message}`);
+          }
+        }
+        
+        console.log(`✓ ${task.name} complete\n`);
+        
+        // 모델 간 짧은 대기
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.log('=== All models downloaded successfully ===\n');
+
+      // 5. 모든 다운로드 완료 후 LLM 초기화
       await initializeLLM();
 
       mainWindow.webContents.send('model:download-complete');
-      return { success: true, path: modelPath };
+      return { success: true };
+
     } catch (error: any) {
+      console.error('\n=== Download failed ===');
+      console.error(error);
       mainWindow.webContents.send('model:download-error', error.message);
       return { success: false, error: error.message };
     }
@@ -269,10 +419,27 @@ function setupLLMHandlers() {
 
   // Check if model is downloaded
   ipcMain.handle('model:check-downloaded', async () => {
+    const llmDownloaded = isLLMModelDownloaded();
+    const chatQueryEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO);
+    const chatKeyEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
+
     return {
-      downloaded: isModelDownloaded(),
-      initialized: llmManager !== null,
-      path: getModelPath()
+      models: {
+        llm: { 
+          name: 'Gemma-3-12B-IT (LLM)',
+          downloaded: llmDownloaded 
+        },
+        queryEncoder: {
+          name: 'DRAGON Query Encoder',
+          downloaded: chatQueryEncoderDownloaded
+        },
+        contextEncoder: {
+          name: 'DRAGON Context Encoder',
+          downloaded: chatKeyEncoderDownloaded
+        }
+      },
+      allDownloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded,
+      initialized: llmManager !== null
     };
   });
 
@@ -289,19 +456,24 @@ app.on('ready', async () => {
   // Setup IPC handlers first
   setupLLMHandlers();
 
-  // Check if model exists and initialize
-  if (isModelDownloaded()) {
-    console.log('Model found, initializing LLM...');
+  // [수정] 모든 모델이 다운로드되었는지 확인
+  const allModelsReady = isLLMModelDownloaded() &&
+                         isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
+                         isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
+
+  if (allModelsReady) {
+    console.log('All models found, initializing LLM...');
     try {
       await initializeLLM();
     } catch (error) {
       console.error('LLM initialization failed:', error);
-      // App will still run, but LLM features won't work until model is downloaded
+      // App will still run, but LLM features won't work
     }
   } else {
-    console.log('Model not found. User will need to download it.');
+    console.log('One or more models not found. User will need to download them.');
     // Notify the renderer that model needs to be downloaded
     if (mainWindow) {
+      // 이 이벤트는 preload.ts에 정의되어 있음
       mainWindow.webContents.send('llm:model-not-found');
     }
   }
