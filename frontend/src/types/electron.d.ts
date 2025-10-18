@@ -28,6 +28,7 @@ export interface LLMChatOptions {
 }
 
 export interface ModelDownloadProgress {
+  modelName: string;
   percent: number;
   transferred: number;
   total: number;

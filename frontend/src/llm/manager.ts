@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-// env 설정 없이 pipeline만 import
-import { pipeline, FeatureExtractionPipeline } from '@xenova/transformers';
+// pipeline과 환경 설정 import
+import { pipeline, FeatureExtractionPipeline, env } from '@xenova/transformers';
 
 // Dynamic import types for node-llama-cpp
 type Llama = any;
@@ -10,10 +10,9 @@ type LlamaChatSession = any;
 
 export interface LLMManagerOptions {
   modelPath: string;
-  // ADDED: 사용할 임베딩 모델의 이름을 옵션으로 추가할 수 있습니다.
-  embeddingModel?: string;
+  chatQueryEncoderPath: string;
+  chatKeyEncoderPath: string;
   onProgress?: (progress: number) => void;
-  onEmbeddingProgress?: (status: string, progress?: number) => void;
 }
 
 export interface ChatOptions {
@@ -39,7 +38,8 @@ interface SessionData {
 export class LLMManager {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
-  private embeddingPipeline: FeatureExtractionPipeline | null = null;
+  private chatQueryEncoder: FeatureExtractionPipeline | null = null;
+  private chatKeyEncoder: FeatureExtractionPipeline | null = null;
   private sessions: Map<string, SessionData> = new Map();
   private options: LLMManagerOptions;
   private defaultSessionId: string = 'default';
@@ -52,7 +52,7 @@ export class LLMManager {
     try {
       console.log('Initializing llama.cpp...');
 
-      // Dynamic import of node-llama-cpp (ESM module with top-level await)
+      // Dynamic import of node-llama-cpp
       const { getLlama, LlamaChatSession: LlamaChatSessionClass } = await import('node-llama-cpp');
 
       // Store the session class for later use
@@ -73,8 +73,7 @@ export class LLMManager {
 
       console.log('Model loaded successfully');
       
-      // 임베딩 모델 로드
-      await this.initializeEmbeddingModel();
+      await this.initializeEmbeddingModels();
 
       // Create default session
       await this.createSession();
@@ -85,50 +84,74 @@ export class LLMManager {
     }
   }
 
-  private async initializeEmbeddingModel(): Promise<void> {
-    // 💡 수정: 문제의 모델 이름 대신, 호환성이 검증된 새 모델 이름을 사용합니다.
-    const embeddingModelName = 'Xenova/all-MiniLM-L6-v2';
-    
+  private async initializeEmbeddingModels(): Promise<void> {
     try {
-      if (this.options.onEmbeddingProgress) {
-        this.options.onEmbeddingProgress('Initializing embedding model...', 0);
-      }
+      console.log('Loading embedding models from local paths...');
       
-      console.log('Loading embedding model:', embeddingModelName);
+      // [중요] Transformers.js 환경 설정
+      env.allowLocalModels = true;        // 로컬 모델 허용
+      env.allowRemoteModels = false;      // 원격 다운로드 방지
+      env.useBrowserCache = false;        // 브라우저 캐시 사용 안 함
       
-      // ✅ 가장 간단한 원래의 코드로 복귀
-      // 이 코드 하나로 다운로드부터 로딩까지 모두 자동으로 처리됩니다.
-      this.embeddingPipeline = await pipeline(
-        'feature-extraction', 
-        embeddingModelName,
-        {
-          progress_callback: (progress: any) => {
-            if (progress.status === 'progress' && progress.file) {
-              const percent = (progress.loaded / progress.total) * 100;
-              console.log(`Downloading ${progress.file}: ${percent.toFixed(1)}%`);
-              
-              if (this.options.onEmbeddingProgress) {
-                this.options.onEmbeddingProgress(
-                  `Downloading ${progress.file}...`,
-                  percent
-                );
-              }
-            } else if (progress.status === 'done') {
-              console.log(`Downloaded: ${progress.file}`);
-            }
+      // 1. 쿼리 인코더 로드
+      console.log('Loading Chat Query Encoder from:', this.options.chatQueryEncoderPath);
+      
+      try {
+        this.chatQueryEncoder = await pipeline(
+          'feature-extraction', 
+          this.options.chatQueryEncoderPath,
+          {
+            local_files_only: true,
+            revision: 'main',
           }
-        }
-      );
-      
-      if (this.options.onEmbeddingProgress) {
-        this.options.onEmbeddingProgress('Embedding model ready', 100);
+        );
+        console.log('Chat Query Encoder loaded successfully.');
+      } catch (error: any) {
+        console.error('Failed to load Chat Query Encoder:', error.message);
+
+        // Fallback: Hugging Face에서 직접 다운로드 시도
+        console.log('Attempting to load Chat Query Encoder from Hugging Face...');
+        env.allowRemoteModels = true;
+        this.chatQueryEncoder = await pipeline(
+          'feature-extraction',
+          'nvidia/dragon-multiturn-query-encoder'
+        );
+        env.allowRemoteModels = false;
+        console.log('Chat Query Encoder loaded from Hugging Face.');
       }
-      
-      console.log('Embedding model loaded successfully');
-      
+
+      // 2. 컨텍스트 인코더 로드
+      console.log('Loading Chat Key Encoder from:', this.options.chatKeyEncoderPath);
+
+      try {
+        this.chatKeyEncoder = await pipeline(
+          'feature-extraction',
+          this.options.chatKeyEncoderPath,
+          {
+            local_files_only: true,
+            revision: 'main',
+          }
+        );
+        console.log('Chat Key Encoder loaded successfully.');
+      } catch (error: any) {
+        console.error('Failed to load Chat Key Encoder:', error.message);
+
+        // Fallback: Hugging Face에서 직접 다운로드 시도
+        console.log('Attempting to load Chat Key Encoder from Hugging Face...');
+        env.allowRemoteModels = true;
+        this.chatKeyEncoder = await pipeline(
+          'feature-extraction',
+          'nvidia/dragon-multiturn-context-encoder'
+        );
+        env.allowRemoteModels = false;
+        console.log('Chat Key Encoder loaded from Hugging Face.');
+      }
+
+      console.log('All embedding models loaded successfully');
+
     } catch (error) {
-      console.error('Failed to load embedding model:', error);
-      throw new Error(`Failed to initialize embedding model: ${error}`);
+      console.error('Failed to load embedding models:', error);
+      throw new Error(`Failed to initialize embedding models: ${error}`);
     }
   }
 
@@ -144,7 +167,7 @@ export class LLMManager {
 
     const sessionId = uuidv4();
     const context = await this.model.createContext({
-      contextSize: 8192 // Gemma 3 context window
+      contextSize: 8192
     });
 
     const session = new LlamaChatSessionClass({
@@ -235,40 +258,58 @@ export class LLMManager {
     }
   }
 
-    /**
-   * Generates an embedding vector for the given text.
-   * @param text The input text to create an embedding for.
-   * @returns A promise that resolves to an array of numbers (the embedding vector).
+  /**
+   * 컨텍스트 인코더를 사용하여 임베딩 생성 (문서/컨텍스트용)
    */
   async createEmbedding(text: string): Promise<number[]> {
-    if (!this.embeddingPipeline) {
-      throw new Error('Embedding model not loaded. Cannot create embedding.');
+    if (!this.chatKeyEncoder) {
+      throw new Error('Context Encoder model not loaded. Cannot create embedding.');
     }
 
     try {
-      // 파이프라인을 실행하여 텍스트로부터 임베딩 텐서를 생성합니다.
-      // pooling: 'mean' 과 normalize: true 는 문장 임베딩 생성 시 표준적인 옵션입니다.
-      const embeddingTensor = await this.embeddingPipeline(text, {
+      const embeddingTensor = await this.chatKeyEncoder(text, {
         pooling: 'mean',
         normalize: true,
       });
       
-      // 텐서 데이터를 일반 JavaScript 배열로 변환하여 반환합니다.
       const embedding = Array.from(embeddingTensor.data as Float32Array);
-      // 💡 수정: slice(0, 10)을 사용해 배열의 첫 10개 요소를 가져와 로그에 추가합니다.
-      // toFixed(4)로 소수점 4자리까지만 표시하여 가독성을 높였습니다.
       const preview = embedding.slice(0, 10).map(n => n.toFixed(4)).join(', ');
-      console.log(`Generated embedding vector (dim: ${embedding.length}): [${preview}...]`);
+      console.log(`Generated CONTEXT embedding (dim: ${embedding.length}): [${preview}...]`);
       
       return embedding;
     } catch (error) {
-      console.error('Failed to create embedding:', error);
-      throw new Error('An error occurred while generating the embedding.');
+      console.error('Failed to create context embedding:', error);
+      throw new Error('An error occurred while generating the context embedding.');
+    }
+  }
+
+  /**
+   * 쿼리 인코더를 사용하여 임베딩 생성 (사용자 질문용)
+   */
+  async createQueryEmbedding(text: string): Promise<number[]> {
+    if (!this.chatQueryEncoder) {
+      throw new Error('Query Encoder model not loaded. Cannot create chat embedding.');
+    }
+
+    try {
+      const embeddingTensor = await this.chatQueryEncoder(text, {
+        pooling: 'mean',
+        normalize: true,
+      });
+      
+      const embedding = Array.from(embeddingTensor.data as Float32Array);
+      const preview = embedding.slice(0, 10).map(n => n.toFixed(4)).join(', ');
+      console.log(`Generated QUERY embedding (dim: ${embedding.length}): [${preview}...]`);
+      
+      return embedding;
+    } catch (error) {
+      console.error('Failed to create query embedding:', error);
+      throw new Error('An error occurred while generating the query embedding.');
     }
   }
 
   isEmbeddingModelReady(): boolean {
-    return this.embeddingPipeline !== null;
+    return this.chatQueryEncoder !== null && this.chatKeyEncoder !== null;
   }
 
   getModelInfo() {
@@ -285,7 +326,7 @@ export class LLMManager {
 
     return {
       name: 'Gemma-3-12B-IT',
-      size: 6_909_282_656, // ~6.4GB
+      size: 6_909_282_656,
       quantization: 'Q4_0',
       contextSize: 8192,
       loaded: true,
@@ -308,12 +349,18 @@ export class LLMManager {
       this.model = null;
     }
 
-    // Dispose embedding pipeline
-    if (this.embeddingPipeline) {
-      if (typeof (this.embeddingPipeline.model as any).dispose === 'function') {
-        await (this.embeddingPipeline.model as any).dispose();
+    // Dispose embedding pipelines
+    if (this.chatQueryEncoder) {
+      if (typeof (this.chatQueryEncoder.model as any).dispose === 'function') {
+        await (this.chatQueryEncoder.model as any).dispose();
       }
-      this.embeddingPipeline = null;
+      this.chatQueryEncoder = null;
+    }
+    if (this.chatKeyEncoder) {
+      if (typeof (this.chatKeyEncoder.model as any).dispose === 'function') {
+        await (this.chatKeyEncoder.model as any).dispose();
+      }
+      this.chatKeyEncoder = null;
     }
 
     this.llama = null;
