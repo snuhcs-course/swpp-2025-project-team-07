@@ -116,3 +116,15 @@ contextBridge.exposeInMainWorld('llmAPI', {
     ipcRenderer.on('llm:error', listener);
   }
 });
+
+// Expose Embedding API to renderer process
+contextBridge.exposeInMainWorld('embeddingAPI', {
+  embedQuery: (text: string): Promise<number[]> =>
+    ipcRenderer.invoke('embedding:query', text),
+
+  embedContext: (text: string): Promise<number[]> =>
+    ipcRenderer.invoke('embedding:context', text),
+
+  isReady: (): Promise<boolean> =>
+    ipcRenderer.invoke('embedding:is-ready')
+});
