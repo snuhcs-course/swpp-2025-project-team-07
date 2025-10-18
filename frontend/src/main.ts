@@ -29,31 +29,44 @@ const LLM_MODEL_INFO = {
   url: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf'
 };
 
+const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
+
 const CHAT_QUERY_ENCODER_FILES = [
   {
-    fileName: 'pytorch_model.bin',
-    expectedSize: 438_000_000, // ~438MB
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/pytorch_model.bin'
+    fileName: 'model_quantized.onnx',
+    relativePath: 'onnx/model_quantized.onnx',
+    expectedSize: 435_760_128, // 425,547KB = ~416MB
+    url: `${S3_BASE_URL}/chat-query-encoder/onnx/model_quantized.onnx`
   },
   {
     fileName: 'config.json',
-    expectedSize: 675,
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/config.json'
-  },
-  {
-    fileName: 'vocab.txt',
-    expectedSize: 232_000, // ~232KB
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/vocab.txt'
-  },
-  {
-    fileName: 'tokenizer_config.json',
-    expectedSize: 28,
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/tokenizer_config.json'
+    relativePath: 'config.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-query-encoder/config.json`
   },
   {
     fileName: 'special_tokens_map.json',
-    expectedSize: 112,
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-query-encoder/resolve/main/special_tokens_map.json'
+    relativePath: 'special_tokens_map.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-query-encoder/special_tokens_map.json`
+  },
+  {
+    fileName: 'tokenizer_config.json',
+    relativePath: 'tokenizer_config.json',
+    expectedSize: 2_048, // 2KB
+    url: `${S3_BASE_URL}/chat-query-encoder/tokenizer_config.json`
+  },
+  {
+    fileName: 'tokenizer.json',
+    relativePath: 'tokenizer.json',
+    expectedSize: 711_680, // 695KB
+    url: `${S3_BASE_URL}/chat-query-encoder/tokenizer.json`
+  },
+  {
+    fileName: 'vocab.txt',
+    relativePath: 'vocab.txt',
+    expectedSize: 232_448, // 227KB
+    url: `${S3_BASE_URL}/chat-query-encoder/vocab.txt`
   }
 ];
 
@@ -64,29 +77,40 @@ const CHAT_QUERY_ENCODER_INFO = {
 
 const CHAT_KEY_ENCODER_FILES = [
   {
-    fileName: 'pytorch_model.bin',
-    expectedSize: 438_000_000, // ~438MB
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/pytorch_model.bin'
+    fileName: 'model_quantized.onnx',
+    relativePath: 'onnx/model_quantized.onnx',
+    expectedSize: 435_760_128, // 425,547KB = ~416MB
+    url: `${S3_BASE_URL}/chat-key-encoder/onnx/model_quantized.onnx`
   },
   {
     fileName: 'config.json',
-    expectedSize: 677,
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/config.json'
-  },
-  {
-    fileName: 'vocab.txt',
-    expectedSize: 232_000, // ~232KB
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/vocab.txt'
-  },
-  {
-    fileName: 'tokenizer_config.json',
-    expectedSize: 28,
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/tokenizer_config.json'
+    relativePath: 'config.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-key-encoder/config.json`
   },
   {
     fileName: 'special_tokens_map.json',
-    expectedSize: 112,
-    url: 'https://huggingface.co/nvidia/dragon-multiturn-context-encoder/resolve/main/special_tokens_map.json'
+    relativePath: 'special_tokens_map.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-key-encoder/special_tokens_map.json`
+  },
+  {
+    fileName: 'tokenizer_config.json',
+    relativePath: 'tokenizer_config.json',
+    expectedSize: 2_048, // 2KB
+    url: `${S3_BASE_URL}/chat-key-encoder/tokenizer_config.json`
+  },
+  {
+    fileName: 'tokenizer.json',
+    relativePath: 'tokenizer.json',
+    expectedSize: 711_680, // 695KB
+    url: `${S3_BASE_URL}/chat-key-encoder/tokenizer.json`
+  },
+  {
+    fileName: 'vocab.txt',
+    relativePath: 'vocab.txt',
+    expectedSize: 232_448, // 227KB
+    url: `${S3_BASE_URL}/chat-key-encoder/vocab.txt`
   }
 ];
 
@@ -96,12 +120,10 @@ const CHAT_KEY_ENCODER_INFO = {
 };
 
 function getLLMModelPath(): string {
-  // 개발용 로컬 경로 (기존 로직 유지)
   const devModelPath = path.join(process.cwd(), LLM_MODEL_INFO.directory, LLM_MODEL_INFO.fileName);
   if (existsSync(devModelPath)) {
     return devModelPath;
   }
-  // 프로덕션용 userData 경로
   return path.join(
     app.getPath('userData'),
     LLM_MODEL_INFO.directory,
@@ -109,33 +131,22 @@ function getLLMModelPath(): string {
   );
 }
 
-/**
- * LLM 모델이 다운로드되었는지 확인합니다.
- */
 function isLLMModelDownloaded(): boolean {
   return existsSync(getLLMModelPath());
 }
 
-/**
- * 임베딩 모델의 모든 파일이 다운로드되었는지 확인
- */
 function isEmbeddingModelDownloaded(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): boolean {
   return modelInfo.files.every(file => {
-    const filePath = path.join(app.getPath('userData'), modelInfo.directory, file.fileName);
+    const filePath = path.join(app.getPath('userData'), modelInfo.directory, file.relativePath);
     return existsSync(filePath);
   });
 }
 
-/**
- * 임베딩 모델 디렉토리 경로 반환
- */
 function getEmbeddingModelPath(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): string {
-  // 개발용 로컬 경로
   const devPath = path.join(process.cwd(), modelInfo.directory);
-  if (existsSync(path.join(devPath, 'pytorch_model.bin'))) {
+  if (existsSync(path.join(devPath, 'onnx/model_quantized.onnx'))) {
     return devPath;
   }
-  // 프로덕션용 userData 경로
   return path.join(app.getPath('userData'), modelInfo.directory);
 }
 
@@ -284,19 +295,20 @@ function setupLLMHandlers() {
     return llmManager.getModelInfo();
   });
 
+  // Model download handler (for download-on-first-run)
   ipcMain.handle('model:start-download', async (_event) => {
     if (!mainWindow) throw new Error('No window found');
 
     try {
       const downloadTasks = [];
 
-      // 1. LLM 모델 다운로드 확인
       if (!isLLMModelDownloaded()) {
         downloadTasks.push({
           type: 'llm',
           name: 'Gemma-3-12B-IT (LLM)',
           files: [{
             fileName: LLM_MODEL_INFO.fileName,
+            relativePath: LLM_MODEL_INFO.fileName,
             directory: LLM_MODEL_INFO.directory,
             url: LLM_MODEL_INFO.url,
             expectedSize: LLM_MODEL_INFO.expectedSize
@@ -304,7 +316,6 @@ function setupLLMHandlers() {
         });
       }
 
-      // 2. Query Encoder 다운로드 확인
       if (!isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO)) {
         downloadTasks.push({
           type: 'chat-query-encoder',
@@ -316,7 +327,6 @@ function setupLLMHandlers() {
         });
       }
 
-      // 3. Context Encoder 다운로드 확인
       if (!isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO)) {
         downloadTasks.push({
           type: 'chat-key-encoder',
@@ -337,39 +347,39 @@ function setupLLMHandlers() {
 
       console.log(`Need to download ${downloadTasks.length} model(s)`);
 
-      // 4. 모든 필요한 파일 다운로드
       for (const task of downloadTasks) {
         console.log(`\n=== Downloading ${task.name} ===`);
         
         for (const file of task.files) {
-          console.log(`  Downloading: ${file.fileName}`);
+          console.log(`  Downloading: ${file.relativePath}`);
           
           try {
+            const targetPath = path.join(file.directory, file.relativePath);
+            const targetDir = path.dirname(targetPath);
+            
             await downloadFile(mainWindow, {
               downloadUrl: file.url,
               targetFileName: file.fileName,
-              targetDirectory: file.directory,
+              targetDirectory: targetDir,
               expectedSize: file.expectedSize,
               modelName: `${task.name} - ${file.fileName}`
             });
             
-            console.log(`  ✓ ${file.fileName} downloaded`);
+            console.log(`  ✓ ${file.relativePath} downloaded`);
             
           } catch (downloadError: any) {
-            console.error(`  ✗ Failed to download ${file.fileName}:`, downloadError.message);
-            throw new Error(`Failed to download ${task.name} (${file.fileName}): ${downloadError.message}`);
+            console.error(`  ✗ Failed to download ${file.relativePath}:`, downloadError.message);
+            throw new Error(`Failed to download ${task.name} (${file.relativePath}): ${downloadError.message}`);
           }
         }
         
         console.log(`✓ ${task.name} complete\n`);
         
-        // 모델 간 짧은 대기
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       console.log('=== All models downloaded successfully ===\n');
 
-      // 5. 모든 다운로드 완료 후 LLM 초기화
       await initializeLLM();
 
       mainWindow.webContents.send('model:download-complete');
@@ -437,7 +447,6 @@ app.on('ready', async () => {
   // Setup IPC handlers first
   setupLLMHandlers();
 
-  // [수정] 모든 모델이 다운로드되었는지 확인
   const allModelsReady = isLLMModelDownloaded() &&
                          isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
                          isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
@@ -454,7 +463,6 @@ app.on('ready', async () => {
     console.log('One or more models not found. User will need to download them.');
     // Notify the renderer that model needs to be downloaded
     if (mainWindow) {
-      // 이 이벤트는 preload.ts에 정의되어 있음
       mainWindow.webContents.send('llm:model-not-found');
     }
   }
