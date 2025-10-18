@@ -114,8 +114,17 @@ contextBridge.exposeInMainWorld('llmAPI', {
   onLLMError: (callback: (error: {message: string; error: string}) => void): void => {
     const listener = (_event: IpcRendererEvent, error: {message: string; error: string}) => callback(error);
     ipcRenderer.on('llm:error', listener);
-  },
+  }
+});
 
-  // Embedding method
-  createChatEmbedding: (text: string): Promise<number[]> => ipcRenderer.invoke('llm:createChatEmbedding', text),
+// Expose Embedding API to renderer process
+contextBridge.exposeInMainWorld('embeddingAPI', {
+  embedQuery: (text: string): Promise<number[]> =>
+    ipcRenderer.invoke('embedding:query', text),
+
+  embedContext: (text: string): Promise<number[]> =>
+    ipcRenderer.invoke('embedding:context', text),
+
+  isReady: (): Promise<boolean> =>
+    ipcRenderer.invoke('embedding:is-ready')
 });

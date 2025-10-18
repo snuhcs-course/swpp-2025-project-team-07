@@ -5,10 +5,9 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { LLMManager } from './llm/manager';
 import { downloadFile } from './utils/downloader';
-import { ChatEmbedder } from './embedders/ChatEmbedder';
+import { EmbeddingManager } from './llm/embedding';
 
 let selectedSourceId: string | null = null;
-let chatEmbedder: ChatEmbedder | null = null; 
 
 function installDisplayMediaHook() {
   session.defaultSession.setDisplayMediaRequestHandler(async (_req, callback) => {
@@ -141,6 +140,7 @@ function getEmbeddingModelPath(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): strin
 }
 
 let llmManager: LLMManager | null = null;
+let embeddingManager: EmbeddingManager | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 const createWindow = () => {
@@ -190,26 +190,32 @@ async function initializeLLM() {
   }
 
   try {
-    // [수정] 모든 모델의 경로를 가져옵니다.
     const llmPath = getLLMModelPath();
     const chatQueryEncoderPath = getEmbeddingModelPath(CHAT_QUERY_ENCODER_INFO);
     const chatKeyEncoderPath = getEmbeddingModelPath(CHAT_KEY_ENCODER_INFO);
 
     console.log('Initializing LLM with model:', llmPath);
-    console.log('Using Chat Query Encoder from:', chatQueryEncoderPath);
-    console.log('Using Chat Key Encoder from:', chatKeyEncoderPath);
-
+    
+    // Initialize LLM
     llmManager = new LLMManager({
       modelPath: llmPath,
-      chatQueryEncoderPath: chatQueryEncoderPath, // 수정된 옵션 (가정)
-      chatKeyEncoderPath: chatKeyEncoderPath, // 수정된 옵션 (가정)
+      onProgress: (progress) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('llm:loading-progress', progress);
+        }
+      }
     });
     await llmManager.initialize();
     
-    // LLM이 초기화된 후 ChatEmbedder 생성
-    chatEmbedder = new ChatEmbedder(llmManager); 
+    // Initialize Embedding Manager separately
+    console.log('Initializing Embedding Manager...');
+    embeddingManager = new EmbeddingManager({
+      chatQueryEncoderPath: chatQueryEncoderPath,
+      chatKeyEncoderPath: chatKeyEncoderPath,
+    });
+    await embeddingManager.initialize();
     
-    console.log('LLM and embedding model initialized successfully');
+    console.log('LLM and Embedding initialized successfully');
 
     if (mainWindow) {
       mainWindow.webContents.send('llm:ready');
@@ -276,24 +282,6 @@ function setupLLMHandlers() {
   ipcMain.handle('llm:model-info', async () => {
     if (!llmManager) throw new Error('LLM not initialized');
     return llmManager.getModelInfo();
-  });
-
-  // Embedding handlers
-  ipcMain.handle('llm:createChatEmbedding', async (_event, text: string) => {
-    if (!chatEmbedder) throw new Error('ChatEmbedder not initialized');
-    return await chatEmbedder.embed(text);
-  });
-
-  // 직접 임베딩 생성 (ChatEmbedder 없이)
-  ipcMain.handle('llm:createEmbedding', async (_event, text: string) => {
-    if (!llmManager) throw new Error('LLM not initialized');
-    return await llmManager.createEmbedding(text);
-  });
-
-  // 임베딩 모델 상태 확인
-  ipcMain.handle('llm:embedding-ready', async () => {
-    if (!llmManager) return false;
-    return llmManager.isEmbeddingModelReady();
   });
 
   ipcMain.handle('model:start-download', async (_event) => {
@@ -416,12 +404,27 @@ function setupLLMHandlers() {
           downloaded: chatKeyEncoderDownloaded
         }
       },
-      allDownloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded,
+      downloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded,
       initialized: llmManager !== null
     };
   });
 
-  console.log('LLM IPC handlers registered');
+  // Embedding handlers
+  ipcMain.handle('embedding:query', async (_event, text: string) => {
+    if (!embeddingManager) throw new Error('Embedding manager not initialized');
+    return await embeddingManager.embedQuery(text);
+  });
+
+  ipcMain.handle('embedding:context', async (_event, text: string) => {
+    if (!embeddingManager) throw new Error('Embedding manager not initialized');
+    return await embeddingManager.embedContext(text);
+  });
+
+  ipcMain.handle('embedding:is-ready', async () => {
+    return embeddingManager?.isReady() ?? false;
+  });
+
+  console.log('LLM and Embedding IPC handlers registered');
 }
 
 // This method will be called when Electron has finished
@@ -462,6 +465,11 @@ app.on('before-quit', async () => {
   if (llmManager) {
     console.log('Cleaning up LLM Manager...');
     await llmManager.cleanup();
+  }
+  
+  if (embeddingManager) {
+    console.log('Cleaning up Embedding Manager...');
+    await embeddingManager.cleanup();
   }
 });
 
