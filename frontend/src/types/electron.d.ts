@@ -40,6 +40,12 @@ export interface ModelStatus {
   path: string;
 }
 
+export interface EmbeddingAPI {
+  embedQuery: (text: string) => Promise<number[]>;
+  embedContext: (text: string) => Promise<number[]>;
+  isReady: () => Promise<boolean>;
+}
+
 declare global {
   interface Window {
     llmAPI: {
@@ -49,7 +55,6 @@ declare global {
         message: string,
         options?: LLMChatOptions
       ) => Promise<void>;
-      createChatEmbedding: (text: string) => Promise<number[]>;
 
       // Session management
       createSession: (systemPrompt?: string) => Promise<string>;
@@ -74,6 +79,7 @@ declare global {
       onLLMReady: (callback: () => void) => void;
       onLLMError: (callback: (error: {message: string; error: string}) => void) => void;
     };
+    embeddingAPI: EmbeddingAPI;
   }
 }
 

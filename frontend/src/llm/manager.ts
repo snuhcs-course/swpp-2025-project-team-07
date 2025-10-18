@@ -1,6 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-// pipeline과 환경 설정 import
-import { pipeline, FeatureExtractionPipeline, env } from '@xenova/transformers';
 
 // Dynamic import types for node-llama-cpp
 type Llama = any;
@@ -10,8 +8,6 @@ type LlamaChatSession = any;
 
 export interface LLMManagerOptions {
   modelPath: string;
-  chatQueryEncoderPath: string;
-  chatKeyEncoderPath: string;
   onProgress?: (progress: number) => void;
 }
 
@@ -38,8 +34,6 @@ interface SessionData {
 export class LLMManager {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
-  private chatQueryEncoder: FeatureExtractionPipeline | null = null;
-  private chatKeyEncoder: FeatureExtractionPipeline | null = null;
   private sessions: Map<string, SessionData> = new Map();
   private options: LLMManagerOptions;
   private defaultSessionId: string = 'default';
@@ -72,8 +66,6 @@ export class LLMManager {
       });
 
       console.log('Model loaded successfully');
-      
-      await this.initializeEmbeddingModels();
 
       // Create default session
       await this.createSession();
@@ -81,77 +73,6 @@ export class LLMManager {
     } catch (error) {
       console.error('Failed to initialize LLM:', error);
       throw error;
-    }
-  }
-
-  private async initializeEmbeddingModels(): Promise<void> {
-    try {
-      console.log('Loading embedding models from local paths...');
-      
-      // [중요] Transformers.js 환경 설정
-      env.allowLocalModels = true;        // 로컬 모델 허용
-      env.allowRemoteModels = false;      // 원격 다운로드 방지
-      env.useBrowserCache = false;        // 브라우저 캐시 사용 안 함
-      
-      // 1. 쿼리 인코더 로드
-      console.log('Loading Chat Query Encoder from:', this.options.chatQueryEncoderPath);
-      
-      try {
-        this.chatQueryEncoder = await pipeline(
-          'feature-extraction', 
-          this.options.chatQueryEncoderPath,
-          {
-            local_files_only: true,
-            revision: 'main',
-          }
-        );
-        console.log('Chat Query Encoder loaded successfully.');
-      } catch (error: any) {
-        console.error('Failed to load Chat Query Encoder:', error.message);
-
-        // Fallback: Hugging Face에서 직접 다운로드 시도
-        console.log('Attempting to load Chat Query Encoder from Hugging Face...');
-        env.allowRemoteModels = true;
-        this.chatQueryEncoder = await pipeline(
-          'feature-extraction',
-          'nvidia/dragon-multiturn-query-encoder'
-        );
-        env.allowRemoteModels = false;
-        console.log('Chat Query Encoder loaded from Hugging Face.');
-      }
-
-      // 2. 컨텍스트 인코더 로드
-      console.log('Loading Chat Key Encoder from:', this.options.chatKeyEncoderPath);
-
-      try {
-        this.chatKeyEncoder = await pipeline(
-          'feature-extraction',
-          this.options.chatKeyEncoderPath,
-          {
-            local_files_only: true,
-            revision: 'main',
-          }
-        );
-        console.log('Chat Key Encoder loaded successfully.');
-      } catch (error: any) {
-        console.error('Failed to load Chat Key Encoder:', error.message);
-
-        // Fallback: Hugging Face에서 직접 다운로드 시도
-        console.log('Attempting to load Chat Key Encoder from Hugging Face...');
-        env.allowRemoteModels = true;
-        this.chatKeyEncoder = await pipeline(
-          'feature-extraction',
-          'nvidia/dragon-multiturn-context-encoder'
-        );
-        env.allowRemoteModels = false;
-        console.log('Chat Key Encoder loaded from Hugging Face.');
-      }
-
-      console.log('All embedding models loaded successfully');
-
-    } catch (error) {
-      console.error('Failed to load embedding models:', error);
-      throw new Error(`Failed to initialize embedding models: ${error}`);
     }
   }
 
@@ -258,60 +179,6 @@ export class LLMManager {
     }
   }
 
-  /**
-   * 컨텍스트 인코더를 사용하여 임베딩 생성 (문서/컨텍스트용)
-   */
-  async createEmbedding(text: string): Promise<number[]> {
-    if (!this.chatKeyEncoder) {
-      throw new Error('Context Encoder model not loaded. Cannot create embedding.');
-    }
-
-    try {
-      const embeddingTensor = await this.chatKeyEncoder(text, {
-        pooling: 'mean',
-        normalize: true,
-      });
-      
-      const embedding = Array.from(embeddingTensor.data as Float32Array);
-      const preview = embedding.slice(0, 10).map(n => n.toFixed(4)).join(', ');
-      console.log(`Generated CONTEXT embedding (dim: ${embedding.length}): [${preview}...]`);
-      
-      return embedding;
-    } catch (error) {
-      console.error('Failed to create context embedding:', error);
-      throw new Error('An error occurred while generating the context embedding.');
-    }
-  }
-
-  /**
-   * 쿼리 인코더를 사용하여 임베딩 생성 (사용자 질문용)
-   */
-  async createQueryEmbedding(text: string): Promise<number[]> {
-    if (!this.chatQueryEncoder) {
-      throw new Error('Query Encoder model not loaded. Cannot create chat embedding.');
-    }
-
-    try {
-      const embeddingTensor = await this.chatQueryEncoder(text, {
-        pooling: 'mean',
-        normalize: true,
-      });
-      
-      const embedding = Array.from(embeddingTensor.data as Float32Array);
-      const preview = embedding.slice(0, 10).map(n => n.toFixed(4)).join(', ');
-      console.log(`Generated QUERY embedding (dim: ${embedding.length}): [${preview}...]`);
-      
-      return embedding;
-    } catch (error) {
-      console.error('Failed to create query embedding:', error);
-      throw new Error('An error occurred while generating the query embedding.');
-    }
-  }
-
-  isEmbeddingModelReady(): boolean {
-    return this.chatQueryEncoder !== null && this.chatKeyEncoder !== null;
-  }
-
   getModelInfo() {
     if (!this.model) {
       return {
@@ -319,8 +186,7 @@ export class LLMManager {
         size: 0,
         quantization: 'Unknown',
         contextSize: 0,
-        loaded: false,
-        embeddingModelReady: false
+        loaded: false
       };
     }
 
@@ -329,8 +195,7 @@ export class LLMManager {
       size: 6_909_282_656,
       quantization: 'Q4_0',
       contextSize: 8192,
-      loaded: true,
-      embeddingModelReady: this.isEmbeddingModelReady()
+      loaded: true
     };
   }
 
@@ -347,20 +212,6 @@ export class LLMManager {
     if (this.model) {
       this.model.dispose();
       this.model = null;
-    }
-
-    // Dispose embedding pipelines
-    if (this.chatQueryEncoder) {
-      if (typeof (this.chatQueryEncoder.model as any).dispose === 'function') {
-        await (this.chatQueryEncoder.model as any).dispose();
-      }
-      this.chatQueryEncoder = null;
-    }
-    if (this.chatKeyEncoder) {
-      if (typeof (this.chatKeyEncoder.model as any).dispose === 'function') {
-        await (this.chatKeyEncoder.model as any).dispose();
-      }
-      this.chatKeyEncoder = null;
     }
 
     this.llama = null;
