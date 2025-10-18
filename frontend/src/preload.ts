@@ -39,6 +39,19 @@ contextBridge.exposeInMainWorld("recorder", {
   stop: () => stopRecording(),
 });
 
+contextBridge.exposeInMainWorld('vembedAPI', {
+  isModelReady: () => ipcRenderer.invoke('video-model:is-ready'),
+  startModelDownload: () => ipcRenderer.invoke('video-model:start-download'),
+  onDownloadProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void) => {
+    ipcRenderer.on('video-model:progress', (_e, data) => cb(data));
+  },
+  onDownloadComplete: (cb: () => void) => {
+    ipcRenderer.on('video-model:complete', () => cb());
+  },
+  onDownloadError: (cb: (msg: string) => void) => {
+    ipcRenderer.on('video-model:error', (_e, msg) => cb(msg));
+  },
+});
 
 // Expose LLM API to renderer process
 contextBridge.exposeInMainWorld('llmAPI', {

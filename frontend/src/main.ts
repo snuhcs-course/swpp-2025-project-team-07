@@ -1,11 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
-import fs from 'node:fs/promises';
+import fsp from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { LLMManager } from './llm/manager';
 import { downloadFile } from './utils/downloader';
 import { EmbeddingManager } from './llm/embedding';
+import * as fs from 'node:fs';
+import * as https from 'node:https';
+import { URL } from 'node:url';
 
 let selectedSourceId: string | null = null;
 
@@ -184,6 +187,127 @@ const createWindow = () => {
 
   return mainWindow;
 };
+
+const VEMBED_FILE = 'model.onnx';
+const VEMBED_URL  = 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/12b36594d53414ecfba93c7200dbb7c7db3c900a/onnx/model.onnx?download=true';
+const VEMBED_DIR  = path.join(app.getPath('userData'), 'models', 'clip-vit-b-32');
+const VEMBED_PATH = path.join(VEMBED_DIR, VEMBED_FILE);
+
+
+// Initialize Video Embed Model
+function ensureDir(p: string) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
+function followRedirectsGet(
+  urlStr: string,
+  headers: Record<string, string>,
+  onResponse: (res: https.IncomingMessage) => void,
+  redirectCount = 0
+) {
+  if (redirectCount > 5) {
+    throw new Error('Too many redirects');
+  }
+
+  const u = new URL(urlStr);
+  const req = https.request(
+    {
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + u.search,
+      method: 'GET',
+      headers,
+    },
+    (res) => {
+      const status = res.statusCode || 0;
+
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        const loc = res.headers.location;
+        if (!loc) return onResponse(res); 
+        const nextUrl = new URL(loc, u).toString();
+        res.resume(); 
+        followRedirectsGet(nextUrl, headers, onResponse, redirectCount + 1);
+        return;
+      }
+
+      onResponse(res);
+    }
+  );
+
+  req.on('error', (err) => onResponse(Object.assign(new https.IncomingMessage(req.socket), { statusCode: 500, statusMessage: String(err) }) as any));
+  req.end();
+}
+
+function downloadWithProgress(
+  url: string,
+  dest: string,
+  onProgress: (total: number, received: number) => void
+) {
+  return new Promise<void>((resolve, reject) => {
+    const out = fs.createWriteStream(dest);
+
+    const HF_TOKEN = '';
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'CloneApp/1.0 (+electron)',
+      'Accept': '*/*',
+      'Connection': 'keep-alive',
+    };
+    if (HF_TOKEN) headers['Authorization'] = `Bearer ${HF_TOKEN}`;
+
+    followRedirectsGet(url, headers, (res) => {
+      const status = res.statusCode || 0;
+      if (status >= 400) {
+        res.resume();
+        return reject(new Error(`HTTP ${status}`));
+      }
+
+      const total = Number(res.headers['content-length'] || 0);
+      let received = 0;
+
+      res.on('data', (chunk) => {
+        received += chunk.length;
+        try { onProgress(total, received); } catch {}
+      });
+
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve()));
+      res.on('error', reject);
+    });
+  });
+}
+
+// Check whether the video embedding model is ready
+ipcMain.handle('video-model:is-ready', async () => {
+  try {
+    return fs.existsSync(VEMBED_PATH) && fs.statSync(VEMBED_PATH).size > 0;
+  } catch {
+    return false;
+  }
+});
+
+// Start downloading the video embedding model
+ipcMain.handle('video-model:start-download', async () => {
+  try {
+    if (!VEMBED_URL) throw new Error('VITE_VEMBED_MODEL_URL is empty');
+
+    ensureDir(VEMBED_DIR);
+    if (fs.existsSync(VEMBED_PATH)) fs.unlinkSync(VEMBED_PATH);
+
+    await downloadWithProgress(VEMBED_URL, VEMBED_PATH, (total, received) => {
+      if (!mainWindow) return;
+      const percent = total > 0 ? received / total : 0;
+      mainWindow.webContents.send('video-model:progress', { percent, transferred: received, total });
+    });
+
+    if (mainWindow) mainWindow.webContents.send('video-model:complete');
+    return { success: true };
+  } catch (e: any) {
+    if (mainWindow) mainWindow.webContents.send('video-model:error', String(e?.message || e));
+    return { success: false, error: String(e?.message || e) };
+  }
+});
 
 // Initialize LLM Manager
 async function initializeLLM() {
@@ -545,7 +669,7 @@ ipcMain.handle('rec:choose-source', (_e, id: string) => {
 ipcMain.handle('rec:save-file', async (_e, data: Buffer) => {
   const videos = app.getPath('videos'); // macOS: ~/Movies
   const defaultDir = path.join(videos, 'PrivateGPT-Recordings');
-  await fs.mkdir(defaultDir, { recursive: true });
+  await fsp.mkdir(defaultDir, { recursive: true });
   const defaultPath = path.join(
     defaultDir,
     `Recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`
@@ -558,6 +682,6 @@ ipcMain.handle('rec:save-file', async (_e, data: Buffer) => {
   });
   if (canceled || !filePath) return null;
 
-  await fs.writeFile(filePath, data);
+  await fsp.writeFile(filePath, data);
   return filePath;
 });
