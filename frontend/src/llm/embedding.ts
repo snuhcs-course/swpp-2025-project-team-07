@@ -1,6 +1,5 @@
 import { AutoTokenizer, AutoModel, env } from '@xenova/transformers';
 import path from 'path';
-import { existsSync } from 'fs';
 
 export interface EmbeddingManagerOptions {
   chatQueryEncoderPath: string;
@@ -23,9 +22,9 @@ export class EmbeddingManager {
   async initialize(): Promise<void> {
     console.log('Initializing DRAGON embedding models...');
     
-    // Get model paths (prefer -optimum over -onnx)
-    const queryPath = this.getModelPath(this.options.chatQueryEncoderPath);
-    const contextPath = this.getModelPath(this.options.chatKeyEncoderPath);
+    // Use model paths directly
+    const queryPath = this.options.chatQueryEncoderPath;
+    const contextPath = this.options.chatKeyEncoderPath;
     
     // Configure Transformers.js environment for Electron/Node.js
     const parentDir = path.dirname(queryPath);
@@ -64,26 +63,6 @@ export class EmbeddingManager {
     console.log('✓ Context Encoder loaded');
     
     console.log('Initialization complete');
-  }
-
-  /**
-   * Get model path, preferring -optimum over -onnx suffix
-   */
-  private getModelPath(originalPath: string): string {
-    const parentDir = path.dirname(originalPath);
-    const baseName = path.basename(originalPath);
-    
-    const optimumPath = path.join(parentDir, `${baseName}-optimum`);
-    if (existsSync(optimumPath)) {
-      return optimumPath;
-    }
-    
-    const onnxPath = path.join(parentDir, `${baseName}-onnx`);
-    if (existsSync(onnxPath)) {
-      return onnxPath;
-    }
-    
-    throw new Error(`Model not found: ${optimumPath} or ${onnxPath}`);
   }
 
   /**
