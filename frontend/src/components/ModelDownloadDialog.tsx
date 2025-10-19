@@ -22,6 +22,7 @@ type DownloadState = 'idle' | 'downloading' | 'completed' | 'error';
 export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogProps) {
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [progress, setProgress] = useState(0);
+  const [currentModelName, setCurrentModelName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transferred, setTransferred] = useState(0);
   const [total, setTotal] = useState(0);
@@ -31,7 +32,8 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
   useEffect(() => {
     // Listen for download progress
-    const handleProgress = (progressData: { percent: number; transferred: number; total: number }) => {
+    const handleProgress = (progressData: {modelName: string; percent: number; transferred: number; total: number }) => {
+      setCurrentModelName(progressData.modelName);
       setProgress(progressData.percent * 100);
       setTransferred(progressData.transferred);
       setTotal(progressData.total);
@@ -75,6 +77,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
   const handleStartDownload = async () => {
     setDownloadState('downloading');
+    setCurrentModelName(null);
     setError(null);
     setProgress(0);
     startTimeRef.current = Date.now();
@@ -95,6 +98,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
   const handleRetry = () => {
     setDownloadState('idle');
+    setCurrentModelName(null);
     setError(null);
     setProgress(0);
     startTimeRef.current = null;
@@ -153,13 +157,17 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
           </DialogTitle>
           <DialogDescription>
             {downloadState === 'completed' ? (
-              'The AI model has been downloaded successfully. Initializing...'
+              'All AI models have been downloaded successfully. Initializing...' // [수정]
             ) : downloadState === 'error' ? (
-              'There was a problem downloading the AI model.'
+              'There was a problem downloading the AI models.' // [수정]
             ) : downloadState === 'downloading' ? (
-              'Downloading Gemma-3-12B-IT model. This may take a while...'
+              // [수정] currentModelName을 사용
+              currentModelName 
+                ? `Downloading: ${currentModelName}...` 
+                : 'Preparing to download...'
             ) : (
-              'To use the AI chat features, you need to download the Gemma-3-12B-IT language model (~6.4 GB).'
+              // [수정] 텍스트 일반화
+              'To use the AI chat features, you need to download the required AI models (LLM and Embedders, ~7.3 GB total).'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -175,12 +183,12 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
           {downloadState === 'idle' && (
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
-                <span>Model:</span>
-                <span className="font-medium">Gemma-3-12B-IT (Q4_0)</span>
+                <span>Models:</span>
+                <span className="font-medium">Gemma (LLM) + 2 DRAGON (Embedders)</span>
               </div>
               <div className="flex justify-between">
-                <span>Size:</span>
-                <span className="font-medium">~6.4 GB</span>
+                <span>Total Size:</span>
+                <span className="font-medium">~7.3 GB</span>
               </div>
               <div className="flex justify-between">
                 <span>Context:</span>
@@ -191,6 +199,11 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
           {downloadState === 'downloading' && (
             <div className="space-y-2">
+              {currentModelName && (
+                <div className="text-center text-sm font-medium">
+                  {currentModelName}
+                </div>
+              )}
               <Progress value={progress} className="w-full" />
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>{progress.toFixed(1)}%</span>

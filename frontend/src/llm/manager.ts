@@ -46,7 +46,7 @@ export class LLMManager {
     try {
       console.log('Initializing llama.cpp...');
 
-      // Dynamic import of node-llama-cpp (ESM module with top-level await)
+      // Dynamic import of node-llama-cpp
       const { getLlama, LlamaChatSession: LlamaChatSessionClass } = await import('node-llama-cpp');
 
       // Store the session class for later use
@@ -88,7 +88,7 @@ export class LLMManager {
 
     const sessionId = uuidv4();
     const context = await this.model.createContext({
-      contextSize: 8192 // Gemma 3 context window
+      contextSize: 8192
     });
 
     const session = new LlamaChatSessionClass({
@@ -192,7 +192,7 @@ export class LLMManager {
 
     return {
       name: 'Gemma-3-12B-IT',
-      size: 6_909_282_656, // ~6.4GB
+      size: 6_909_282_656,
       quantization: 'Q4_0',
       contextSize: 8192,
       loaded: true
