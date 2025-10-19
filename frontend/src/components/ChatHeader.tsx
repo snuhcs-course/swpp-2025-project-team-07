@@ -74,13 +74,17 @@ export function ChatHeader({
   }
 
   async function handleStopRecording() {
-    try {
-      // await window.recorder.stop(); // onstop에서 저장 다이얼로그 표시
-      await recorder.stop();
-    } finally {
-      setIsRecording(false);
-    }
+  try {
+    const result = await recorder.stop();
+    console.log('[recording] size:', (result.blob.size / (1024*1024)).toFixed(2), 'MB');
+    console.log('[recording] duration:', (result.durationMs/1000).toFixed(2), 's');
+    
+    // open preview window (selectively)
+    window.open(result.objectUrl ?? URL.createObjectURL(result.blob), '_blank');
+  } finally {
+    setIsRecording(false);
   }
+}
 
   const userInitials = getUserInitials(user?.username, user?.email);
 

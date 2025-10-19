@@ -61,7 +61,7 @@ export class LLMManager {
           if (this.options.onProgress) {
             this.options.onProgress(progress);
           }
-          console.log(`Model loading: ${(progress * 100).toFixed(1)}%`);
+          // console.log(`Model loading: ${(progress * 100).toFixed(1)}%`);
         }
       });
 
