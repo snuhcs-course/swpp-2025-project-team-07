@@ -8,10 +8,9 @@ ENV PYTHONUNBUFFERED 1
 # Set the working directory
 WORKDIR /usr/src/app
 
-# Install dependencies needed for compiling Python packages (like 'mysqlclient' for MySQL)
-# 'default-libmysqlclient-dev' is essential for MySQL database drivers
+# Install dependencies needed for compiling Python packages
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc default-libmysqlclient-dev pkg-config \
+    && apt-get install -y --no-install-recommends gcc pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
@@ -30,12 +29,6 @@ ENV PORT 8000
 
 # Set the working directory
 WORKDIR /usr/src/app
-
-# Install runtime dependencies (only the necessary libraries, not the compilers)
-# 'default-mysql-client' is the library needed to connect to MySQL RDS at runtime.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends default-mysql-client libmariadb3 \
-    && rm -rf /var/lib/apt/lists/*
 
 # Copy only the installed Python packages from the builder stage
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
