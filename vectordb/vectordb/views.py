@@ -11,6 +11,7 @@ from rest_framework import status
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from pathlib import Path
 from dotenv import load_dotenv
 import numpy as np
 
@@ -20,7 +21,11 @@ from .milvus_vectordb import MilvusVectorDatabase
 # -----------------------------------------------------------------------------
 # Env Variables
 # -----------------------------------------------------------------------------
-load_dotenv()
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / '.env')
 
 
 # -----------------------------------------------------------------------------
