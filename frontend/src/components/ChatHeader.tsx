@@ -16,6 +16,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { type AuthUser } from "@/services/auth";
 import { getUserInitials } from "@/utils/user";
 import { useRecorder } from '@/recording/provider';
+import { ClipVideoEmbedder } from '@/embedding/ClipVideoEmbedder';
 
 
 interface ChatHeaderProps {
@@ -50,6 +51,9 @@ export function ChatHeader({
   const [isRecording, setIsRecording] = useState(false);
   const recorder = useRecorder();
 
+  const [isEmbedding, setIsEmbedding] = useState(false);
+
+
   async function handleStartRecording() {
     try {
       // const sources = await window.recorder.listSources();
@@ -74,17 +78,36 @@ export function ChatHeader({
   }
 
   async function handleStopRecording() {
-  try {
-    const result = await recorder.stop();
-    console.log('[recording] size:', (result.blob.size / (1024*1024)).toFixed(2), 'MB');
-    console.log('[recording] duration:', (result.durationMs/1000).toFixed(2), 's');
-    
-    // open preview window (selectively)
-    window.open(result.objectUrl ?? URL.createObjectURL(result.blob), '_blank');
-  } finally {
-    setIsRecording(false);
+    try {
+      // 1) 녹화 중지 → 비디오 Blob 확보
+      const result = await recorder.stop();
+      console.log(
+        '[recording] size:',
+        (result.blob.size / (1024 * 1024)).toFixed(2),
+        'MB'
+      );
+      console.log('[recording] duration:', (result.durationMs / 1000).toFixed(2), 's');
+
+      // (선택) 미리보기는 유지
+      window.open(result.objectUrl ?? URL.createObjectURL(result.blob), '_blank');
+
+      // 2) CLIP 임베딩
+      setIsEmbedding(true);
+      const embedder = await ClipVideoEmbedder.get();
+      const { pooled, frames } = await embedder.embedVideo(result.blob, 10); // 10프레임 고정
+      console.log('[embedding] pooled=', pooled.length, 'frames=', frames.length);
+
+      // TODO(3단계): 서버 전송 코드 연결 지점
+      // await uploadVideoAndEmbedding({ blob: result.blob, embedding: pooled, frames });
+
+    } catch (e) {
+      console.error('[recording] stop+embed failed:', e);
+    } finally {
+      setIsEmbedding(false);
+      setIsRecording(false);
+    }
   }
-}
+
 
   const userInitials = getUserInitials(user?.username, user?.email);
 
@@ -146,10 +169,15 @@ export function ChatHeader({
             variant="destructive"
             onClick={handleStopRecording}
             className="rounded-xl"
-            title="Stop and save"
+            title="Stop and embed"
+            disabled={isEmbedding}
           >
-            <Square className="w-4 h-4 mr-1" />
-            Stop
+            {isEmbedding ? 'Embedding…' : (
+              <>
+                <Square className="w-4 h-4 mr-1" />
+                Stop
+              </>
+            )}
           </Button>
         )}
         {/* Profile dropdown */}

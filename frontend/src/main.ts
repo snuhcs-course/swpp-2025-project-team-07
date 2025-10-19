@@ -309,6 +309,11 @@ ipcMain.handle('video-model:start-download', async () => {
   }
 });
 
+ipcMain.handle('video-model:get-bytes', async () => {
+  const buf = await fsp.readFile(VEMBED_PATH);
+  return buf;
+});
+
 // Initialize LLM Manager
 async function initializeLLM() {
   if (llmManager) {
@@ -592,6 +597,7 @@ app.on('ready', async () => {
 
   // Setup IPC handlers first
   setupLLMHandlers();
+  console.log('[userData]', app.getPath('userData'));
 
   const allModelsReady = isLLMModelDownloaded() &&
                          isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&

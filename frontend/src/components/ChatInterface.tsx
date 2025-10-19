@@ -8,6 +8,7 @@ import { ModelDownloadDialog } from './ModelDownloadDialog';
 import VideoModelDownloadDialog from './VideoModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
+import { useRecorderWithEmbed } from '@/recording/provider';
 
 export interface Message {
   id: string;
@@ -30,6 +31,8 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
+  const { stopAndEmbed } = useRecorderWithEmbed();
+  const [isEmbedding, setIsEmbedding] = useState(false);
   const [videoReady, setVideoReady] = useState<boolean | null>(null);
   const [videoOpen, setVideoOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -165,6 +168,25 @@ useEffect(() => {
           : session
       )
     );
+
+  async function handleStopRecording() {
+    try {
+      setIsEmbedding(true);
+
+      const { recording, embedding } = await stopAndEmbed();
+
+      // TODO: send to backend
+      console.log('[recording]', recording);
+      console.log('[embedding] pooled=', embedding.pooled.length, 'frames=', embedding.frames.length);
+
+    } catch (e) {
+      console.error('[recording] stop+embed failed:', e);
+      // TODO: Toast/error UI notification
+    } finally {
+      setIsEmbedding(false);
+    }
+  }
+
 
     setIsLoading(true);
 

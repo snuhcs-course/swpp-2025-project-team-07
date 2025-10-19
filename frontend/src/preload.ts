@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('vembedAPI', {
   onDownloadError: (cb: (msg: string) => void) => {
     ipcRenderer.on('video-model:error', (_e, msg) => cb(msg));
   },
+  getModelBytes: (): Promise<ArrayBuffer> => ipcRenderer.invoke('video-model:get-bytes'),
 });
 
 // Expose LLM API to renderer process

@@ -1,7 +1,79 @@
 export type SampledFrame = {
-  time: number;                // timestamp - seconds
-  imageData: ImageData;        // 224x224
+  time: number;                                      // timestamp - seconds
+  image: ImageData | ImageBitmap | HTMLCanvasElement; // 임베더가 소비하는 표준 키
+  imageData?: ImageData;                              // (optional) 기존 코드 호환
 };
+
+// wait until video metadata is loaded
+async function waitForMetadata(video: HTMLVideoElement): Promise<void> {
+  if (video.readyState >= 1) return;
+  await new Promise<void>((res, rej) => {
+    const onMeta = () => { cleanup(); res(); };
+    const onErr = () => { cleanup(); rej(new Error('metadata error')); };
+    const cleanup = () => {
+      video.removeEventListener('loadedmetadata', onMeta);
+      video.removeEventListener('error', onErr);
+    };
+    video.addEventListener('loadedmetadata', onMeta, { once: true });
+    video.addEventListener('error', onErr, { once: true });
+  });
+}
+
+// To solve duration being NaN or Infinity
+async function ensureFiniteDuration(video: HTMLVideoElement): Promise<number> {
+  await waitForMetadata(video);
+
+  if (!Number.isFinite(video.duration) || video.duration <= 0) {
+    await new Promise<void>((res) => {
+      const onTU = () => {
+        if (Number.isFinite(video.duration) && video.duration > 0) {
+          video.removeEventListener('timeupdate', onTU);
+          res();
+        }
+      };
+      video.addEventListener('timeupdate', onTU);
+      try { video.currentTime = 1e101; } catch { /* noop */ }
+    });
+  }
+
+  let d = video.duration;
+  if (!Number.isFinite(d) || d <= 0) d = 0.001;
+
+  try { video.currentTime = 0; } catch {}
+  return d;
+}
+
+function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onSeeked = () => { cleanup(); resolve(); };
+    const onErr = () => { cleanup(); reject(new Error('seek failed')); };
+    const cleanup = () => {
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('error', onErr);
+    };
+    video.addEventListener('seeked', onSeeked, { once: true });
+    video.addEventListener('error', onErr, { once: true });
+
+    try {
+      video.currentTime = Number.isFinite(t) ? t : 0;
+    } catch (e) {
+      cleanup();
+      reject(e);
+    }
+  });
+}
+
+export async function sampleUniformFrames(
+  blob: Blob,
+  count: number,
+  opts?: { size?: number } 
+): Promise<SampledFrame[]> {
+  const target = Math.max(1, Math.floor(opts?.size ?? 224));
+  const { frames } = await VideoFrameSampler.uniformSample(blob, Math.max(1, count), target);
+  return frames;
+}
+
+
 
 export class VideoFrameSampler {
   static async uniformSample(
@@ -20,7 +92,7 @@ export class VideoFrameSampler {
         video.onerror = () => reject(new Error('Failed to load video metadata'));
       });
 
-      const duration = video.duration; // 초
+      const duration = await ensureFiniteDuration(video);
       const width = video.videoWidth;
       const height = video.videoHeight;
 
@@ -33,40 +105,22 @@ export class VideoFrameSampler {
       const frames: SampledFrame[] = [];
       const K = Math.max(1, frameCount);
       // uniform sampling timestamps
-      const times = Array.from({ length: K }, (_, i) => ( (i + 0.5) * duration / K ));
-
+      const eps = 1e-3;
+      const times = Array.from({ length: K }, (_, i) => {
+        const mid = ((i + 0.5) * duration) / K; 
+        return Math.max(0, Math.min(duration - eps, mid)); 
+      });
       for (const t of times) {
-        await seek(video, Math.min(t, Math.max(0, duration - 0.001)));
+        await seekTo(video, t);
         drawCenterCrop(ctx, video, targetSize, targetSize);
         const imageData = ctx.getImageData(0, 0, targetSize, targetSize);
-        frames.push({ time: t, imageData });
+        frames.push({ time: t, image: imageData, imageData });
       }
 
       return { frames, duration, width, height };
     } finally {
       URL.revokeObjectURL(url);
     }
-
-    function seek(videoEl: HTMLVideoElement, time: number) {
-      return new Promise<void>((resolve, reject) => {
-        const onSeeked = () => {
-          cleanup();
-          resolve();
-        };
-        const onError = () => {
-          cleanup();
-          reject(new Error('Seek failed'));
-        };
-        const cleanup = () => {
-          videoEl.removeEventListener('seeked', onSeeked);
-          videoEl.removeEventListener('error', onError);
-        };
-        videoEl.addEventListener('seeked', onSeeked);
-        videoEl.addEventListener('error', onError);
-        videoEl.currentTime = time;
-      });
-    }
-
     function drawCenterCrop(
       ctx: CanvasRenderingContext2D,
       source: HTMLVideoElement,
