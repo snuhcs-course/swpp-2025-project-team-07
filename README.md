@@ -179,7 +179,7 @@ Visit the [Swagger Documentation](http://43.202.157.112:8000/swagger/) for inter
 
 ## Demo Videos
 ### Iteration 2
-[Iteration 2 Demo Video](./iteration2_demo.mov)
+[Iteration 2 Demo Video](./iteration2_demo.mp4)
 
 The demo video showcases the following features added in iteration 2:
 1. Download LLM Model
@@ -190,7 +190,7 @@ The demo video showcases the following features added in iteration 2:
 
 
 ### Iteration 1
-[Iteration 1 Demo Video](./iteration1_demo.mov)
+[Iteration 1 Demo Video](./iteration1_demo.mp4)
 
 The demo video showcases the following features added in iteration 1:
 1. Application startup
