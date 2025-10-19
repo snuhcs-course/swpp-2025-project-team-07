@@ -1,26 +1,149 @@
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { LLMManager } from './llm/manager';
-import { downloadModel, isModelDownloaded, getModelPath } from './llm/downloader';
+import { downloadFile } from './utils/downloader';
+import { EmbeddingManager } from './llm/embedding';
 
 let selectedSourceId: string | null = null;
-
-function installDisplayMediaHook() {
-  session.defaultSession.setDisplayMediaRequestHandler(async (_req, callback) => {
-    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
-    const chosen = sources.find(s => s.id === selectedSourceId) ?? sources[0];
-    callback({ video: chosen });
-  });
-}
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
+const LLM_MODEL_INFO = {
+  fileName: 'gemma-3-12b-it-Q4_0.gguf',
+  directory: 'models',
+  expectedSize: 6_909_282_656,
+  url: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf'
+};
+
+const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
+
+const CHAT_QUERY_ENCODER_FILES = [
+  {
+    fileName: 'model_quantized.onnx',
+    relativePath: 'onnx/model_quantized.onnx',
+    expectedSize: 435_760_128, // 425,547KB = ~416MB
+    url: `${S3_BASE_URL}/chat-query-encoder/onnx/model_quantized.onnx`
+  },
+  {
+    fileName: 'config.json',
+    relativePath: 'config.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-query-encoder/config.json`
+  },
+  {
+    fileName: 'special_tokens_map.json',
+    relativePath: 'special_tokens_map.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-query-encoder/special_tokens_map.json`
+  },
+  {
+    fileName: 'tokenizer_config.json',
+    relativePath: 'tokenizer_config.json',
+    expectedSize: 2_048, // 2KB
+    url: `${S3_BASE_URL}/chat-query-encoder/tokenizer_config.json`
+  },
+  {
+    fileName: 'tokenizer.json',
+    relativePath: 'tokenizer.json',
+    expectedSize: 711_680, // 695KB
+    url: `${S3_BASE_URL}/chat-query-encoder/tokenizer.json`
+  },
+  {
+    fileName: 'vocab.txt',
+    relativePath: 'vocab.txt',
+    expectedSize: 232_448, // 227KB
+    url: `${S3_BASE_URL}/chat-query-encoder/vocab.txt`
+  }
+];
+
+const CHAT_QUERY_ENCODER_INFO = {
+  directory: 'embeddings/chat-query-encoder',
+  files: CHAT_QUERY_ENCODER_FILES
+};
+
+const CHAT_KEY_ENCODER_FILES = [
+  {
+    fileName: 'model_quantized.onnx',
+    relativePath: 'onnx/model_quantized.onnx',
+    expectedSize: 435_760_128, // 425,547KB = ~416MB
+    url: `${S3_BASE_URL}/chat-key-encoder/onnx/model_quantized.onnx`
+  },
+  {
+    fileName: 'config.json',
+    relativePath: 'config.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-key-encoder/config.json`
+  },
+  {
+    fileName: 'special_tokens_map.json',
+    relativePath: 'special_tokens_map.json',
+    expectedSize: 1_024, // 1KB
+    url: `${S3_BASE_URL}/chat-key-encoder/special_tokens_map.json`
+  },
+  {
+    fileName: 'tokenizer_config.json',
+    relativePath: 'tokenizer_config.json',
+    expectedSize: 2_048, // 2KB
+    url: `${S3_BASE_URL}/chat-key-encoder/tokenizer_config.json`
+  },
+  {
+    fileName: 'tokenizer.json',
+    relativePath: 'tokenizer.json',
+    expectedSize: 711_680, // 695KB
+    url: `${S3_BASE_URL}/chat-key-encoder/tokenizer.json`
+  },
+  {
+    fileName: 'vocab.txt',
+    relativePath: 'vocab.txt',
+    expectedSize: 232_448, // 227KB
+    url: `${S3_BASE_URL}/chat-key-encoder/vocab.txt`
+  }
+];
+
+const CHAT_KEY_ENCODER_INFO = {
+  directory: 'embeddings/chat-key-encoder',
+  files: CHAT_KEY_ENCODER_FILES
+};
+
+function getLLMModelPath(): string {
+  const devModelPath = path.join(process.cwd(), LLM_MODEL_INFO.directory, LLM_MODEL_INFO.fileName);
+  if (existsSync(devModelPath)) {
+    return devModelPath;
+  }
+  return path.join(
+    app.getPath('userData'),
+    LLM_MODEL_INFO.directory,
+    LLM_MODEL_INFO.fileName
+  );
+}
+
+function isLLMModelDownloaded(): boolean {
+  return existsSync(getLLMModelPath());
+}
+
+function isEmbeddingModelDownloaded(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): boolean {
+  return modelInfo.files.every(file => {
+    const filePath = path.join(app.getPath('userData'), modelInfo.directory, file.relativePath);
+    return existsSync(filePath);
+  });
+}
+
+function getEmbeddingModelPath(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): string {
+  const devPath = path.join(process.cwd(), modelInfo.directory);
+  if (existsSync(path.join(devPath, 'onnx/model_quantized.onnx'))) {
+    return devPath;
+  }
+  return path.join(app.getPath('userData'), modelInfo.directory);
+}
+
 let llmManager: LLMManager | null = null;
+let embeddingManager: EmbeddingManager | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 const createWindow = () => {
@@ -70,20 +193,32 @@ async function initializeLLM() {
   }
 
   try {
-    const modelPath = getModelPath();
-    console.log('Initializing LLM with model:', modelPath);
+    const llmPath = getLLMModelPath();
+    const chatQueryEncoderPath = getEmbeddingModelPath(CHAT_QUERY_ENCODER_INFO);
+    const chatKeyEncoderPath = getEmbeddingModelPath(CHAT_KEY_ENCODER_INFO);
 
+    console.log('Initializing LLM with model:', llmPath);
+    
+    // Initialize LLM
     llmManager = new LLMManager({
-      modelPath: modelPath,
+      modelPath: llmPath,
       onProgress: (progress) => {
         if (mainWindow) {
           mainWindow.webContents.send('llm:loading-progress', progress);
         }
       }
     });
-
     await llmManager.initialize();
-    console.log('LLM initialized successfully');
+    
+    // Initialize Embedding Manager separately
+    console.log('Initializing Embedding Manager...');
+    embeddingManager = new EmbeddingManager({
+      chatQueryEncoderPath: chatQueryEncoderPath,
+      chatKeyEncoderPath: chatKeyEncoderPath,
+    });
+    await embeddingManager.initialize();
+    
+    console.log('LLM and Embedding initialized successfully');
 
     if (mainWindow) {
       mainWindow.webContents.send('llm:ready');
@@ -98,6 +233,36 @@ async function initializeLLM() {
     }
     throw error;
   }
+}
+
+// set to full screen recording
+async function registerDisplayMediaHandler() {
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    let called = false;
+    const safeCallback = (arg?: any) => {
+      if (called) return;
+      called = true;
+      callback(arg);
+    };
+
+    desktopCapturer.getSources({types: ['screen'], thumbnailSize: { width: 0, height: 0 },}).then((sources) => { if (!sources.length) {
+        console.error('[displayMedia] no screen sources');
+        return safeCallback();
+      }
+
+      const primaryId = String(screen.getPrimaryDisplay().id);
+  
+      const byDisplayId = sources.find(s => s.display_id === primaryId);
+      const byName = sources.find(s => /Entire Screen|Screen \d+/i.test(s.name));
+      const pick = byDisplayId ?? byName ?? sources[0];
+
+      safeCallback({ video: pick });
+    })
+    .catch((e) => {
+      console.error('[displayMedia] handler error:', e);
+      safeCallback();
+    });
+  });
 }
 
 // Setup IPC Handlers
@@ -157,18 +322,94 @@ function setupLLMHandlers() {
     if (!mainWindow) throw new Error('No window found');
 
     try {
-      const modelPath = await downloadModel(mainWindow, {
-        modelName: 'Gemma-3-12B-IT',
-        modelUrl: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf',
-        modelFileName: 'gemma-3-12b-it-Q4_0.gguf'
-      });
+      const downloadTasks = [];
 
-      // Initialize LLM after download
+      if (!isLLMModelDownloaded()) {
+        downloadTasks.push({
+          type: 'llm',
+          name: 'Gemma-3-12B-IT (LLM)',
+          files: [{
+            fileName: LLM_MODEL_INFO.fileName,
+            relativePath: LLM_MODEL_INFO.fileName,
+            directory: LLM_MODEL_INFO.directory,
+            url: LLM_MODEL_INFO.url,
+            expectedSize: LLM_MODEL_INFO.expectedSize
+          }]
+        });
+      }
+
+      if (!isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO)) {
+        downloadTasks.push({
+          type: 'chat-query-encoder',
+          name: 'DRAGON Query Encoder',
+          files: CHAT_QUERY_ENCODER_INFO.files.map(f => ({
+            ...f,
+            directory: CHAT_QUERY_ENCODER_INFO.directory
+          }))
+        });
+      }
+
+      if (!isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO)) {
+        downloadTasks.push({
+          type: 'chat-key-encoder',
+          name: 'DRAGON Context Encoder',
+          files: CHAT_KEY_ENCODER_INFO.files.map(f => ({
+            ...f,
+            directory: CHAT_KEY_ENCODER_INFO.directory
+          }))
+        });
+      }
+
+      if (downloadTasks.length === 0) {
+        console.log('All models already downloaded');
+        await initializeLLM();
+        mainWindow.webContents.send('model:download-complete');
+        return { success: true };
+      }
+
+      console.log(`Need to download ${downloadTasks.length} model(s)`);
+
+      for (const task of downloadTasks) {
+        console.log(`\n=== Downloading ${task.name} ===`);
+        
+        for (const file of task.files) {
+          console.log(`  Downloading: ${file.relativePath}`);
+          
+          try {
+            const targetPath = path.join(file.directory, file.relativePath);
+            const targetDir = path.dirname(targetPath);
+            
+            await downloadFile(mainWindow, {
+              downloadUrl: file.url,
+              targetFileName: file.fileName,
+              targetDirectory: targetDir,
+              expectedSize: file.expectedSize,
+              modelName: `${task.name} - ${file.fileName}`
+            });
+            
+            console.log(`  ✓ ${file.relativePath} downloaded`);
+            
+          } catch (downloadError: any) {
+            console.error(`  ✗ Failed to download ${file.relativePath}:`, downloadError.message);
+            throw new Error(`Failed to download ${task.name} (${file.relativePath}): ${downloadError.message}`);
+          }
+        }
+        
+        console.log(`✓ ${task.name} complete\n`);
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.log('=== All models downloaded successfully ===\n');
+
       await initializeLLM();
 
       mainWindow.webContents.send('model:download-complete');
-      return { success: true, path: modelPath };
+      return { success: true };
+
     } catch (error: any) {
+      console.error('\n=== Download failed ===');
+      console.error(error);
       mainWindow.webContents.send('model:download-error', error.message);
       return { success: false, error: error.message };
     }
@@ -176,37 +417,72 @@ function setupLLMHandlers() {
 
   // Check if model is downloaded
   ipcMain.handle('model:check-downloaded', async () => {
+    const llmDownloaded = isLLMModelDownloaded();
+    const chatQueryEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO);
+    const chatKeyEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
+
     return {
-      downloaded: isModelDownloaded(),
-      initialized: llmManager !== null,
-      path: getModelPath()
+      models: {
+        llm: { 
+          name: 'Gemma-3-12B-IT (LLM)',
+          downloaded: llmDownloaded 
+        },
+        queryEncoder: {
+          name: 'DRAGON Query Encoder',
+          downloaded: chatQueryEncoderDownloaded
+        },
+        contextEncoder: {
+          name: 'DRAGON Context Encoder',
+          downloaded: chatKeyEncoderDownloaded
+        }
+      },
+      downloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded,
+      initialized: llmManager !== null
     };
   });
 
-  console.log('LLM IPC handlers registered');
+  // Embedding handlers
+  ipcMain.handle('embedding:query', async (_event, text: string) => {
+    if (!embeddingManager) throw new Error('Embedding manager not initialized');
+    return await embeddingManager.embedQuery(text);
+  });
+
+  ipcMain.handle('embedding:context', async (_event, text: string) => {
+    if (!embeddingManager) throw new Error('Embedding manager not initialized');
+    return await embeddingManager.embedContext(text);
+  });
+
+  ipcMain.handle('embedding:is-ready', async () => {
+    return embeddingManager?.isReady() ?? false;
+  });
+
+  console.log('LLM and Embedding IPC handlers registered');
 }
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  installDisplayMediaHook();
+  await registerDisplayMediaHandler();
   createWindow();
 
   // Setup IPC handlers first
   setupLLMHandlers();
 
-  // Check if model exists and initialize
-  if (isModelDownloaded()) {
-    console.log('Model found, initializing LLM...');
+  const allModelsReady = isLLMModelDownloaded() &&
+                         isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
+                         isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
+
+  if (allModelsReady) {
+    console.log('All models found, initializing LLM...');
     try {
       await initializeLLM();
     } catch (error) {
       console.error('LLM initialization failed:', error);
-      // App will still run, but LLM features won't work until model is downloaded
+      // App will still run, but LLM features won't work
     }
   } else {
-    console.log('Model not found. User will need to download it.');
+    console.log('One or more models not found. User will need to download them.');
     // Notify the renderer that model needs to be downloaded
     if (mainWindow) {
       mainWindow.webContents.send('llm:model-not-found');
@@ -219,6 +495,11 @@ app.on('before-quit', async () => {
   if (llmManager) {
     console.log('Cleaning up LLM Manager...');
     await llmManager.cleanup();
+  }
+  
+  if (embeddingManager) {
+    console.log('Cleaning up Embedding Manager...');
+    await embeddingManager.cleanup();
   }
 });
 

@@ -28,6 +28,7 @@ export interface LLMChatOptions {
 }
 
 export interface ModelDownloadProgress {
+  modelName: string;
   percent: number;
   transferred: number;
   total: number;
@@ -37,6 +38,12 @@ export interface ModelStatus {
   downloaded: boolean;
   initialized: boolean;
   path: string;
+}
+
+export interface EmbeddingAPI {
+  embedQuery: (text: string) => Promise<number[]>;
+  embedContext: (text: string) => Promise<number[]>;
+  isReady: () => Promise<boolean>;
 }
 
 declare global {
@@ -72,6 +79,7 @@ declare global {
       onLLMReady: (callback: () => void) => void;
       onLLMError: (callback: (error: {message: string; error: string}) => void) => void;
     };
+    embeddingAPI: EmbeddingAPI;
   }
 }
 

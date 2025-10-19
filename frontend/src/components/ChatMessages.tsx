@@ -1,14 +1,52 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { ScrollArea } from './ui/scroll-area';
 import { Message } from './ChatInterface';
 import { type AuthUser } from '@/services/auth';
 import { getUserInitials } from '@/utils/user';
+import { MarkdownMessage } from './MarkdownMessage';
 
 interface ChatMessagesProps {
   user: AuthUser | null;
   messages: Message[];
+}
+
+function UserMessageBubble({ content, className }: { content: string; className?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isMultiline, setIsMultiline] = useState(false);
+
+  useEffect(() => {
+    const checkMultiline = () => {
+      if (containerRef.current) {
+        const textElement = containerRef.current.querySelector('p');
+        if (textElement) {
+          // Check if the content height is greater than a single line height
+          const lineHeight = parseFloat(window.getComputedStyle(textElement).lineHeight);
+          const contentHeight = textElement.scrollHeight;
+          setIsMultiline(contentHeight > lineHeight * 1.5);
+        }
+      }
+    };
+
+    // Re-check on window resize
+    window.addEventListener('resize', checkMultiline);
+    return () => {
+      window.removeEventListener('resize', checkMultiline);
+    };
+  }, [content]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative px-4 rounded-[18px] rounded-se-lg bg-muted/70 border border-border ${
+        isMultiline ? 'py-3' : 'py-1.5'
+      } ${className || ''}`}
+    >
+      <p className="whitespace-pre-wrap break-words leading-relaxed text-primary">
+        {content}
+      </p>
+    </div>
+  );
 }
 
 export function ChatMessages({ user, messages }: ChatMessagesProps) {
@@ -19,10 +57,6 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
 
   if (messages.length === 0) {
     return (
@@ -60,52 +94,26 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
               message.isUser ? 'flex-row-reverse space-x-reverse' : ''
             }`}
           >
-            {/* Avatar */}
-            <div className="flex-shrink-0">
+            {/* Message content */}
+            <div className={`flex-1 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
               {message.isUser ? (
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src="" alt="User" />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                    {userInitials}
-                  </AvatarFallback>
-                </Avatar>
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
+                >
+                  <UserMessageBubble content={message.content} />
+                </motion.div>
               ) : (
-                <div className="w-8 h-8 bg-gradient-to-br from-primary/30 to-primary/20 rounded-full flex items-center justify-center shadow-sm">
-                  <span className="text-xs font-medium text-primary">AI</span>
-                </div>
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
+                  className="py-2"
+                >
+                  <MarkdownMessage content={message.content} />
+                </motion.div>
               )}
-            </div>
-
-            {/* Message bubble */}
-            <div className={`flex-1 max-w-[75%] ${message.isUser ? 'flex justify-end' : ''}`}>
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
-                className={`relative px-5 py-4 rounded-3xl shadow-lg backdrop-blur-xl bg-card border border-border ${
-                  message.isUser
-                    ? 'ml-12'
-                    : 'mr-12'
-                }`}
-              >
-                <p className="whitespace-pre-wrap break-words leading-relaxed text-primary">
-                  {message.content}
-                </p>
-                
-                {/* Message timestamp */}
-                <div className={`text-xs mt-3 text-muted-foreground/70`}>
-                  {formatTime(message.timestamp)}
-                </div>
-
-                {/* Message tail */}
-                <div
-                  className={`absolute top-5 w-3 h-3 rotate-45 ${
-                    message.isUser
-                      ? 'bg-gradient-to-br from-primary to-primary/90 -right-1.5'
-                      : 'bg-card border-l border-b border-border -left-1.5'
-                  }`}
-                />
-              </motion.div>
             </div>
           </motion.div>
         ))}

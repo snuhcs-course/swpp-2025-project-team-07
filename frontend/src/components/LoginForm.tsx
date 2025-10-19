@@ -42,7 +42,7 @@ export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword, onAuthSu
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
     
     setIsLoading(true);
