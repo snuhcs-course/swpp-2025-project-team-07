@@ -239,6 +239,60 @@ class VectorDBClient:
 
         return True, results, None
 
+    def create_collections_parallel(
+        self,
+        user_id: int,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Create both chat and screen collections for a user in parallel.
+
+        Args:
+            user_id: User ID for collection naming
+
+        Returns:
+            (success, error_message)
+        """
+        futures: Dict[str, Future] = {}
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Create chat collection (768-dim, IP metric)
+            chat_collection = self._get_collection_name(user_id, 'chat')
+            chat_payload = {
+                'collection_name': chat_collection,
+                'dimension': 768,
+                'metric_type': 'IP',
+                'id_type': 'string',
+            }
+            futures['chat'] = executor.submit(
+                self._make_request,
+                self.chat_url,
+                'create_collection',
+                chat_payload,
+            )
+
+            # Create screen collection (512-dim, COSINE metric)
+            screen_collection = self._get_collection_name(user_id, 'screen')
+            screen_payload = {
+                'collection_name': screen_collection,
+                'dimension': 512,
+                'metric_type': 'COSINE',
+                'id_type': 'string',
+            }
+            futures['screen'] = executor.submit(
+                self._make_request,
+                self.screen_url,
+                'create_collection',
+                screen_payload,
+            )
+
+        # Collect results
+        for db_type, future in futures.items():
+            success, data, error = future.result()
+            if not success:
+                return False, f"{db_type} collection creation failed: {error}"
+
+        return True, None
+
 
 # Singleton instance
 vectordb_client = VectorDBClient()
