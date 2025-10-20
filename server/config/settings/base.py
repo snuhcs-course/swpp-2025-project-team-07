@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'storages',
     'user',
+    'collection',
 ]
 
 MIDDLEWARE = [
@@ -174,3 +175,7 @@ SWAGGER_SETTINGS = {
         }
     }
 }
+
+# VectorDB settings
+VECTORDB_CHAT_HOST = os.getenv('VECTORDB_CHAT_HOST', 'http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000')
+VECTORDB_SCREEN_HOST = os.getenv('VECTORDB_SCREEN_HOST', 'http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001')
