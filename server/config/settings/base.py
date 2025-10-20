@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'storages',
     'user',
+    'collection',
 ]
 
 MIDDLEWARE = [
