@@ -36,7 +36,7 @@ _scores_2d_array = openapi.Schema(
 
 @swagger_auto_schema(
     method='post',
-    operation_description="Store HE-encrypted vectors and AES-encrypted values. Called every 5 seconds during screen recording or after chat messages.",
+    operation_description="Insert data into collection in vectordb.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -57,7 +57,7 @@ _scores_2d_array = openapi.Schema(
     security=[{'Bearer': []}]
 )
 @api_view(['POST'])
-def store_keys(request):
+def insert_to_collection(request):
     """Store encrypted vectors and values to chat and/or screen vectordb."""
     # Verify user is authenticated
     if not request.user.is_authenticated:
