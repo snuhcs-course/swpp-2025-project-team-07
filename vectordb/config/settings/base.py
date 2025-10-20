@@ -15,7 +15,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Base definition of settings.py, to be extended with environment-specific values for
-# DEBUG, ALLOWED_HOSTS, DATABASES
+# DEBUG, ALLOWED_HOSTS
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": "djangodb",
+    }
+}
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -39,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'django.contrib.staticfiles',
     'rest_framework',
     'drf_yasg',
     'corsheaders',
@@ -88,6 +96,11 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Static files (For Swagger)
+# https://docs.djangoproject.com/en/5.2/howto/static-files/
+# Default STATIC_ROOT required by django.contrib.staticfiles
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_URL = '/static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

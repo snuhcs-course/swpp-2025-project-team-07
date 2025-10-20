@@ -7,8 +7,50 @@ DEBUG = False
 ALLOWED_HOSTS = [
     '43.202.157.112',
     'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
+    '3.38.207.251',
+    'ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com'
 ]
 
+# django-storages configuration for S3
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION', 'ap-northeast-2')
+
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "location": "media",
+            "access_key": AWS_ACCESS_KEY_ID,
+            "secret_key": AWS_SECRET_ACCESS_KEY,
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "region_name": AWS_S3_REGION_NAME,
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": False,
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "location": "static",
+            "access_key": AWS_ACCESS_KEY_ID,
+            "secret_key": AWS_SECRET_ACCESS_KEY,
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "region_name": AWS_S3_REGION_NAME,
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": False,
+        },
+    },
+}
+
+# Static and Media URLs
+AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
+
+STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
+MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
