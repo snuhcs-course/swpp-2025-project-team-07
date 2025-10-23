@@ -27,7 +27,7 @@ FROM mambaorg/micromamba:1.5.8
 
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
-ENV PORT 8000
+ENV PORT 8002
 ENV MAMBA_DOCKERFILE_ACTIVATE 1
 
 WORKDIR /usr/src/app
@@ -42,7 +42,7 @@ COPY . .
 STOPSIGNAL SIGTERM
 
 # Expose the server port
-EXPOSE 8000
+EXPOSE 8002
 
 # Startup script: run the EVD server with positional $PORT
 RUN echo '#!/bin/bash\n\

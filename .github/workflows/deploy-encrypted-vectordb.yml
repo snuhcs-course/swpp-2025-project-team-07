@@ -58,7 +58,7 @@ jobs:
             docker run -d \
               --name swpp-encrypted-vectordb \
               --restart unless-stopped \
-              -p 8000:8000 \
+              -p 8002:8002 \
               ${{ steps.login-ecr.outputs.registry }}/swpp-encrypted-vectordb:latest
 
             # Clean up old images
