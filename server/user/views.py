@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .serializers import UserSignupSerializer, UserLoginSerializer, UserSerializer
+from collection.vectordb_client import vectordb_client
 
 
 @swagger_auto_schema(
@@ -34,6 +35,16 @@ def signup(request):
     serializer = UserSignupSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
+
+        # Create collections for the new user
+        success, error = vectordb_client.create_collections_parallel(user_id=user.id)
+        if not success:
+            # Log error but don't fail signup - user can still use the system
+            # Collections can be created later if needed
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create collections for user {user.id}: {error}")
+
         refresh = RefreshToken.for_user(user)
         return Response({
             'message': 'User created successfully',
