@@ -15,10 +15,10 @@ if (started) {
 }
 
 const LLM_MODEL_INFO = {
-  fileName: 'gemma-3-12b-it-Q4_0.gguf',
+  fileName: 'gemma-3n-E4B-it-Q8_0.gguf',
   directory: 'models',
-  expectedSize: 6_909_282_656,
-  url: 'https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_0.gguf'
+  expectedSize: 7_353_292_928,
+  url: 'https://huggingface.co/unsloth/gemma-3n-E4B-it-GGUF/resolve/main/gemma-3n-E4B-it-Q8_0.gguf'
 };
 
 const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
@@ -327,7 +327,7 @@ function setupLLMHandlers() {
       if (!isLLMModelDownloaded()) {
         downloadTasks.push({
           type: 'llm',
-          name: 'Gemma-3-12B-IT (LLM)',
+          name: 'Gemma-3n-E4B-IT (LLM)',
           files: [{
             fileName: LLM_MODEL_INFO.fileName,
             relativePath: LLM_MODEL_INFO.fileName,
@@ -423,9 +423,9 @@ function setupLLMHandlers() {
 
     return {
       models: {
-        llm: { 
-          name: 'Gemma-3-12B-IT (LLM)',
-          downloaded: llmDownloaded 
+        llm: {
+          name: 'Gemma-3n-E4B-IT (LLM)',
+          downloaded: llmDownloaded
         },
         queryEncoder: {
           name: 'DRAGON Query Encoder',
