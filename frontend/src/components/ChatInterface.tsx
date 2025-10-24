@@ -317,6 +317,31 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         backendAssistantMsg,
       ]).catch(err => console.error('Memory tracking failed:', err));
 
+      // Auto-generate title after first user-assistant interaction
+      // Check if this was the first message (session had no messages before this exchange)
+      if (session.messages.length === 0 && session.title === 'New Conversation') {
+        try {
+          console.log('Generating title for first conversation...');
+          const generatedTitle = await llmService.generateTitle(content, fullResponse);
+          console.log('Generated title:', generatedTitle);
+
+          // Update title in backend
+          await chatService.updateSession(sessionIdNum, generatedTitle);
+
+          // Update title in local state
+          setSessions(prevSessions =>
+            prevSessions.map(s =>
+              s.id === session.id
+                ? { ...s, title: generatedTitle }
+                : s
+            )
+          );
+        } catch (error) {
+          console.error('Failed to generate/update title:', error);
+          // Don't throw - title generation is not critical
+        }
+      }
+
     } catch (error: any) {
       console.error('Failed to send message:', error);
 
