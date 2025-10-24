@@ -7,7 +7,11 @@ import { ChatInput } from './ChatInput';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
+import { chatService } from '@/services/chat';
+import { memoryService } from '@/services/memory';
+import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 
+// Local UI types
 export interface Message {
   id: string;
   content: string;
@@ -28,67 +32,117 @@ interface ChatInterfaceProps {
   onSignOut?: () => void;
 }
 
+/**
+ * Convert backend ChatMessage to local Message type.
+ */
+function toLocalMessage(msg: BackendChatMessage): Message {
+  return {
+    id: msg.id.toString(),
+    content: msg.content,
+    isUser: msg.role === 'user',
+    timestamp: new Date(msg.timestamp),
+  };
+}
+
+/**
+ * Convert backend ChatSession to local ChatSession type.
+ */
+function toLocalSession(session: BackendChatSession): ChatSession {
+  const messages = session.messages?.map(toLocalMessage) || [];
+  const lastMessage = messages.length > 0
+    ? messages[messages.length - 1].content.substring(0, 100)
+    : '';
+
+  return {
+    id: session.id.toString(),
+    title: session.title,
+    lastMessage,
+    timestamp: session.last_message_timestamp
+      ? new Date(session.last_message_timestamp)
+      : new Date(session.created_at),
+    messages,
+  };
+}
+
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const [isModelReady, setIsModelReady] = useState(false);
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    {
-      id: '1',
-      title: 'Project Planning Assistant',
-      lastMessage: 'How can I help you with your project?',
-      timestamp: new Date(),
-      messages: [
-        {
-          id: '1',
-          content: 'Hello! How can I help you with your project planning today?',
-          isUser: false,
-          timestamp: new Date()
-        }
-      ]
-    },
-    {
-      id: '2',
-      title: 'Code Review Helper',
-      lastMessage: 'Let me review that code for you',
-      timestamp: new Date(Date.now() - 3600000),
-      messages: [
-        {
-          id: '1',
-          content: 'Can you help me review this React component?',
-          isUser: true,
-          timestamp: new Date(Date.now() - 3600000)
-        },
-        {
-          id: '2',
-          content: 'Of course! Please share the code and I\'ll provide a detailed review.',
-          isUser: false,
-          timestamp: new Date(Date.now() - 3500000)
-        }
-      ]
-    }
-  ]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
 
-  const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
+  const currentSession = currentSessionId
+    ? sessions.find(s => s.id === currentSessionId)
+    : undefined;
 
+  // Load sessions from backend on mount
   useEffect(() => {
-    // Check model status on mount
+    const loadSessions = async () => {
+      try {
+        setIsLoadingSessions(true);
+        const backendSessions = await chatService.fetchSessions();
+        const localSessions = backendSessions.map(toLocalSession);
+        setSessions(localSessions);
+
+        // Select first session if available
+        if (localSessions.length > 0 && !currentSessionId) {
+          setCurrentSessionId(localSessions[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load sessions:', error);
+        // Don't auto-create session on error - let user create manually
+        setSessions([]);
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
+
+    loadSessions();
+  }, []);
+
+  // Load messages for current session when clicked
+  useEffect(() => {
+    const loadSessionData = async () => {
+      if (!currentSessionId) return;
+
+      const session = sessions.find(s => s.id === currentSessionId);
+      if (!session || session.messages.length > 0) return; // Already loaded
+
+      try {
+        // Use fetchSession to get session with all messages in one call
+        const backendSession = await chatService.fetchSession(parseInt(currentSessionId));
+        const localSession = toLocalSession(backendSession);
+
+        setSessions(prevSessions =>
+          prevSessions.map(s =>
+            s.id === currentSessionId
+              ? { ...s, messages: localSession.messages, title: localSession.title }
+              : s
+          )
+        );
+      } catch (error) {
+        console.error('Failed to load session:', error);
+      }
+    };
+
+    loadSessionData();
+  }, [currentSessionId]);
+
+  // Check model status on mount
+  useEffect(() => {
     const checkModelStatus = async () => {
       try {
         const status = await window.llmAPI.checkModelDownloaded();
 
         if (!status.downloaded) {
-          // Model not downloaded, show download dialog
           setShowDownloadDialog(true);
           setIsModelReady(false);
         } else if (status.initialized) {
-          // Model is downloaded and initialized
           setIsModelReady(true);
           setShowDownloadDialog(false);
         } else {
-          // Model is downloaded but not yet initialized
           setIsModelReady(false);
         }
       } catch (error) {
@@ -122,55 +176,85 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   }, []);
 
   const handleSendMessage = async (content: string) => {
-    if (!currentSession || isLoading || !isModelReady) return;
+    if (isLoading || !isModelReady) return;
 
-    // Create user message
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content,
-      isUser: true,
-      timestamp: new Date()
-    };
+    // Auto-create session if none exists
+    let session = currentSession;
+    if (!session) {
+      try {
+        // Create new session synchronously
+        const backendSession = await chatService.createSession('New Conversation');
+        const localSession = toLocalSession(backendSession);
+        setSessions([localSession]);
+        setCurrentSessionId(localSession.id);
+        session = localSession;
+      } catch (error) {
+        console.error('Failed to create session:', error);
+        return;
+      }
+    }
 
-    // Add user message to session
-    setSessions(prevSessions =>
-      prevSessions.map(session =>
-        session.id === currentSession.id
-          ? {
-              ...session,
-              messages: [...session.messages, newMessage],
-              lastMessage: content,
-              timestamp: newMessage.timestamp
-            }
-          : session
-      )
-    );
-
+    const sessionIdNum = parseInt(session.id);
     setIsLoading(true);
 
     try {
+      // Send user message to backend (encrypted automatically)
+      const userMsg = await chatService.sendMessage(sessionIdNum, 'user', content);
+      const localUserMsg = toLocalMessage(userMsg);
+
+      // Add user message to UI
+      setSessions(prevSessions =>
+        prevSessions.map(s =>
+          s.id === session.id
+            ? {
+                ...s,
+                messages: [...s.messages, localUserMsg],
+                lastMessage: content.substring(0, 100),
+                timestamp: new Date()
+              }
+            : s
+        )
+      );
+
+      // Track message for memory bundling (uses plaintext before it was encrypted)
+      const backendUserMsg: BackendChatMessage = {
+        ...userMsg,
+        content, // Original plaintext
+      };
+      memoryService.trackMessage(sessionIdNum, [
+        ...session.messages.map(m => ({
+          id: parseInt(m.id),
+          session: sessionIdNum,
+          role: m.isUser ? 'user' as const : 'assistant' as const,
+          content: m.content,
+          timestamp: m.timestamp.getTime(),
+          created_at: m.timestamp.toISOString(),
+        })),
+        backendUserMsg,
+      ]).catch(err => console.error('Memory tracking failed:', err));
+
       // Create AI response message with empty content (will be filled by streaming)
-      const aiMessageId = (Date.now() + 1).toString();
-      const aiMessage: Message = {
+      const aiMessageId = `temp_${Date.now()}`;
+      const tempAiMessage: Message = {
         id: aiMessageId,
         content: '',
         isUser: false,
         timestamp: new Date()
       };
 
-      // Add empty AI message
+      // Add empty AI message to UI
       setSessions(prevSessions =>
-        prevSessions.map(session =>
-          session.id === currentSession.id
+        prevSessions.map(s =>
+          s.id === session.id
             ? {
-                ...session,
-                messages: [...session.messages, aiMessage]
+                ...s,
+                messages: [...s.messages, tempAiMessage]
               }
-            : session
+            : s
         )
       );
 
-      // Stream the response
+      // Stream the LLM response
       let fullResponse = '';
       await llmService.streamMessage(
         content,
@@ -178,11 +262,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           fullResponse += chunk;
           // Update the AI message content with each chunk
           setSessions(prevSessions =>
-            prevSessions.map(session =>
-              session.id === currentSession.id
+            prevSessions.map(s =>
+              s.id === session.id
                 ? {
-                    ...session,
-                    messages: session.messages.map(msg =>
+                    ...s,
+                    messages: s.messages.map(msg =>
                       msg.id === aiMessageId
                         ? { ...msg, content: fullResponse }
                         : msg
@@ -190,7 +274,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                     lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
                     timestamp: new Date()
                   }
-                : session
+                : s
             )
           );
         },
@@ -200,18 +284,54 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         }
       );
 
+      // Send assistant message to backend
+      const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
+      const localAssistantMsg = toLocalMessage(assistantMsg);
+
+      // Replace temp message with real one
+      setSessions(prevSessions =>
+        prevSessions.map(s =>
+          s.id === session.id
+            ? {
+                ...s,
+                messages: s.messages.map(msg =>
+                  msg.id === aiMessageId ? localAssistantMsg : msg
+                )
+              }
+            : s
+        )
+      );
+
+      // Track assistant message for memory
+      const backendAssistantMsg: BackendChatMessage = {
+        ...assistantMsg,
+        content: fullResponse, // Original plaintext
+      };
+      memoryService.trackMessage(sessionIdNum, [
+        ...session.messages.map(m => ({
+          id: parseInt(m.id),
+          session: sessionIdNum,
+          role: m.isUser ? 'user' as const : 'assistant' as const,
+          content: m.content,
+          timestamp: m.timestamp.getTime(),
+          created_at: m.timestamp.toISOString(),
+        })),
+        backendUserMsg,
+        backendAssistantMsg,
+      ]).catch(err => console.error('Memory tracking failed:', err));
+
     } catch (error: any) {
-      console.error('Failed to get LLM response:', error);
+      console.error('Failed to send message:', error);
 
       // Check if it's a "LLM not initialized" error
       const isLLMNotInitialized = error?.message?.includes('LLM not initialized');
 
       // Add error message
       const errorMessage: Message = {
-        id: (Date.now() + 2).toString(),
+        id: `error_${Date.now()}`,
         content: isLLMNotInitialized
           ? 'The AI model is not initialized yet. Please wait for initialization to complete or restart the download.'
-          : 'Sorry, I encountered an error. Please make sure the AI model is loaded and try again.',
+          : `Sorry, I encountered an error: ${error.message}`,
         isUser: false,
         timestamp: new Date()
       };
@@ -223,15 +343,15 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       }
 
       setSessions(prevSessions =>
-        prevSessions.map(session =>
-          session.id === currentSession.id
+        prevSessions.map(s =>
+          s.id === session.id
             ? {
-                ...session,
-                messages: [...session.messages, errorMessage],
+                ...s,
+                messages: [...s.messages, errorMessage],
                 lastMessage: errorMessage.content,
                 timestamp: errorMessage.timestamp
               }
-            : session
+            : s
         )
       );
     } finally {
@@ -240,17 +360,16 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   };
 
   const createNewChat = () => {
-    const newSession: ChatSession = {
-      id: Date.now().toString(),
-      title: 'New Conversation',
-      lastMessage: 'How can I help you today?',
-      timestamp: new Date(),
-      messages: []
-    };
-
-    setSessions(prev => [newSession, ...prev]);
-    setCurrentSessionId(newSession.id);
+    setCurrentSessionId(null);
   };
+
+  if (isLoadingSessions) {
+    return (
+      <div className="h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex items-center justify-center">
+        <div className="text-muted-foreground">Loading conversations...</div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -260,50 +379,50 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       />
 
       <div className="h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse delay-1000" />
-        <div className="absolute top-3/4 left-3/4 w-64 h-64 bg-primary/8 rounded-full blur-2xl animate-pulse delay-500" />
-      </div>
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse delay-1000" />
+          <div className="absolute top-3/4 left-3/4 w-64 h-64 bg-primary/8 rounded-full blur-2xl animate-pulse delay-500" />
+        </div>
 
-      {/* Sidebar */}
-      <motion.div
-        initial={false}
-        animate={{
-          width: isSidebarOpen ? 320 : 0,
-          opacity: isSidebarOpen ? 1 : 0
-        }}
-        transition={{ duration: 0.3, ease: "easeInOut" }}
-        className="relative z-10 flex-shrink-0 overflow-hidden"
-      >
-        <ChatSidebar
-          sessions={sessions}
-          currentSessionId={currentSession?.id}
-          onSelectSession={setCurrentSessionId}
-          onNewChat={createNewChat}
-        />
-      </motion.div>
-
-      {/* Main chat area */}
-      <div className="flex-1 flex flex-col relative z-10">
-        <ChatHeader
-          user={user}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          currentSession={currentSession}
-          onSignOut={onSignOut}
-        />
-
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <ChatMessages user={user} messages={currentSession?.messages || []} />
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            disabled={isLoading || !isModelReady}
+        {/* Sidebar */}
+        <motion.div
+          initial={false}
+          animate={{
+            width: isSidebarOpen ? 320 : 0,
+            opacity: isSidebarOpen ? 1 : 0
+          }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          className="relative z-10 flex-shrink-0 overflow-hidden"
+        >
+          <ChatSidebar
+            sessions={sessions}
+            currentSessionId={currentSession?.id}
+            onSelectSession={setCurrentSessionId}
+            onNewChat={createNewChat}
           />
+        </motion.div>
+
+        {/* Main chat area */}
+        <div className="flex-1 flex flex-col relative z-10">
+          <ChatHeader
+            user={user}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            currentSession={currentSession}
+            onSignOut={onSignOut}
+          />
+
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <ChatMessages user={user} messages={currentSession?.messages || []} />
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              disabled={isLoading || !isModelReady}
+            />
+          </div>
         </div>
       </div>
-    </div>
     </>
   );
 }
