@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Menu, Settings, LogOut, Circle, Square } from "lucide-react";
+import { PanelLeft, Settings, LogOut, Circle, Square } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -97,19 +97,25 @@ export function ChatHeader({
     >
       {/* Left side - Sidebar toggle and current chat info */}
       <div className="flex items-center space-x-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          className="hover:bg-accent transition-all duration-300 rounded-xl"
+        <motion.div
+          animate={{
+            opacity: isSidebarOpen ? 0 : 1,
+            x: isSidebarOpen ? -20 : 0,
+            width: isSidebarOpen ? 0 : 'auto',
+          }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          style={{ overflow: 'hidden' }}
         >
-          <motion.div
-            animate={{ rotate: isSidebarOpen ? 0 : 180 }}
-            transition={{ duration: 0.2 }}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            className="hover:bg-accent transition-all duration-300 rounded-xl"
+            disabled={isSidebarOpen}
           >
-            <Menu className="w-5 h-5" />
-          </motion.div>
-        </Button>
+            <PanelLeft className="w-5 h-5" />
+          </Button>
+        </motion.div>
 
         {currentSession && (
           <motion.div

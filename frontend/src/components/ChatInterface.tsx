@@ -421,6 +421,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             currentSessionId={currentSession?.id}
             onSelectSession={setCurrentSessionId}
             onNewChat={createNewChat}
+            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           />
         </motion.div>
 

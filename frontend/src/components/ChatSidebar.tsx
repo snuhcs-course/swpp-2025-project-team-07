@@ -1,33 +1,41 @@
 import { motion } from 'motion/react';
-import { Plus, MessageSquare, Clock, MoreHorizontal } from 'lucide-react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
-import { Separator } from './ui/separator';
 import { ChatSession } from './ChatInterface';
+import { SquarePen, PanelLeft } from 'lucide-react';
+import logo from '@/assets/logo.png';
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
   currentSessionId?: string;
   onSelectSession: (sessionId: string) => void;
   onNewChat: () => void;
+  onToggleSidebar?: () => void;
 }
 
-export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNewChat }: ChatSidebarProps) {
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const hours = diff / (1000 * 60 * 60);
-    
-    if (hours < 1) return 'Just now';
-    if (hours < 24) return `${Math.floor(hours)}h ago`;
-    if (hours < 48) return 'Yesterday';
-    return date.toLocaleDateString();
-  };
-
+export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNewChat, onToggleSidebar }: ChatSidebarProps) {
   return (
     <div className="w-80 h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b border-border">
+      <div className="p-4 space-y-7">
+        {/* Logo and Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <img src={logo} alt="Logo" className="w-8 h-8 bg-white/90 rounded-full" />
+          </div>
+          {onToggleSidebar && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggleSidebar}
+              className="h-8 w-8 hover:bg-accent"
+            >
+              <PanelLeft className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* New Chat Button */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -37,7 +45,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
             onClick={onNewChat}
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 group shadow-lg hover:shadow-xl"
           >
-            <Plus className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-200" />
+            <SquarePen className="w-4 h-4 mr-2" />
             New Chat
           </Button>
         </motion.div>
@@ -61,27 +69,13 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
                     : 'text-foreground hover:text-foreground'
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-3 flex-1 min-w-0">
-                    <div className={`mt-1 p-1.5 rounded-lg transition-colors duration-300 ${
-                      currentSessionId === session.id 
-                        ? 'bg-primary text-primary-foreground shadow-sm' 
-                        : 'bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground'
-                    }`}>
-                      <MessageSquare className="w-3 h-3" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="truncate text-sm font-medium">{session.title}</h4>
-                      <p className="text-xs text-muted-foreground overflow-ellipsis line-clamp-1 mt-1">
-                        {session.lastMessage}
-                      </p>
-                      <div className="flex items-center mt-2 text-xs text-muted-foreground/70">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {formatTime(session.timestamp)}
-                      </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 w-[200px]">
+                      <h4 className="truncate text-sm font-medium overflow-ellipsis">{session.title}</h4>
                     </div>
                   </div>
-                  <button
+                  {/* <button
                     className={`opacity-0 group-hover:opacity-100 transition-all duration-300 p-1 rounded-lg hover:bg-accent/70 backdrop-blur-sm ${
                       currentSessionId === session.id ? 'opacity-100' : ''
                     }`}
@@ -91,7 +85,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
                     }}
                   >
                     <MoreHorizontal className="w-3 h-3" />
-                  </button>
+                  </button> */}
                 </div>
               </button>
             </motion.div>
