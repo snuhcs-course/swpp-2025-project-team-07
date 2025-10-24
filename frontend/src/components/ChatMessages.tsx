@@ -9,6 +9,7 @@ import { MarkdownMessage } from './MarkdownMessage';
 interface ChatMessagesProps {
   user: AuthUser | null;
   messages: Message[];
+  isLoading?: boolean;
 }
 
 function UserMessageBubble({ content, className }: { content: string; className?: string }) {
@@ -49,7 +50,7 @@ function UserMessageBubble({ content, className }: { content: string; className?
   );
 }
 
-export function ChatMessages({ user, messages }: ChatMessagesProps) {
+export function ChatMessages({ user, messages, isLoading = false }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const userInitials = getUserInitials(user?.username, user?.email);
@@ -57,6 +58,12 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  if (isLoading) {
+    return (
+      null
+    );
+  }
 
   if (messages.length === 0) {
     return (

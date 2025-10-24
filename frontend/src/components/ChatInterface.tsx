@@ -69,6 +69,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const [isModelReady, setIsModelReady] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -105,12 +106,19 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   // Load messages for current session when clicked
   useEffect(() => {
     const loadSessionData = async () => {
-      if (!currentSessionId) return;
+      if (!currentSessionId) {
+        setIsLoadingMessages(false);
+        return;
+      }
 
       const session = sessions.find(s => s.id === currentSessionId);
-      if (!session || session.messages.length > 0) return; // Already loaded
+      if (!session || session.messages.length > 0) {
+        setIsLoadingMessages(false);
+        return; // Already loaded
+      }
 
       try {
+        setIsLoadingMessages(true);
         // Use fetchSession to get session with all messages in one call
         const backendSession = await chatService.fetchSession(parseInt(currentSessionId));
         const localSession = toLocalSession(backendSession);
@@ -124,11 +132,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         );
       } catch (error) {
         console.error('Failed to load session:', error);
+      } finally {
+        setIsLoadingMessages(false);
       }
     };
 
     loadSessionData();
-  }, [currentSessionId]);
+  }, [currentSessionId, sessions]);
 
   // Check model status on mount
   useEffect(() => {
@@ -365,9 +375,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
   if (isLoadingSessions) {
     return (
-      <div className="h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex items-center justify-center">
-        <div className="text-muted-foreground">Loading conversations...</div>
-      </div>
+      null
     );
   }
 
@@ -415,7 +423,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           />
 
           <div className="flex-1 flex flex-col overflow-hidden">
-            <ChatMessages user={user} messages={currentSession?.messages || []} />
+            <ChatMessages
+              user={user}
+              messages={currentSession?.messages || []}
+              isLoading={isLoadingMessages}
+            />
             <ChatInput
               onSendMessage={handleSendMessage}
               disabled={isLoading || !isModelReady}
