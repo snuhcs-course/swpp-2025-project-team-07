@@ -138,7 +138,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     };
 
     loadSessionData();
-  }, [currentSessionId, sessions]);
+  }, [currentSessionId]);
 
   // Check model status on mount
   useEffect(() => {
@@ -195,7 +195,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         // Create new session synchronously
         const backendSession = await chatService.createSession('New Conversation');
         const localSession = toLocalSession(backendSession);
-        setSessions([localSession]);
+        setSessions(prev => [localSession, ...prev]);
         setCurrentSessionId(localSession.id);
         session = localSession;
       } catch (error) {
@@ -215,7 +215,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       // Add user message to UI
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session.id
+          s.id === session!.id
             ? {
                 ...s,
                 messages: [...s.messages, localUserMsg],
@@ -231,8 +231,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         ...userMsg,
         content, // Original plaintext
       };
+      const existingMessages = session!.messages || [];
       memoryService.trackMessage(sessionIdNum, [
-        ...session.messages.map(m => ({
+        ...existingMessages.map(m => ({
           id: parseInt(m.id),
           session: sessionIdNum,
           role: m.isUser ? 'user' as const : 'assistant' as const,
@@ -253,12 +254,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       };
 
       // Add empty AI message to UI
+      const sessionId = session!.id;
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session.id
+          s.id === sessionId
             ? {
                 ...s,
-                messages: [...s.messages, tempAiMessage]
+                messages: [...(s.messages || []), tempAiMessage]
               }
             : s
         )
@@ -273,10 +275,10 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           // Update the AI message content with each chunk
           setSessions(prevSessions =>
             prevSessions.map(s =>
-              s.id === session.id
+              s.id === sessionId
                 ? {
                     ...s,
-                    messages: s.messages.map(msg =>
+                    messages: (s.messages || []).map(msg =>
                       msg.id === aiMessageId
                         ? { ...msg, content: fullResponse }
                         : msg
@@ -294,23 +296,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         }
       );
 
-      // Send assistant message to backend
+      // Send assistant message to backend (just for storage, don't update UI)
       const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
-      const localAssistantMsg = toLocalMessage(assistantMsg);
-
-      // Replace temp message with real one
-      setSessions(prevSessions =>
-        prevSessions.map(s =>
-          s.id === session.id
-            ? {
-                ...s,
-                messages: s.messages.map(msg =>
-                  msg.id === aiMessageId ? localAssistantMsg : msg
-                )
-              }
-            : s
-        )
-      );
 
       // Track assistant message for memory
       const backendAssistantMsg: BackendChatMessage = {
@@ -318,7 +305,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         content: fullResponse, // Original plaintext
       };
       memoryService.trackMessage(sessionIdNum, [
-        ...session.messages.map(m => ({
+        ...existingMessages.map(m => ({
           id: parseInt(m.id),
           session: sessionIdNum,
           role: m.isUser ? 'user' as const : 'assistant' as const,
@@ -354,10 +341,10 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session.id
+          s.id === session!.id
             ? {
                 ...s,
-                messages: [...s.messages, errorMessage],
+                messages: [...(s.messages || []), errorMessage],
                 lastMessage: errorMessage.content,
                 timestamp: errorMessage.timestamp
               }

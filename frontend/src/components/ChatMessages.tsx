@@ -105,7 +105,7 @@ export function ChatMessages({ user, messages, isLoading = false }: ChatMessages
             <div className={`flex-1 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
               {message.isUser ? (
                 <motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
+                  initial={{ scale: 1, opacity: 0.8 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
                 >
@@ -113,7 +113,7 @@ export function ChatMessages({ user, messages, isLoading = false }: ChatMessages
                 </motion.div>
               ) : (
                 <motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
+                  initial={{ scale: 1, opacity: 0.8 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
                   className="py-2"
