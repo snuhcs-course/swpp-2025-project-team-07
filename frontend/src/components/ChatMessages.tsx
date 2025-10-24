@@ -60,9 +60,7 @@ export function ChatMessages({ user, messages, isLoading = false }: ChatMessages
   }, [messages]);
 
   if (isLoading) {
-    return (
-      null
-    );
+    return <div className="flex-1" />;
   }
 
   if (messages.length === 0) {
