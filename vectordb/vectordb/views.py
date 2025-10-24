@@ -15,7 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import numpy as np
 
-from .milvus_vectordb import MilvusVectorDatabase
+from .vectordb.milvus_vectordb import MilvusVectorDB
 
 
 # -----------------------------------------------------------------------------
@@ -32,7 +32,7 @@ load_dotenv(BASE_DIR / '.env')
 # Milvus DB Singleton
 # -----------------------------------------------------------------------------
 _db_lock = threading.Lock()
-_db_instance: Optional[MilvusVectorDatabase] = None
+_db_instance: Optional[MilvusVectorDB] = None
 
 
 def _resolve_uri() -> Optional[str]:
@@ -45,7 +45,7 @@ def _resolve_uri() -> Optional[str]:
     return uri
 
 
-def _ensure_db() -> Union[MilvusVectorDatabase, Response]:
+def _ensure_db() -> Union[MilvusVectorDB, Response]:
     global _db_instance
     if _db_instance is not None:
         return _db_instance
@@ -56,7 +56,7 @@ def _ensure_db() -> Union[MilvusVectorDatabase, Response]:
 
         uri = _resolve_uri()
         try:
-            instance = MilvusVectorDatabase(uri=uri)
+            instance = MilvusVectorDB(uri=uri)
             # Test connection
             _ = instance.get_uri()
             _db_instance = instance

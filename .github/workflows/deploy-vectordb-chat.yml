@@ -1,4 +1,4 @@
-name: Deploy Chat Vector Database to EC2
+name: Deploy Vector Database (Chat) to EC2
 
 on:
   workflow_dispatch:
