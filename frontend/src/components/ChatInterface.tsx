@@ -168,26 +168,7 @@ useEffect(() => {
           : session
       )
     );
-
-  async function handleStopRecording() {
-    try {
-      setIsEmbedding(true);
-
-      const { recording, embedding } = await stopAndEmbed();
-
-      // TODO: send to backend
-      console.log('[recording]', recording);
-      console.log('[embedding] pooled=', embedding.pooled.length, 'frames=', embedding.frames.length);
-
-    } catch (e) {
-      console.error('[recording] stop+embed failed:', e);
-      // TODO: Toast/error UI notification
-    } finally {
-      setIsEmbedding(false);
-    }
-  }
-
-
+    
     setIsLoading(true);
 
     try {
