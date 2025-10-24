@@ -16,17 +16,15 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
   private startedAt = 0;
 
   init() {
-    // 필요 시 권한/프리플라이트 등을 여기서 처리
+    // no-op
   }
 
   async start(opts?: { sourceId?: string; withAudio?: boolean }) {
     this.chunks = [];
     const withAudio = opts?.withAudio ?? false;
 
-    // ① source 자동 선택이 필요 없다면: 시스템/브라우저 픽커 사용
-    // (ChatHeader가 getSources/chooseSource를 찾다가 없으면 그냥 start만 호출함. :contentReference[oaicite:3]{index=3})
     const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
-      video: { frameRate: 30 },  // 필요 시 조정
+      video: { frameRate: 30 },  // control the frame rate
       audio: withAudio,
     });
 
@@ -35,7 +33,7 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
     const mimeType = pickBestMime();
     const mr = new MediaRecorder(displayStream, {
       mimeType,
-      videoBitsPerSecond: 5_000_000, // 품질/용량 트레이드오프
+      videoBitsPerSecond: 5_000_000, // control the quality of the video
     });
     this.mediaRecorder = mr;
 
@@ -45,7 +43,6 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
 
     await new Promise<void>((resolve) => {
       mr.onstart = () => resolve();
-      // timeslice를 주면 주기적으로 dataavailable 발생 → stop 시 Blob 합치기만 하면 됨
       mr.start(250);
     });
 
@@ -65,7 +62,6 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
     const endedAt = Date.now();
     const blob = new Blob(this.chunks, { type: mr.mimeType });
 
-    // 트랙 정리
     this.stream?.getTracks().forEach((t) => t.stop());
 
     const [v] = this.stream?.getVideoTracks() ?? [];
@@ -83,7 +79,7 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
       fps,
       startedAt: this.startedAt,
       endedAt,
-      objectUrl: URL.createObjectURL(blob), // 미리보기 용도(다 쓰면 revoke 필요)
+      objectUrl: URL.createObjectURL(blob), // for preview
     };
   }
 }

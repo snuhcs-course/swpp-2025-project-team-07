@@ -83,4 +83,17 @@ declare global {
   }
 }
 
+declare global {
+  interface Window {
+    vembedAPI: {
+      isModelReady(): Promise<boolean>;
+      startModelDownload(): Promise<{ success: boolean; error?: string }>;
+      onDownloadProgress(cb: (p: ModelDownloadProgress) => void): void;
+      onDownloadComplete(cb: () => void): void;
+      onDownloadError(cb: (msg: string) => void): void;
+      getModelBytes(): Promise<ArrayBuffer>;
+    };
+  }
+}
+
 export {};

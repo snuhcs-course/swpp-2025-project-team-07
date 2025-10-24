@@ -88,7 +88,7 @@ export class LLMManager {
 
     const sessionId = uuidv4();
     const context = await this.model.createContext({
-      contextSize: 8192
+      contextSize: 32768
     });
 
     const session = new LlamaChatSessionClass({
@@ -191,10 +191,10 @@ export class LLMManager {
     }
 
     return {
-      name: 'Gemma-3-12B-IT',
-      size: 6_909_282_656,
-      quantization: 'Q4_0',
-      contextSize: 8192,
+      name: 'Gemma-3n-E4B-IT',
+      size: 7_353_292_928,
+      quantization: 'Q8_0',
+      contextSize: 32768,
       loaded: true
     };
   }

@@ -184,15 +184,15 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Models:</span>
-                <span className="font-medium">Gemma (LLM) + 2 DRAGON (Embedders)</span>
+                <span className="font-medium">Gemma-3n-E4B (LLM) + 2 DRAGON (Embedders)</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Size:</span>
-                <span className="font-medium">~7.3 GB</span>
+                <span className="font-medium">~7.5 GB</span>
               </div>
               <div className="flex justify-between">
                 <span>Context:</span>
-                <span className="font-medium">8192 tokens</span>
+                <span className="font-medium">32768 tokens</span>
               </div>
             </div>
           )}
