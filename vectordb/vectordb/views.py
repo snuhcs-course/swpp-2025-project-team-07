@@ -133,6 +133,12 @@ _scores_2d_array = openapi.Schema(
     description="Scores for each query vector (per-query list of numbers)",
 )
 
+_strings_2d_array = openapi.Schema(
+    type=openapi.TYPE_ARRAY,
+    items=_array_of_strings,
+    description="IDs for each query vector (per-query list of strings)",
+)
+
 
 # -----------------------------------------------------------------------------
 # Views
@@ -349,9 +355,10 @@ def vectordb_delete(request):
                 properties={
                     "ok": openapi.Schema(type=openapi.TYPE_BOOLEAN),
                     "scores": _scores_2d_array,
+                    "ids": _strings_2d_array,
                 },
             ),
-            examples={"application/json": {"ok": True, "scores": [[0.12, 0.34, 0.56]]}},
+            examples={"application/json": {"ok": True, "scores": [[0.12, 0.34, 0.56]], "ids": [["a1", "a2", "a3"]]}},
         ),
         400: "Bad Request",
         500: "Server Error",
@@ -373,17 +380,19 @@ def vectordb_search(request):
 
     try:
         vectors = _normalize_vectors_to_float32(data)
-        HUGE_LIMIT = 16384
+        MAX_LIMIT = 16384
         res = db.search(
             collection_name=collection_name,
             data=vectors,
-            limit=HUGE_LIMIT,
-            output_fields=[],  # scores only
+            limit=MAX_LIMIT,
+            output_fields=["id"],
         )
 
         scores: List[List[float]] = []
+        ids: List[List[str]] = []
         for hits in res:
             query_scores = []
+            query_ids = []
             for h in hits:
                 if "distance" not in h:
                     return Response(
@@ -391,9 +400,14 @@ def vectordb_search(request):
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
                 query_scores.append(float(h["distance"]))
+                query_ids.append(str(h["entry"]["id"]))
             scores.append(query_scores)
+            ids.append(query_ids)
 
-        return Response({"ok": True, "scores": scores}, status=status.HTTP_200_OK)
+        return Response(
+            {"ok": True, "scores": scores, "ids": ids},
+            status=status.HTTP_200_OK
+        )
 
     except ValueError as ve:
         return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
