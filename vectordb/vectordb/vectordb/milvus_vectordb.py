@@ -34,7 +34,11 @@ class MilvusVectorDB(BaseVectorDB):
 
     def insert(self, collection_name: str, data: List[Dict]) -> Dict:
         res = self.client.insert(collection_name=collection_name, data=data)
-        return res
+        parsed_res = {
+            "insert_count": int(res["insert_count"]),
+            "ids": [str(i) for i in res["ids"]],
+        }
+        return parsed_res
 
     def delete(self, collection_name: str, ids: List[str]) -> Dict:
         res = self.client.delete(collection_name=collection_name, ids=ids)
@@ -43,7 +47,7 @@ class MilvusVectorDB(BaseVectorDB):
     def search(self, collection_name: str, data: List[Dict], limit: int, output_fields: List[str]) -> List[List[Dict]]:
         res = self.client.search(collection_name=collection_name, data=data, limit=limit, output_fields=output_fields)
         return res
-
+    
     def query(self, collection_name: str, ids: List[str], output_fields: List[str]) -> List[Dict]:
         res = self.client.query(collection_name=collection_name, ids=ids, output_fields=output_fields)
         return res
