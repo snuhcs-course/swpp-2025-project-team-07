@@ -11,6 +11,8 @@ import { llmService } from '@/services/llm';
 import { useRecorderWithEmbed } from '@/recording/provider';
 import { chatService } from '@/services/chat';
 import { memoryService } from '@/services/memory';
+import { collectionService } from '@/services/collection';
+import { embeddingService } from '@/services/embedding';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 
 // Local UI types
@@ -288,10 +290,34 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         )
       );
 
-      // Stream the LLM response
+      // RAG: Retrieve relevant context from past conversations
+      let contextPrompt = '';
+      try {
+        // Generate embedding for the user's query
+        const queryEmbedding = await embeddingService.embedQuery(content);
+
+        // Search and retrieve top 3 relevant past conversations
+        const relevantDocs = await collectionService.searchAndQuery(queryEmbedding, 3);
+
+        if (relevantDocs.length > 0) {
+          // Format retrieved context for the LLM
+          const contextTexts = relevantDocs
+            .map((doc, idx) => `[Context ${idx + 1}]:\n${doc.content}`)
+            .join('\n\n');
+
+          contextPrompt = `You have access to the following relevant past conversations:\n\n${contextTexts}\n\nUse this context to provide a more informed response when relevant.\n\n`;
+        }
+      } catch (error) {
+        console.error('Failed to retrieve context:', error);
+        // Continue without context if retrieval fails
+      }
+
+      // Stream the LLM response with retrieved context
       let fullResponse = '';
+      const messageWithContext = contextPrompt + content;
+
       await llmService.streamMessage(
-        content,
+        messageWithContext,
         (chunk) => {
           fullResponse += chunk;
           // Update the AI message content with each chunk
