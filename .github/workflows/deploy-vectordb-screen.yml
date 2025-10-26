@@ -7,8 +7,7 @@ on:
       - main
     paths:
       - 'vectordb/**'
-    paths-ignore:
-      - 'vectordb/encrypted_vectordb/**'
+      - '!vectordb/encrypted_vectordb/**'
 
 jobs:
   deploy:
