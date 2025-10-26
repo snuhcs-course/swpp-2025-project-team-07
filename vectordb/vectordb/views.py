@@ -400,7 +400,6 @@ def vectordb_search(request):
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
                 query_scores.append(float(h["distance"]))
-                print("[h]", h)
                 query_ids.append(str(h["entity"]["id"]))
             scores.append(query_scores)
             ids.append(query_ids)
