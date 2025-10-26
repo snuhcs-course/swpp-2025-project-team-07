@@ -5,8 +5,10 @@ from typing import (
 
 from pymilvus import MilvusClient
 
+from .base_vectordb import BaseVectorDB
 
-class MilvusVectorDatabase:
+
+class MilvusVectorDB(BaseVectorDB):
     def __init__(self, uri: str) -> None:
         self.client = MilvusClient(uri=uri)
         self.uri = uri

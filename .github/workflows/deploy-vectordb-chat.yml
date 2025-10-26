@@ -1,4 +1,4 @@
-name: Deploy Chat Vector Database to EC2
+name: Deploy Vector Database (Chat) to EC2
 
 on:
   workflow_dispatch:
@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - 'vectordb/**'
+    paths-ignore:
+      - 'vectordb/encrypted_vectordb/**'
 
 jobs:
   deploy:

@@ -1,4 +1,4 @@
-name: Deploy Vector Database (Screen) to EC2
+name: Deploy Encrypted Vector Database to EC2
 
 on:
   workflow_dispatch:
@@ -6,8 +6,6 @@ on:
     branches:
       - main
     paths:
-      - 'vectordb/**'
-    paths-ignore:
       - 'vectordb/encrypted_vectordb/**'
 
 jobs:
@@ -31,11 +29,11 @@ jobs:
       - name: Build and Push Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: swpp-vectordb-screen
+          ECR_REPOSITORY: swpp-encrypted-vectordb
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f vectordb/docker/Dockerfile_screen ./vectordb
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f vectordb/docker/Dockerfile_screen ./vectordb
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f vectordb/docker/Dockerfile_encrypted ./vectordb
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f vectordb/docker/Dockerfile_encrypted ./vectordb
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
@@ -50,25 +48,18 @@ jobs:
             aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
 
             # Stop and remove old container
-            docker stop swpp-vectordb-screen || true
-            docker rm swpp-vectordb-screen || true
+            docker stop swpp-encrypted-vectordb || true
+            docker rm swpp-encrypted-vectordb || true
 
             # Pull new image
-            docker pull ${{ steps.login-ecr.outputs.registry }}/swpp-vectordb-screen:latest
+            docker pull ${{ steps.login-ecr.outputs.registry }}/swpp-encrypted-vectordb:latest
 
             # Run new container with environment variables
             docker run -d \
-              --name swpp-vectordb-screen \
+              --name swpp-encrypted-vectordb \
               --restart unless-stopped \
-              -p 8001:8001 \
-              -e DJANGO_SETTINGS_MODULE="config.settings.production" \
-              -e SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}" \
-              -e VECTOR_DATABASE_URI="${{ secrets.VECTOR_DATABASE_SCREEN_URI }}" \
-              -e AWS_S3_BUCKET_NAME="swpp-vectordb-screen" \
-              -e AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
-              -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
-              -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
-              ${{ steps.login-ecr.outputs.registry }}/swpp-vectordb-screen:latest
+              -p 8002:8002 \
+              ${{ steps.login-ecr.outputs.registry }}/swpp-encrypted-vectordb:latest
 
             # Clean up old images
             docker image prune -f
