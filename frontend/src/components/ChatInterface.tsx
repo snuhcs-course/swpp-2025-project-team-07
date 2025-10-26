@@ -8,7 +8,6 @@ import { ModelDownloadDialog } from './ModelDownloadDialog';
 import VideoModelDownloadDialog from './VideoModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
-import { useRecorderWithEmbed } from '@/recording/provider';
 
 export interface Message {
   id: string;
@@ -31,7 +30,6 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
-  const { stopAndEmbed } = useRecorderWithEmbed();
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [videoReady, setVideoReady] = useState<boolean | null>(null);
   const [videoOpen, setVideoOpen] = useState(false);

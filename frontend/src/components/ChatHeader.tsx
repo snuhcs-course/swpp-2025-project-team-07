@@ -15,8 +15,7 @@ import { ChatSession } from "./ChatInterface";
 import { SettingsDialog } from "./SettingsDialog";
 import { type AuthUser } from "@/services/auth";
 import { getUserInitials } from "@/utils/user";
-import { useRecorder } from '@/recording/provider';
-import { ClipVideoEmbedder } from '@/embedding/ClipVideoEmbedder';
+import { useRecorder, useChunkedEmbeddingQueue } from '@/recording/provider';
 
 
 interface ChatHeaderProps {
@@ -48,30 +47,34 @@ export function ChatHeader({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const [isRecording, setIsRecording] = useState(false);
   const recorder = useRecorder();
 
-  const [isEmbedding, setIsEmbedding] = useState(false);
-
+  const {
+    startChunked,
+    stopChunked,
+    isRecording,
+    isProcessing,
+    pending,
+    processed,
+  } = useChunkedEmbeddingQueue({
+    onEmbeddedChunk: async ({ chunk, pooled, frames }) => {
+      // TODO: Send to server here
+      // await uploadVideoChunkAndEmbedding({ blob: chunk.blob, vec: pooled, frames });
+      console.log('[chunk embedded]',
+        { dur: (chunk.durationMs/1000).toFixed(2)+'s', vecLen: pooled.length, frames: (frames as any[]).length });
+    },
+  });
 
   async function handleStartRecording() {
     try {
-      // const sources = await window.recorder.listSources();
-      // // 화면(Entire Screen / Screen) 우선 선택
-      // const screenFirst =
-      //   sources.find((s) => /screen/i.test(s.name)) ?? sources[0];
-      // if (!screenFirst) return;
-      // await window.recorder.chooseSource(screenFirst.id);
-      // await window.recorder.start();
       const getSources = (recorder as any).getSources?.bind(recorder);
       const chooseSource = (recorder as any).chooseSource?.bind(recorder);
-    if (getSources && chooseSource) {
-      const sources = await getSources();
-      const screen = sources.find((s: any) => /screen/i.test(s.name)) ?? sources[0];
-      if (screen) await chooseSource(screen.id);
-    }
-    await recorder.start();
-      setIsRecording(true);
+      if (getSources && chooseSource) {
+        const sources = await getSources();
+        const screen = sources.find((s: any) => /screen/i.test(s.name)) ?? sources[0];
+        if (screen) await chooseSource(screen.id);
+      }
+      await startChunked();
     } catch (e) {
       console.error(e);
     }
@@ -79,35 +82,11 @@ export function ChatHeader({
 
   async function handleStopRecording() {
     try {
-      // 1) 녹화 중지 → 비디오 Blob 확보
-      const result = await recorder.stop();
-      console.log(
-        '[recording] size:',
-        (result.blob.size / (1024 * 1024)).toFixed(2),
-        'MB'
-      );
-      console.log('[recording] duration:', (result.durationMs / 1000).toFixed(2), 's');
-
-      // (선택) 미리보기는 유지
-      window.open(result.objectUrl ?? URL.createObjectURL(result.blob), '_blank');
-
-      // 2) CLIP 임베딩
-      setIsEmbedding(true);
-      const embedder = await ClipVideoEmbedder.get();
-      const { pooled, frames } = await embedder.embedVideo(result.blob, 10); // 10프레임 고정
-      console.log('[embedding] pooled=', pooled.length, 'frames=', frames.length);
-
-      // TODO(3단계): 서버 전송 코드 연결 지점
-      // await uploadVideoAndEmbedding({ blob: result.blob, embedding: pooled, frames });
-
+      await stopChunked();
     } catch (e) {
-      console.error('[recording] stop+embed failed:', e);
-    } finally {
-      setIsEmbedding(false);
-      setIsRecording(false);
+      console.error('[recording] stopChunked failed:', e);
     }
   }
-
 
   const userInitials = getUserInitials(user?.username, user?.email);
 
@@ -153,7 +132,27 @@ export function ChatHeader({
 
       {/* Right side - Chat options, controls and profile */}
       <div className="flex items-center space-x-2">
-        {!isRecording ? (
+        {isRecording ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleStopRecording}
+            className="rounded-xl"
+            title="Stop (enqueue last) & embed"
+          >
+            <Circle className="w-4 h-4 mr-1" />
+            Stop
+          </Button>
+        ) : isProcessing ? (
+          <Button
+            size="sm"
+            className="rounded-xl"
+            title="Embedding chunks..."
+            disabled
+          >
+            Embedding...
+          </Button>
+        ) : (
           <Button
             size="sm"
             onClick={handleStartRecording}
@@ -163,23 +162,13 @@ export function ChatHeader({
             <Circle className="w-4 h-4 mr-1" />
             Start
           </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleStopRecording}
-            className="rounded-xl"
-            title="Stop and embed"
-            disabled={isEmbedding}
-          >
-            {isEmbedding ? 'Embedding…' : (
-              <>
-                <Square className="w-4 h-4 mr-1" />
-                Stop
-              </>
-            )}
-          </Button>
         )}
+        {/* Show queue state simply */}
+        {/* {(isRecording || isProcessing) && (
+          <div className="text-xs text-muted-foreground ml-2">
+            Queue: {pending} pending • {processed} done
+          </div>
+        )} */}
         {/* Profile dropdown */}
         <DropdownMenu
           open={isProfileMenuOpen}
