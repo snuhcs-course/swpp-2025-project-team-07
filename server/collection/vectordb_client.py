@@ -167,7 +167,9 @@ class VectorDBClient:
                 return False, {}, f"{db_type} vectordb search failed: {error}"
 
             scores = data.get('scores', [])
+            ids = data.get('ids', [])
             results[f'{db_type}_scores'] = scores
+            results[f'{db_type}_ids'] = ids
 
         return True, results, None
 

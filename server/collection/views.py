@@ -33,6 +33,12 @@ _scores_2d_array = openapi.Schema(
     description="Scores for each query vector (per-query list of numbers)",
 )
 
+_strings_2d_array = openapi.Schema(
+    type=openapi.TYPE_ARRAY,
+    items=_array_of_strings,
+    description="IDs for each query vector (per-query list of strings)",
+)
+
 
 @swagger_auto_schema(
     method='post',
@@ -114,13 +120,17 @@ def insert_to_collection(request):
                 properties={
                     "ok": openapi.Schema(type=openapi.TYPE_BOOLEAN),
                     "chat_scores": _scores_2d_array,
+                    "chat_ids": _strings_2d_array,
                     "screen_scores": _scores_2d_array,
+                    "screen_ids": _strings_2d_array,
                 },
             ),
             examples={"application/json": {
                 "ok": True,
                 "chat_scores": [[0.12, 0.34, 0.56]],
-                "screen_scores": [[0.12, 0.34, 0.56]]
+                "chat_ids": [["id1", "id2", "id3"]],
+                "screen_scores": [[0.12, 0.34, 0.56]],
+                "screen_ids": [["id1", "id2", "id3"]],
             }},
         ),
         400: "Bad Request - Both chat_data and screen_data are empty",
@@ -165,7 +175,9 @@ def search_collections(request):
     return Response({
         "ok": True,
         "chat_scores": results.get('chat_scores'),
+        "chat_ids": results.get('chat_ids'),
         "screen_scores": results.get('screen_scores'),
+        "screen_ids": results.get('screen_ids'),
     }, status=status.HTTP_200_OK)
 
 
