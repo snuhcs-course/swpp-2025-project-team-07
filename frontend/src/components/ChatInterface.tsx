@@ -300,19 +300,28 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         const relevantDocs = await collectionService.searchAndQuery(queryEmbedding, 3);
 
         if (relevantDocs.length > 0) {
-          // Format retrieved context for the LLM
+          // Format retrieved context for the LLM with stronger instructions
           const contextTexts = relevantDocs
-            .map((doc, idx) => `[Context ${idx + 1}]:\n${doc.content}`)
+            .map((doc, idx) => `[Memory ${idx + 1}]:\n${doc.content}`)
             .join('\n\n');
 
-          contextPrompt = `You have access to the following relevant past conversations:\n\n${contextTexts}\n\nUse this context to provide a more informed response when relevant.\n\n`;
+          contextPrompt = `<CONTEXT>
+The following are relevant excerpts from the user's past conversations with you. These are YOUR memories of previous interactions. You MUST use this information to answer the user's question accurately.
+
+${contextTexts}
+
+</CONTEXT>
+
+Now, using the above context, please answer the following question:
+
+`;
         }
       } catch (error) {
         console.error('Failed to retrieve context:', error);
         // Continue without context if retrieval fails
       }
 
-      // Stream the LLM response with retrieved context
+      // Stream the LLM response with RAG context (if available)
       let fullResponse = '';
       const messageWithContext = contextPrompt + content;
 

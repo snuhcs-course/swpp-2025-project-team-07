@@ -26,7 +26,9 @@ export interface InsertResponse {
 export interface SearchResponse {
   ok: boolean;
   chat_scores?: number[][];
+  chat_ids?: string[][];
   screen_scores?: number[][];
+  screen_ids?: string[][];
 }
 
 export interface QueryResponse {
@@ -127,15 +129,24 @@ export async function searchAndQuery(
   topK: number = 5
 ): Promise<VectorData[]> {
   const searchResult = await searchChatData([queryVector]);
-  if (!searchResult.ok || !searchResult.chat_scores || searchResult.chat_scores.length === 0) {
+  if (!searchResult.ok || !searchResult.chat_scores || !searchResult.chat_ids ||
+      searchResult.chat_scores.length === 0 || searchResult.chat_ids.length === 0) {
     return [];
   }
 
   const scores = searchResult.chat_scores[0];
-  const topIndices = getTopKIndices(scores, topK);
-  if (topIndices.length === 0) return [];
+  const chatIds = searchResult.chat_ids[0];
 
-  const queryResult = await queryChatData(topIndices.map(String));
+  // Pair scores with their corresponding chat IDs and sort by score (descending)
+  const scoredIds = scores
+    .map((score, index) => ({ score, id: chatIds[index] }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(item => item.id);
+
+  if (scoredIds.length === 0) return [];
+
+  const queryResult = await queryChatData(scoredIds);
   if (!queryResult.ok || !queryResult.chat_results) return [];
 
   const { decryptText } = await import('@/utils/encryption');
