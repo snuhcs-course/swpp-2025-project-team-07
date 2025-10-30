@@ -20,7 +20,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
-    "test:all": "npm run test:unit && npm run test:e2e"
+    "test:all": "npm run test:unit && npm run test:e2e",
+    "build:evd-native": "cmake-js build --directory src/encryption/evd --CD BUILD_NODE=ON --runtime electron --runtime-version=38.1.2"
   },
   "keywords": [],
   "author": {
@@ -52,6 +53,7 @@
     "@vitest/coverage-v8": "^4.0.1",
     "@vitest/ui": "^4.0.1",
     "autoprefixer": "^10.4.16",
+    "cmake-js": "^7.3.0",
     "electron": "38.1.2",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -105,6 +107,7 @@
     "lucide-react": "^0.487.0",
     "motion": "*",
     "next-themes": "^0.4.6",
+    "node-addon-api": "^7.1.0",
     "node-llama-cpp": "^3.14.0",
     "onnxruntime-web": "^1.23.0",
     "react": "^18.3.1",
