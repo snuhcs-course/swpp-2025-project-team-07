@@ -11,6 +11,11 @@ jobs:
     name: Run Django Tests
     runs-on: ubuntu-latest
 
+    # Permissions to write coverage comments in PR
+    permissions:
+      pull-requests: write
+      contents: write
+
     strategy:
       matrix:
         python-version: ['3.10']
@@ -73,17 +78,7 @@ jobs:
       - name: Run tests with coverage
         working-directory: ./server
         run: |
-          pytest --cov --cov-report=xml --cov-report=term --cov-report=html --cov-fail-under=80 -v
-
-      - name: Upload coverage reports to Codecov
-        if: matrix.python-version == '3.10'
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./server/coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+          pytest --cov --cov-report=term --cov-report=html --cov-fail-under=80 -v
 
       - name: Upload coverage HTML report as artifact
         if: matrix.python-version == '3.10'
@@ -100,6 +95,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           MINIMUM_GREEN: 90
           MINIMUM_ORANGE: 80
+          COVERAGE_PATH: server
 
   lint:
     name: Code Quality Checks
