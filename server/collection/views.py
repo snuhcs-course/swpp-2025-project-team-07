@@ -65,13 +65,6 @@ _strings_2d_array = openapi.Schema(
 @api_view(['POST'])
 def insert_to_collection(request):
     """Store encrypted vectors and values to chat and/or screen vectordb."""
-    # Verify user is authenticated
-    if not request.user.is_authenticated:
-        return Response(
-            {"detail": "Authentication required"},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
     chat_data = request.data.get('chat_data')
     screen_data = request.data.get('screen_data')
 
@@ -142,13 +135,6 @@ def insert_to_collection(request):
 @api_view(['POST'])
 def search_collections(request):
     """Search for similar vectors in chat and/or screen vectordb."""
-    # Verify user is authenticated
-    if not request.user.is_authenticated:
-        return Response(
-            {"detail": "Authentication required"},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
     chat_data = request.data.get('chat_data')
     screen_data = request.data.get('screen_data')
 
@@ -234,13 +220,6 @@ def search_collections(request):
 @api_view(['POST'])
 def query_collection(request):
     """Query documents by ID from chat and/or screen vectordb."""
-    # Verify user is authenticated
-    if not request.user.is_authenticated:
-        return Response(
-            {"detail": "Authentication required"},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
     chat_ids = request.data.get('chat_ids')
     chat_output_fields = request.data.get('chat_output_fields')
     screen_ids = request.data.get('screen_ids')
