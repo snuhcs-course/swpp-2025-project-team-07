@@ -88,6 +88,84 @@ export async function trackMessage(
   }
 }
 
+// Helper: Convert ImageData to base64
+async function imageDataToBase64(imageData: ImageData): Promise<string> {
+  const canvas = new OffscreenCanvas(imageData.width, imageData.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.putImageData(imageData, 0, 0);
+  const blob = await canvas.convertToBlob({ type: 'image/png' });
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      const base64Data = base64.split(',')[1] || base64;
+      resolve(base64Data);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Helper: Convert video Blob to base64
+async function videoBlobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      const base64Data = base64.split(',')[1] || base64;
+      resolve(base64Data);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Store video recording embedding + ORIGINAL VIDEO BLOB (no bundling needed)
+// Videos are stored globally and available to all sessions
+export async function storeVideoEmbedding(
+  embedding: Float32Array | number[],
+  videoBlob: Blob,
+  metadata: { duration: number; width?: number; height?: number }
+): Promise<void> {
+  try {
+    console.log(`[Memory] Storing video embedding, size: ${(videoBlob.size / 1024).toFixed(1)} KB`);
+
+    // Convert original video blob to base64
+    const videoBase64 = await videoBlobToBase64(videoBlob);
+
+    // Create payload with original video and metadata
+    const payload = {
+      video_base64: videoBase64,
+      video_type: videoBlob.type,
+      video_size: videoBlob.size,
+      duration: metadata.duration,
+      width: metadata.width,
+      height: metadata.height,
+    };
+
+    const payloadStr = JSON.stringify(payload);
+    const encryptedPayload = await encryptText(payloadStr);
+    const timestamp = Date.now();
+
+    const vectorData: VectorData = {
+      id: `screen_${timestamp}`,
+      vector: Array.from(embedding),
+      content: encryptedPayload,
+      timestamp,
+      session_id: 0, // Global storage, available to all sessions
+      role: 'screen_recording',
+    };
+
+    await collectionService.insertScreenData([vectorData]);
+    console.log(`[Memory] Successfully stored video embedding with original video (${(videoBlob.size / 1024).toFixed(1)} KB)`);
+  } catch (error) {
+    console.error('[Memory] Failed to store video embedding:', error);
+    throw error;
+  }
+}
+
 export const memoryService = {
   trackMessage,
+  storeVideoEmbedding,
 };

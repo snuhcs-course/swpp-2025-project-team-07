@@ -41,7 +41,14 @@ export async function encryptText(plaintext: string): Promise<string> {
     combined.set(iv, 0);
     combined.set(new Uint8Array(ciphertext), iv.length);
 
-    return btoa(String.fromCharCode(...combined));
+    // Convert to base64 in chunks to avoid call stack overflow on large data
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < combined.length; i += chunkSize) {
+      const chunk = combined.subarray(i, Math.min(i + chunkSize, combined.length));
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
   } catch (error) {
     console.error('Encryption failed:', error);
     throw new Error(`Encryption failed: ${error}`);
@@ -54,7 +61,11 @@ export async function decryptText(ciphertext: string): Promise<string> {
 
   try {
     const key = await getEncryptionKey();
-    const combined = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
+    const binary = atob(ciphertext);
+    const combined = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      combined[i] = binary.charCodeAt(i);
+    }
     const iv = combined.slice(0, 12); // First 12 bytes
     const encryptedData = combined.slice(12); // Rest
 

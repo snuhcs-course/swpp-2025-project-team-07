@@ -25,6 +25,7 @@ export interface LLMChatOptions {
   systemPrompt?: string;
   sessionId?: string;
   streamId?: string;
+  videos?: ArrayBuffer[]; // Video data for multimodal input (Gemma 3n) - ArrayBuffers for IPC compatibility
 }
 
 export interface ModelDownloadProgress {

@@ -290,41 +290,95 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         )
       );
 
-      // RAG: Retrieve relevant context from past conversations
+      // RAG: Retrieve relevant context from past conversations and screen recordings
       let contextPrompt = '';
+      const videoBlobs: Blob[] = []; // Store reconstructed video blobs for multimodal input
+      const videoUrls: string[] = []; // Store object URLs for debugging
       try {
-        // Generate embedding for the user's query
-        const queryEmbedding = await embeddingService.embedQuery(content);
+        // Generate embeddings for the user's query
+        // - DRAGON (768-dim) for chat search
+        // - CLIP (512-dim) for video/screen search
+        const chatQueryEmbedding = await embeddingService.embedQuery(content);
+        const videoQueryEmbedding = await embeddingService.embedVideoQuery(content);
 
-        // Search and retrieve top 3 relevant past conversations
-        const relevantDocs = await collectionService.searchAndQuery(queryEmbedding, 3);
+        // Search and retrieve top 3 from chat + top 3 from screen (6 total max)
+        // Pass separate embeddings to avoid dimension mismatch
+        const relevantDocs = await collectionService.searchAndQuery(
+          chatQueryEmbedding,
+          3,
+          videoQueryEmbedding || undefined
+        );
 
         if (relevantDocs.length > 0) {
-          // Format retrieved context for the LLM with stronger instructions
-          const contextTexts = relevantDocs
-            .map((doc, idx) => `[Memory ${idx + 1}]:\n${doc.content}`)
-            .join('\n\n');
+          // Separate chat and video contexts
+          const chatContexts: string[] = [];
+          let videoCount = 0;
 
-          contextPrompt = `<CONTEXT>
-The following are relevant excerpts from the user's past conversations with you. 
-These are your memories of previous interactions. 
+          relevantDocs.forEach((doc: any, idx: number) => {
+            if (doc.source_type === 'screen' && doc.video_blob) {
+              // Store reconstructed video blob for multimodal input
+              videoBlobs.push(doc.video_blob);
+              videoCount++;
+
+              // Create object URL for debugging
+              const videoUrl = URL.createObjectURL(doc.video_blob);
+              videoUrls.push(videoUrl);
+
+              // Store on window for debugging access
+              const videoKey = `__ragVideo${videoCount}`;
+              (window as any)[videoKey] = {
+                url: videoUrl,
+                blob: doc.video_blob,
+                download: () => {
+                  const freshUrl = URL.createObjectURL(doc.video_blob);
+                  const a = document.createElement('a');
+                  a.href = freshUrl;
+                  a.download = `rag-video-${videoCount}-${Date.now()}.webm`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  setTimeout(() => URL.revokeObjectURL(freshUrl), 100);
+                },
+                view: () => {
+                  const freshUrl = URL.createObjectURL(doc.video_blob);
+                  window.open(freshUrl, '_blank');
+                }
+              };
+
+              console.log(`[RAG] Retrieved video ${videoCount}: ${(doc.video_blob.size / 1024).toFixed(1)} KB`);
+            } else if (doc.source_type === 'chat') {
+              chatContexts.push(`[Memory ${idx + 1}]:\n${doc.content}`);
+            }
+          });
+
+          // Build context prompt with <CONTEXT> tags matching the chat RAG style
+          if (chatContexts.length > 0 || videoCount > 0) {
+            contextPrompt = `<CONTEXT>
+The following are relevant excerpts from the user's past conversations with you.
+These are your memories of previous interactions.
 You can use this information to answer the user's question.
 
-${contextTexts}
+${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n\n' : ''}${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) provided as video input.` : ''}
 
 </CONTEXT>
 
-**Now, using the above context, answer the following question**:
+**Now, using the above context${videoCount > 0 ? ' and video(s)' : ''}, answer the following question**:
 `;
+          }
         }
       } catch (error) {
         console.error('Failed to retrieve context:', error);
         // Continue without context if retrieval fails
       }
 
-      // Stream the LLM response with RAG context (if available)
+      // Stream the LLM response with RAG context + videos
       let fullResponse = '';
       const messageWithContext = contextPrompt + content;
+
+      // Convert video Blobs to ArrayBuffers for IPC transfer
+      const videoArrayBuffers = videoBlobs.length > 0
+        ? await Promise.all(videoBlobs.map(blob => blob.arrayBuffer()))
+        : undefined;
 
       await llmService.streamMessage(
         messageWithContext,
@@ -350,9 +404,13 @@ ${contextTexts}
         },
         {
           temperature: 0.7,
-          maxTokens: 2048
+          maxTokens: 2048,
+          videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
         }
       );
+
+      // Cleanup initial video object URLs (blobs remain accessible via window.__ragVideoN)
+      videoUrls.forEach(url => URL.revokeObjectURL(url));
 
       // Send assistant message to backend (just for storage, don't update UI)
       const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);

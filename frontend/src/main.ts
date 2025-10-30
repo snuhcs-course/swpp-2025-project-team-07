@@ -409,8 +409,24 @@ function setupLLMHandlers() {
     const sessionId = options?.sessionId || 'default';
     const streamId = options?.streamId || 'default';
 
+    // Convert videos from IPC-serialized format to Buffers
+    let videoBuffers: Buffer[] | undefined;
+    if (options?.videos && Array.isArray(options.videos)) {
+      videoBuffers = options.videos.map((video: any) => {
+        if (video?.data && video?.type === 'Buffer') {
+          return Buffer.from(video.data);
+        } else if (ArrayBuffer.isView(video)) {
+          return Buffer.from(video.buffer, video.byteOffset, video.byteLength);
+        } else if (video instanceof ArrayBuffer) {
+          return Buffer.from(video);
+        }
+        return Buffer.alloc(0);
+      }).filter((buf: Buffer) => buf.length > 0);
+    }
+
     await llmManager.streamChat(message, {
       ...options,
+      videos: videoBuffers, // Pass converted buffers
       onChunk: (chunk: string) => {
         if (mainWindow) {
           mainWindow.webContents.send('llm:stream-chunk', {
