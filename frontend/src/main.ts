@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
+import { v4 as uuidv4 } from 'uuid';
 import fsp from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -148,6 +149,8 @@ function getEmbeddingModelPath(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): strin
 let llmManager: LLMManager | null = null;
 let embeddingManager: EmbeddingManager | null = null;
 let mainWindow: BrowserWindow | null = null;
+let embeddingWorkerWindow: BrowserWindow | null = null;
+const pendingEmbedTasks = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
 
 const createWindow = () => {
   // Get primary display dimensions
@@ -586,6 +589,42 @@ function setupLLMHandlers() {
   });
 
   console.log('LLM and Embedding IPC handlers registered');
+
+  // 
+  ipcMain.handle('video-embed:run', async (event, videoBlob: Buffer) => {
+    if (!embeddingWorkerWindow) {
+      throw new Error('Embedding worker is not ready.');
+    }
+
+    const taskId = uuidv4();
+
+    const promise = new Promise((resolve, reject) => {
+      pendingEmbedTasks.set(taskId, { resolve, reject });
+    });
+
+    embeddingWorkerWindow.webContents.send('video-embed:task', { taskId, videoBlob });
+
+    return promise;
+  });
+
+  ipcMain.on('video-embed:result', (event, { taskId, result, error }) => {
+    const task = pendingEmbedTasks.get(taskId);
+    if (task) {
+      if (error) {
+        task.reject(new Error(error));
+      } else {
+        task.resolve(result);
+      }
+      pendingEmbedTasks.delete(taskId);
+    }
+  });
+}
+
+function waitLoad(wc: Electron.WebContents) {
+  return new Promise<void>((res) => {
+    if (wc.isLoadingMainFrame()) wc.once('did-finish-load', () => res());
+    else res();
+  });
 }
 
 // This method will be called when Electron has finished
@@ -595,9 +634,40 @@ app.on('ready', async () => {
   await registerDisplayMediaHandler();
   createWindow();
 
+  // Create embedding worker window
+  embeddingWorkerWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'embedding-worker-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    }
+  })
+
+  // Load the HTML file for the worker window.
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    embeddingWorkerWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}/embedding-worker.html`);
+  } else {
+    embeddingWorkerWindow.loadFile(
+      path.join(__dirname, `../renderer/embedding-worker/index.html`),
+    );
+  }
+
+  await Promise.all([
+    waitLoad(mainWindow.webContents),
+    waitLoad(embeddingWorkerWindow.webContents),
+  ]);
+
   // Setup IPC handlers first
   setupLLMHandlers();
   console.log('[userData]', app.getPath('userData'));
+
+  console.log('[pid] main:', process.pid);
+  console.log('[pid] ui renderer:', mainWindow.webContents.getOSProcessId());
+  console.log('[pid] embedding renderer:', embeddingWorkerWindow!.webContents.getOSProcessId());
+
 
   const allModelsReady = isLLMModelDownloaded() &&
                          isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&

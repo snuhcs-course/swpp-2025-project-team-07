@@ -96,4 +96,13 @@ declare global {
   }
 }
 
+declare global {
+  interface Window {
+    embeddingWorkerAPI: {
+      onTask: (callback: (args: { taskId: string, videoBlob: Buffer }) => void) => void;
+      sendResult: (result: { taskId: string, result?: any, error?: string }) => void;
+    };
+  }
+}
+
 export {};
