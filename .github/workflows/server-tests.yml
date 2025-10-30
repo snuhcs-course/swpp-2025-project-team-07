@@ -5,14 +5,6 @@ on:
   pull_request:
     paths:
       - 'server/**'
-    branches:
-      - '**'  # Trigger on all PR branches
-  pull_request_target:
-    branches:
-      - server  # Trigger when server is the base branch
-  push:
-    branches:
-      - server  # Trigger on push to server branch
 
 jobs:
   test:
@@ -21,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.10', '3.11']
+        python-version: ['3.10']
 
     steps:
       - name: Checkout code

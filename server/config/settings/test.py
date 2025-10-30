@@ -5,6 +5,8 @@ Uses SQLite in-memory database for fast test execution.
 
 from .base import *
 
+SECRET_KEY = "test_secret_key"
+
 # Use SQLite for tests (much faster than MySQL)
 DATABASES = {
     "default": {
