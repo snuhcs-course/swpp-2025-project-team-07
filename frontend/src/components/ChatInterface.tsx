@@ -306,14 +306,15 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             .join('\n\n');
 
           contextPrompt = `<CONTEXT>
-The following are relevant excerpts from the user's past conversations with you. These are YOUR memories of previous interactions. You MUST use this information to answer the user's question accurately.
+The following are relevant excerpts from the user's past conversations with you. 
+These are your memories of previous interactions. 
+You can use this information to answer the user's question.
 
 ${contextTexts}
 
 </CONTEXT>
 
-Now, using the above context, please answer the following question:
-
+**Now, using the above context, answer the following question**:
 `;
         }
       } catch (error) {
