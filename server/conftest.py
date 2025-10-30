@@ -26,15 +26,6 @@ def api_client():
 
 
 @pytest.fixture
-def authenticated_client(api_client, user):
-    """
-    Provides an authenticated DRF API client with a logged-in user.
-    """
-    api_client.force_authenticate(user=user)
-    return api_client
-
-
-@pytest.fixture
 def jwt_authenticated_client(api_client, user):
     """
     Provides an API client authenticated with JWT tokens.
@@ -58,37 +49,6 @@ def user(db):
         username="testuser",
         password="testpassword123"
     )
-
-
-@pytest.fixture
-def admin_user(db):
-    """
-    Creates an admin/staff user for testing admin functionality.
-    """
-    from user.models import User
-    return User.objects.create_user(
-        email="admin@example.com",
-        username="admin",
-        password="adminpassword123",
-        is_staff=True,
-        is_superuser=True
-    )
-
-
-@pytest.fixture
-def multiple_users(db):
-    """
-    Creates multiple users for testing list views and relationships.
-    """
-    from user.models import User
-    return [
-        User.objects.create_user(
-            email=f"user{i}@example.com",
-            username=f"user{i}",
-            password=f"password{i}"
-        )
-        for i in range(1, 4)
-    ]
 
 
 # Mock external services

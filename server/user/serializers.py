@@ -11,16 +11,11 @@ class UserSignupSerializer(serializers.ModelSerializer):
         model = User
         fields = ('email', 'username', 'password', 'password_confirm')
 
-    def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
-        return value
+    # The model layer handles duplicate email, username checks
 
     def validate_username(self, value):
         if len(value) < 3:
             raise serializers.ValidationError("Username must be at least 3 characters long.")
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this username already exists.")
         return value
 
     def validate(self, attrs):
@@ -42,16 +37,11 @@ class UserLoginSerializer(serializers.Serializer):
         email = attrs.get('email')
         password = attrs.get('password')
 
-        if email and password:
-            user = authenticate(request=self.context.get('request'),
-                              username=email, password=password)
-            if not user:
-                raise serializers.ValidationError('Invalid email or password.')
-            if not user.is_active:
-                raise serializers.ValidationError('User account is disabled.')
-            attrs['user'] = user
-        else:
-            raise serializers.ValidationError('Must include email and password.')
+        user = authenticate(request=self.context.get('request'),
+                          username=email, password=password)
+        if not user:
+            raise serializers.ValidationError('Invalid email or password.')
+        attrs['user'] = user
 
         return attrs
 

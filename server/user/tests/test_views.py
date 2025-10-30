@@ -60,6 +60,36 @@ class TestSignupView:
         response = api_client.post(url, data, format='json')
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'email' in response.data
+
+    def test_signup_with_short_username(self, api_client):
+        """Test signup fails when username is shorter than 3 characters."""
+        url = reverse('signup')
+        data = {
+            'email': 'newuser@example.com',
+            'username': 'ab',  # Only 2 characters
+            'password': 'password123',
+            'password_confirm': 'password123'
+        }
+        response = api_client.post(url, data, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'username' in response.data
+        assert 'at least 3 characters' in str(response.data['username'][0]).lower()
+
+    def test_signup_with_duplicate_username(self, api_client, user):
+        """Test signup fails with duplicate username."""
+        url = reverse('signup')
+        data = {
+            'email': 'newuser@example.com',
+            'username': user.username,  # Duplicate username
+            'password': 'password123',
+            'password_confirm': 'password123'
+        }
+        response = api_client.post(url, data, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'username' in response.data
 
     def test_signup_with_invalid_email(self, api_client):
         """Test signup fails with invalid email format."""
@@ -123,6 +153,27 @@ class TestLoginView:
         data = {
             'email': inactive_user.email,
             'password': 'testpassword123'
+        }
+        response = api_client.post(url, data, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # Inactive users are rejected (authentication returns None for security)
+
+    def test_login_without_email(self, api_client):
+        """Test login fails when email is not provided."""
+        url = reverse('login')
+        data = {
+            'password': 'password123'
+        }
+        response = api_client.post(url, data, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_login_without_password(self, api_client):
+        """Test login fails when password is not provided."""
+        url = reverse('login')
+        data = {
+            'email': 'test@example.com'
         }
         response = api_client.post(url, data, format='json')
 

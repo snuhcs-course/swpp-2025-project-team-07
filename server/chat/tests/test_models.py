@@ -1,11 +1,13 @@
 """
-Unit tests for chat models.
+Unit tests for chat models and serializers.
 """
 import pytest
 from django.utils import timezone
 from freezegun import freeze_time
+from rest_framework import serializers as drf_serializers
 
 from chat.models import ChatSession, ChatMessage
+from chat.serializers import ChatMessageSerializer
 from chat.tests.factories import ChatSessionFactory, ChatMessageFactory, UserChatMessageFactory
 from user.tests.factories import UserFactory
 
@@ -184,3 +186,35 @@ class TestChatMessageModel:
         assert messages[0] == user_msg
         assert messages[1] == assistant_msg
         assert messages[2] == user_followup
+
+
+@pytest.mark.django_db
+class TestChatMessageSerializer:
+    """Tests for ChatMessageSerializer validation."""
+
+    def test_validate_role_with_valid_roles(self, chat_session):
+        """Test that valid roles pass validation."""
+        for role in ['user', 'assistant', 'system']:
+            data = {
+                'session': chat_session.id,
+                'role': role,
+                'content': 'Test message',
+                'timestamp': 1234567890000
+            }
+            serializer = ChatMessageSerializer(data=data)
+            assert serializer.is_valid(), f"Role '{role}' should be valid"
+
+    def test_validate_role_with_invalid_role(self, chat_session):
+        """Test that invalid role raises validation error."""
+        data = {
+            'session': chat_session.id,
+            'role': 'invalid_role',
+            'content': 'Test message',
+            'timestamp': 1234567890000
+        }
+        serializer = ChatMessageSerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'role' in serializer.errors
+        # Check that error message mentions invalid choice or invalid role
+        error_message = str(serializer.errors['role'][0]).lower()
+        assert 'invalid' in error_message or 'not a valid choice' in error_message

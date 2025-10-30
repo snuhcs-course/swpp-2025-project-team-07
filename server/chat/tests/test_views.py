@@ -81,6 +81,15 @@ class TestSessionViews:
         chat_session.refresh_from_db()
         assert chat_session.title == 'Updated Title'
 
+    def test_update_session_with_invalid_data(self, jwt_authenticated_client, chat_session):
+        """Test updating a session with invalid data returns 400."""
+        url = reverse('update_session', kwargs={'session_id': chat_session.id})
+        # Send empty title which should fail validation
+        data = {'title': ''}
+        response = jwt_authenticated_client.patch(url, data, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
     def test_delete_session(self, jwt_authenticated_client, chat_session):
         """Test deleting a chat session."""
         session_id = chat_session.id
@@ -212,6 +221,16 @@ class TestMessageViews:
         assert response.data['content'] == 'Updated content'
         message.refresh_from_db()
         assert message.content == 'Updated content'
+
+    def test_update_message_with_invalid_data(self, jwt_authenticated_client, chat_session):
+        """Test updating a message with invalid data returns 400."""
+        message = ChatMessageFactory(session=chat_session)
+        url = reverse('update_message', kwargs={'message_id': message.id})
+        # Send empty content which should fail validation
+        data = {'content': ''}
+        response = jwt_authenticated_client.patch(url, data, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_delete_message(self, jwt_authenticated_client, chat_session):
         """Test deleting a message."""

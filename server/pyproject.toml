@@ -1,6 +1,7 @@
 [tool.coverage.run]
 source = ["."]
 omit = [
+    "*/settings/*",
     "*/migrations/*",
     "*/tests/*",
     "*/__pycache__/*",
