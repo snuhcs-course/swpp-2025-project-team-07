@@ -1,6 +1,7 @@
 """
 Root conftest.py for shared test fixtures and configuration.
 """
+
 import pytest
 from django.conf import settings
 from rest_framework.test import APIClient
@@ -33,7 +34,7 @@ def jwt_authenticated_client(api_client, user):
     from rest_framework_simplejwt.tokens import RefreshToken
 
     refresh = RefreshToken.for_user(user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
     return api_client
 
 
@@ -44,10 +45,9 @@ def user(db):
     Import this fixture in tests that need a basic user.
     """
     from user.models import User
+
     return User.objects.create_user(
-        email="testuser@example.com",
-        username="testuser",
-        password="testpassword123"
+        email="testuser@example.com", username="testuser", password="testpassword123"
     )
 
 
@@ -66,19 +66,19 @@ def mock_vectordb():
             responses_lib.POST,
             "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
             json={"ok": True, "result": {"status": "created"}},
-            status=200
+            status=200,
         )
         rsps.add(
             responses_lib.POST,
             "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/insert/",
             json={"ok": True, "result": {"insert_count": 0}},
-            status=200
+            status=200,
         )
         rsps.add(
             responses_lib.POST,
             "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/search/",
             json={"ok": True, "scores": [], "ids": []},
-            status=200
+            status=200,
         )
 
         # Mock screen VectorDB - all possible endpoints
@@ -86,19 +86,19 @@ def mock_vectordb():
             responses_lib.POST,
             "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/create_collection/",
             json={"ok": True, "result": {"status": "created"}},
-            status=200
+            status=200,
         )
         rsps.add(
             responses_lib.POST,
             "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/insert/",
             json={"ok": True, "result": {"insert_count": 0}},
-            status=200
+            status=200,
         )
         rsps.add(
             responses_lib.POST,
             "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/search/",
             json={"ok": True, "scores": [], "ids": []},
-            status=200
+            status=200,
         )
 
         yield rsps
@@ -111,4 +111,5 @@ def mock_s3_storage(monkeypatch):
     Uses Django's default file storage instead.
     """
     from django.core.files.storage import default_storage
-    monkeypatch.setattr('storages.backends.s3boto3.S3Boto3Storage', lambda: default_storage)
+
+    monkeypatch.setattr("storages.backends.s3boto3.S3Boto3Storage", lambda: default_storage)

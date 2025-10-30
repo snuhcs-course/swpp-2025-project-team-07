@@ -7,8 +7,8 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ChatMessage
-        fields = ['id', 'session', 'role', 'content', 'timestamp', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ["id", "session", "role", "content", "timestamp", "created_at"]
+        read_only_fields = ["id", "created_at"]
 
     def validate_role(self, value):
         """Ensure role is one of the allowed choices."""
@@ -24,18 +24,26 @@ class ChatMessageCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ChatMessage
-        fields = ['id', 'role', 'content', 'timestamp', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ["id", "role", "content", "timestamp", "created_at"]
+        read_only_fields = ["id", "created_at"]
 
 
 class ChatSessionSerializer(serializers.ModelSerializer):
     """Serializer for ChatSession model with message count."""
+
     message_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatSession
-        fields = ['id', 'title', 'created_at', 'updated_at', 'last_message_timestamp', 'message_count']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_timestamp']
+        fields = [
+            "id",
+            "title",
+            "created_at",
+            "updated_at",
+            "last_message_timestamp",
+            "message_count",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "last_message_timestamp"]
 
     def get_message_count(self, obj) -> int:
         """Get the number of messages in this session."""
@@ -44,9 +52,10 @@ class ChatSessionSerializer(serializers.ModelSerializer):
 
 class ChatSessionDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for ChatSession including recent messages."""
+
     messages = ChatMessageSerializer(many=True, read_only=True)
 
     class Meta:
         model = ChatSession
-        fields = ['id', 'title', 'created_at', 'updated_at', 'last_message_timestamp', 'messages']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_timestamp']
+        fields = ["id", "title", "created_at", "updated_at", "last_message_timestamp", "messages"]
+        read_only_fields = ["id", "created_at", "updated_at", "last_message_timestamp"]

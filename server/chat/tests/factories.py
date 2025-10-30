@@ -1,6 +1,7 @@
 """
 Factory Boy factories for chat app models.
 """
+
 import factory
 from factory.django import DjangoModelFactory
 from faker import Faker
@@ -26,11 +27,12 @@ class ChatSessionFactory(DjangoModelFactory):
         # Create multiple sessions
         sessions = ChatSessionFactory.create_batch(5)
     """
+
     class Meta:
         model = ChatSession
 
     user = factory.SubFactory(UserFactory)
-    title = factory.LazyAttribute(lambda _: fake.sentence(nb_words=4).rstrip('.'))
+    title = factory.LazyAttribute(lambda _: fake.sentence(nb_words=4).rstrip("."))
     last_message_timestamp = None
 
 
@@ -52,25 +54,29 @@ class ChatMessageFactory(DjangoModelFactory):
             timestamp=factory.Sequence(lambda n: int(time.time() * 1000) + n)
         )
     """
+
     class Meta:
         model = ChatMessage
 
     session = factory.SubFactory(ChatSessionFactory)
-    role = 'user'
+    role = "user"
     content = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=200))
     timestamp = factory.LazyAttribute(lambda _: int(time.time() * 1000))
 
 
 class UserChatMessageFactory(ChatMessageFactory):
     """Factory for creating user messages."""
-    role = 'user'
+
+    role = "user"
 
 
 class AssistantChatMessageFactory(ChatMessageFactory):
     """Factory for creating assistant messages."""
-    role = 'assistant'
+
+    role = "assistant"
 
 
 class SystemChatMessageFactory(ChatMessageFactory):
     """Factory for creating system messages."""
-    role = 'system'
+
+    role = "system"

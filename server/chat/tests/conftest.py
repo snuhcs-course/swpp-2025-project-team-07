@@ -1,12 +1,13 @@
 """
 Chat app specific test fixtures.
 """
+
 import pytest
 from chat.tests.factories import (
     ChatSessionFactory,
     ChatMessageFactory,
     UserChatMessageFactory,
-    AssistantChatMessageFactory
+    AssistantChatMessageFactory,
 )
 
 

@@ -1,6 +1,7 @@
 """
 User app specific test fixtures.
 """
+
 import pytest
 from user.tests.factories import UserFactory, StaffUserFactory, SuperUserFactory
 

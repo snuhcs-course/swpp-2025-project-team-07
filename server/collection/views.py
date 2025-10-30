@@ -41,38 +41,43 @@ _strings_2d_array = openapi.Schema(
 
 
 @swagger_auto_schema(
-    method='post',
+    method="post",
     operation_description="Insert data into collection in vectordb.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
-            'chat_data': _array_of_objects,
-            'screen_data': _array_of_objects,
+            "chat_data": _array_of_objects,
+            "screen_data": _array_of_objects,
         },
-        required=[]
+        required=[],
     ),
     responses={
         201: openapi.Response(
             description="Data stored successfully",
-            examples={"application/json": {"ok": True, "result": {"chat_insert_count": 1, "screen_insert_count": 1}}},
+            examples={
+                "application/json": {
+                    "ok": True,
+                    "result": {"chat_insert_count": 1, "screen_insert_count": 1},
+                }
+            },
         ),
         400: "Bad Request - Both chat_data and screen_data are empty",
         401: "Unauthorized - Invalid or missing token",
-        500: "Server Error - VectorDB operation failed"
+        500: "Server Error - VectorDB operation failed",
     },
-    security=[{'Bearer': []}]
+    security=[{"Bearer": []}],
 )
-@api_view(['POST'])
+@api_view(["POST"])
 def insert_to_collection(request):
     """Store encrypted vectors and values to chat and/or screen vectordb."""
-    chat_data = request.data.get('chat_data')
-    screen_data = request.data.get('screen_data')
+    chat_data = request.data.get("chat_data")
+    screen_data = request.data.get("screen_data")
 
     # Validate at least one has data
     if not chat_data and not screen_data:
         return Response(
             {"detail": "Both chat_data and screen_data cannot be empty"},
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     # Call vectordb in parallel
@@ -83,27 +88,21 @@ def insert_to_collection(request):
     )
 
     if not success:
-        return Response(
-            {"detail": error},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({"detail": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    return Response({
-        "ok": True,
-        "result": results
-    }, status=status.HTTP_201_CREATED)
+    return Response({"ok": True, "result": results}, status=status.HTTP_201_CREATED)
 
 
 @swagger_auto_schema(
-    method='post',
+    method="post",
     operation_description="(Plaintext Mock) Perform homomorphic search across collections. Returns HE-encrypted similarity scores.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
-            'chat_data': _array_of_objects,
-            'screen_data': _array_of_objects,
+            "chat_data": _array_of_objects,
+            "screen_data": _array_of_objects,
         },
-        required=[]
+        required=[],
     ),
     responses={
         200: openapi.Response(
@@ -118,31 +117,33 @@ def insert_to_collection(request):
                     "screen_ids": _strings_2d_array,
                 },
             ),
-            examples={"application/json": {
-                "ok": True,
-                "chat_scores": [[0.12, 0.34, 0.56]],
-                "chat_ids": [["id1", "id2", "id3"]],
-                "screen_scores": [[0.12, 0.34, 0.56]],
-                "screen_ids": [["id1", "id2", "id3"]],
-            }},
+            examples={
+                "application/json": {
+                    "ok": True,
+                    "chat_scores": [[0.12, 0.34, 0.56]],
+                    "chat_ids": [["id1", "id2", "id3"]],
+                    "screen_scores": [[0.12, 0.34, 0.56]],
+                    "screen_ids": [["id1", "id2", "id3"]],
+                }
+            },
         ),
         400: "Bad Request - Both chat_data and screen_data are empty",
         401: "Unauthorized - Invalid or missing token",
-        500: "Server Error - VectorDB operation failed"
+        500: "Server Error - VectorDB operation failed",
     },
-    security=[{'Bearer': []}]
+    security=[{"Bearer": []}],
 )
-@api_view(['POST'])
+@api_view(["POST"])
 def search_collections(request):
     """Search for similar vectors in chat and/or screen vectordb."""
-    chat_data = request.data.get('chat_data')
-    screen_data = request.data.get('screen_data')
+    chat_data = request.data.get("chat_data")
+    screen_data = request.data.get("screen_data")
 
     # Validate at least one has data
     if not chat_data and not screen_data:
         return Response(
             {"detail": "Both chat_data and screen_data cannot be empty"},
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     # Call vectordb in parallel
@@ -153,22 +154,22 @@ def search_collections(request):
     )
 
     if not success:
-        return Response(
-            {"detail": error},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({"detail": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    return Response({
-        "ok": True,
-        "chat_scores": results.get('chat_scores'),
-        "chat_ids": results.get('chat_ids'),
-        "screen_scores": results.get('screen_scores'),
-        "screen_ids": results.get('screen_ids'),
-    }, status=status.HTTP_200_OK)
+    return Response(
+        {
+            "ok": True,
+            "chat_scores": results.get("chat_scores"),
+            "chat_ids": results.get("chat_ids"),
+            "screen_scores": results.get("screen_scores"),
+            "screen_ids": results.get("screen_ids"),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @swagger_auto_schema(
-    method='post',
+    method="post",
     operation_description="(Plaintext Mock) Query documents by ID and return selected fields.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
@@ -186,7 +187,7 @@ def search_collections(request):
             ),
             "screen_output_fields": _array_of_strings,
         },
-        required=[]
+        required=[],
     ),
     responses={
         200: openapi.Response(
@@ -202,28 +203,24 @@ def search_collections(request):
             examples={
                 "application/json": {
                     "ok": True,
-                    "chat_results": [
-                        {"id": "msg_001", "text": "hello"}
-                    ],
-                    "screen_results": [
-                        {"id": "msg_002", "text": "world"}
-                    ]
+                    "chat_results": [{"id": "msg_001", "text": "hello"}],
+                    "screen_results": [{"id": "msg_002", "text": "world"}],
                 }
-            }
+            },
         ),
         400: "Bad Request - No query parameters provided",
         401: "Unauthorized - Invalid or missing token",
-        500: "Server Error - VectorDB operation failed"
+        500: "Server Error - VectorDB operation failed",
     },
-    security=[{'Bearer': []}]
+    security=[{"Bearer": []}],
 )
-@api_view(['POST'])
+@api_view(["POST"])
 def query_collection(request):
     """Query documents by ID from chat and/or screen vectordb."""
-    chat_ids = request.data.get('chat_ids')
-    chat_output_fields = request.data.get('chat_output_fields')
-    screen_ids = request.data.get('screen_ids')
-    screen_output_fields = request.data.get('screen_output_fields')
+    chat_ids = request.data.get("chat_ids")
+    chat_output_fields = request.data.get("chat_output_fields")
+    screen_ids = request.data.get("screen_ids")
+    screen_output_fields = request.data.get("screen_output_fields")
 
     # Validate at least one query is provided
     has_chat_query = chat_ids and chat_output_fields
@@ -231,8 +228,10 @@ def query_collection(request):
 
     if not has_chat_query and not has_screen_query:
         return Response(
-            {"detail": "Must provide either (chat_ids + chat_output_fields) or (screen_ids + screen_output_fields)"},
-            status=status.HTTP_400_BAD_REQUEST
+            {
+                "detail": "Must provide either (chat_ids + chat_output_fields) or (screen_ids + screen_output_fields)"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     # Call vectordb in parallel
@@ -245,13 +244,13 @@ def query_collection(request):
     )
 
     if not success:
-        return Response(
-            {"detail": error},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({"detail": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    return Response({
-        "ok": True,
-        "chat_results": results.get('chat_results', []),
-        "screen_results": results.get('screen_results', []),
-    }, status=status.HTTP_200_OK)
+    return Response(
+        {
+            "ok": True,
+            "chat_results": results.get("chat_results", []),
+            "screen_results": results.get("screen_results", []),
+        },
+        status=status.HTTP_200_OK,
+    )
