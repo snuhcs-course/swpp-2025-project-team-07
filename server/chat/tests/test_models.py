@@ -1,6 +1,7 @@
 """
 Unit tests for chat models and serializers.
 """
+
 import pytest
 from django.utils import timezone
 from freezegun import freeze_time
@@ -18,10 +19,7 @@ class TestChatSessionModel:
 
     def test_create_chat_session(self, user):
         """Test creating a chat session."""
-        session = ChatSession.objects.create(
-            user=user,
-            title="Test Chat Session"
-        )
+        session = ChatSession.objects.create(user=user, title="Test Chat Session")
         assert session.user == user
         assert session.title == "Test Chat Session"
         assert session.created_at is not None
@@ -86,24 +84,21 @@ class TestChatMessageModel:
         """Test creating a chat message."""
         message = ChatMessage.objects.create(
             session=chat_session,
-            role='user',
-            content='Hello, this is a test message',
-            timestamp=1234567890000
+            role="user",
+            content="Hello, this is a test message",
+            timestamp=1234567890000,
         )
         assert message.session == chat_session
-        assert message.role == 'user'
-        assert message.content == 'Hello, this is a test message'
+        assert message.role == "user"
+        assert message.content == "Hello, this is a test message"
         assert message.timestamp == 1234567890000
 
     def test_chat_message_role_choices(self, chat_session):
         """Test that only valid roles are accepted."""
         # Valid roles
-        for role in ['user', 'assistant', 'system']:
+        for role in ["user", "assistant", "system"]:
             message = ChatMessage.objects.create(
-                session=chat_session,
-                role=role,
-                content='Test',
-                timestamp=1000
+                session=chat_session, role=role, content="Test", timestamp=1000
             )
             assert message.role == role
 
@@ -111,12 +106,12 @@ class TestChatMessageModel:
         """Test string representation of ChatMessage."""
         message = ChatMessageFactory(
             session=chat_session,
-            role='user',
-            content='This is a long message that should be truncated in the string representation'
+            role="user",
+            content="This is a long message that should be truncated in the string representation",
         )
         str_repr = str(message)
         assert chat_session.title in str_repr
-        assert 'user' in str_repr
+        assert "user" in str_repr
         assert len(str_repr) < 100  # Ensures truncation
 
     def test_chat_message_belongs_to_session(self, chat_session):
@@ -149,7 +144,7 @@ class TestChatMessageModel:
         """Test that ChatMessageFactory creates a valid message."""
         message = ChatMessageFactory()
         assert message.session is not None
-        assert message.role in ['user', 'assistant', 'system']
+        assert message.role in ["user", "assistant", "system"]
         assert message.content
         assert message.timestamp > 0
 
@@ -159,26 +154,20 @@ class TestChatMessageModel:
 
         # User asks question
         user_msg = ChatMessage.objects.create(
-            session=session,
-            role='user',
-            content='How do I reset my password?',
-            timestamp=1000
+            session=session, role="user", content="How do I reset my password?", timestamp=1000
         )
 
         # Assistant responds
         assistant_msg = ChatMessage.objects.create(
             session=session,
-            role='assistant',
+            role="assistant",
             content='You can reset your password by clicking the "Forgot Password" link.',
-            timestamp=2000
+            timestamp=2000,
         )
 
         # User follows up
         user_followup = ChatMessage.objects.create(
-            session=session,
-            role='user',
-            content='Thanks! That worked.',
-            timestamp=3000
+            session=session, role="user", content="Thanks! That worked.", timestamp=3000
         )
 
         messages = list(session.messages.all())
@@ -194,12 +183,12 @@ class TestChatMessageSerializer:
 
     def test_validate_role_with_valid_roles(self, chat_session):
         """Test that valid roles pass validation."""
-        for role in ['user', 'assistant', 'system']:
+        for role in ["user", "assistant", "system"]:
             data = {
-                'session': chat_session.id,
-                'role': role,
-                'content': 'Test message',
-                'timestamp': 1234567890000
+                "session": chat_session.id,
+                "role": role,
+                "content": "Test message",
+                "timestamp": 1234567890000,
             }
             serializer = ChatMessageSerializer(data=data)
             assert serializer.is_valid(), f"Role '{role}' should be valid"
@@ -207,14 +196,14 @@ class TestChatMessageSerializer:
     def test_validate_role_with_invalid_role(self, chat_session):
         """Test that invalid role raises validation error."""
         data = {
-            'session': chat_session.id,
-            'role': 'invalid_role',
-            'content': 'Test message',
-            'timestamp': 1234567890000
+            "session": chat_session.id,
+            "role": "invalid_role",
+            "content": "Test message",
+            "timestamp": 1234567890000,
         }
         serializer = ChatMessageSerializer(data=data)
         assert not serializer.is_valid()
-        assert 'role' in serializer.errors
+        assert "role" in serializer.errors
         # Check that error message mentions invalid choice or invalid role
-        error_message = str(serializer.errors['role'][0]).lower()
-        assert 'invalid' in error_message or 'not a valid choice' in error_message
+        error_message = str(serializer.errors["role"][0]).lower()
+        assert "invalid" in error_message or "not a valid choice" in error_message
