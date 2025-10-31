@@ -136,7 +136,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
   return (
     <Dialog open={open} onOpenChange={downloadState === 'idle' || downloadState === 'error' ? onOpenChange : undefined}>
-      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => {
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => {
         // Prevent closing while downloading
         if (downloadState === 'downloading') {
           e.preventDefault();
