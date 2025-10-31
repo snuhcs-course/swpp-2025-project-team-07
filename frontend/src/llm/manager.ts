@@ -101,11 +101,12 @@ When you see a message that starts with <CONTEXT> tags, this contains real infor
 You can treat this information as factual and use it to answer questions.
 The context is provided to help you remember previous interactions across different chat sessions.
 
-Additionally, you may receive video or image input showing the user's screen recordings.
-These videos contain visual information that you can analyze to understand what the user was doing or seeing.
-When videos are provided, use them to answer questions about what was visible on screen.
+Additionally, you may receive screen recording frames as images. These are extracted from the user's screen recordings at 1 frame per second.
+Each sequence of images represents a continuous screen recording session showing what the user was doing or seeing.
+When multiple images are provided together, they show the progression of activity over time (1 image = 1 second of recording).
+Analyze these frame sequences to understand what was visible on the user's screen and help answer questions about their activities.
 
-If asked about information that appears in the <CONTEXT> section or in provided videos,
+If asked about information that appears in the <CONTEXT> section or in provided images,
 answer confidently using that information as if you already know it.
 `
     });

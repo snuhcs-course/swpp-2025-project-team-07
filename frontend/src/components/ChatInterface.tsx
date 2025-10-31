@@ -14,6 +14,7 @@ import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
+import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 
 // Local UI types
 export interface Message {
@@ -334,6 +335,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       let contextPrompt = '';
       const videoBlobs: Blob[] = []; // Store reconstructed video blobs for multimodal input
       const videoUrls: string[] = []; // Store object URLs for debugging
+      const chatContexts: string[] = []; // Chat memory contexts
+      let videoCount = 0; // Number of screen recordings retrieved
+
       try {
         // Generate embeddings for the user's query
         // - DRAGON (768-dim) for chat search
@@ -351,8 +355,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
         if (relevantDocs.length > 0) {
           // Separate chat and video contexts
-          const chatContexts: string[] = [];
-          let videoCount = 0;
 
           relevantDocs.forEach((doc: any, idx: number) => {
             if (doc.source_type === 'screen' && doc.video_blob) {
@@ -382,6 +384,20 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                 view: () => {
                   const freshUrl = URL.createObjectURL(doc.video_blob);
                   window.open(freshUrl, '_blank');
+                },
+                // Extract and preview frames sent to LLM
+                frames: async (fps = 1, maxFrames = 50) => {
+                  console.log(`[Frame Extractor] Extracting frames from video ${videoCount} at ${fps} fps...`);
+                  const frames = await extractFramesFromVideoBlob(doc.video_blob, fps, maxFrames);
+                  console.log(`[Frame Extractor] Extracted ${frames.length} frames`);
+                  displayFramesInConsole(frames);
+                  return frames;
+                },
+                // Open frames in new window
+                viewFrames: async (fps = 1, maxFrames = 50) => {
+                  console.log(`[Frame Extractor] Extracting frames from video ${videoCount}...`);
+                  const frames = await extractFramesFromVideoBlob(doc.video_blob, fps, maxFrames);
+                  openFramesInWindow(frames);
                 }
               };
 
@@ -397,12 +413,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 The following are relevant excerpts from the user's past conversations with you.
 These are your memories of previous interactions.
 You can use this information to answer the user's question.
-
-${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n\n' : ''}${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) provided as video input.` : ''}
+${chatContexts.join('\n')}
+${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}
+${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) provided as image frame sequences. Each recording is split into frames at 1 frame per second, so you'll see multiple images showing the progression of activity over time.` : ''}
 
 </CONTEXT>
 
-**Now, using the above context${videoCount > 0 ? ' and video(s)' : ''}, answer the following question**:
+**Now, using the above context${videoCount > 0 ? ' and screen recording frames' : ''}, answer the following question**:
 `;
           }
         }
@@ -415,10 +432,91 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n\n'
       let fullResponse = '';
       const messageWithContext = contextPrompt + content;
 
+      // Log RAG summary
+      console.log('[RAG] Context retrieval complete:', {
+        chatMemories: chatContexts.length,
+        screenRecordings: videoCount,
+        contextLength: contextPrompt.length,
+        totalPromptLength: messageWithContext.length
+      });
+
+      // Expose the final prompt for debugging in console
+      (window as any).__ragPrompt = {
+        full: messageWithContext,
+        userQuery: content,
+        contextAdded: contextPrompt.length > 0,
+        contextLength: contextPrompt.length,
+        totalLength: messageWithContext.length,
+        chatMemories: chatContexts.length,
+        videoCount: videoCount,
+        videos: videoBlobs, // Store video blobs for frame extraction
+        view: () => {
+          console.log('=== RAG Prompt Debug ===');
+          console.log('User Query:', content);
+          console.log('\nContext Added:', contextPrompt.length > 0 ? 'Yes' : 'No');
+          console.log('Chat Memories:', chatContexts.length);
+          console.log('Screen Recordings:', videoCount);
+          console.log('\n--- Full Prompt ---');
+          console.log(messageWithContext);
+          console.log('\n--- Context Only ---');
+          console.log(contextPrompt);
+        },
+        copy: () => {
+          navigator.clipboard.writeText(messageWithContext);
+          console.log('✓ Full prompt copied to clipboard');
+        },
+        // Extract frames from all videos
+        frames: async (fps = 1, maxFrames = 50) => {
+          if (videoBlobs.length === 0) {
+            console.log('No videos attached to this query');
+            return [];
+          }
+          console.log(`[Frame Extractor] Extracting frames from ${videoBlobs.length} video(s) at ${fps} fps...`);
+          const allFrames = [];
+          for (let i = 0; i < videoBlobs.length; i++) {
+            console.log(`\n[Frame Extractor] Processing video ${i + 1}/${videoBlobs.length}...`);
+            const frames = await extractFramesFromVideoBlob(videoBlobs[i], fps, maxFrames);
+            console.log(`[Frame Extractor] Video ${i + 1}: ${frames.length} frames`);
+            displayFramesInConsole(frames);
+            allFrames.push(...frames);
+          }
+          console.log(`\n[Frame Extractor] Total: ${allFrames.length} frames from ${videoBlobs.length} video(s)`);
+          return allFrames;
+        },
+        // Open all frames in new window
+        viewFrames: async (fps = 1, maxFrames = 50) => {
+          if (videoBlobs.length === 0) {
+            console.log('No videos attached to this query');
+            return;
+          }
+          console.log(`[Frame Extractor] Extracting frames from ${videoBlobs.length} video(s)...`);
+          const allFrames = [];
+          for (const videoBlob of videoBlobs) {
+            const frames = await extractFramesFromVideoBlob(videoBlob, fps, maxFrames);
+            allFrames.push(...frames);
+          }
+          console.log(`[Frame Extractor] Opening ${allFrames.length} frames in new window...`);
+          openFramesInWindow(allFrames);
+        }
+      };
+      if (videoCount > 0) {
+        console.log('[RAG] Debug: __ragPrompt.view() | __ragPrompt.frames() | __ragPrompt.viewFrames()');
+        console.log(`[RAG] Debug: Individual videos: __ragVideo1.frames() | __ragVideo1.viewFrames()`);
+      } else {
+        console.log('[RAG] Debug: Use __ragPrompt.view() to inspect prompt or __ragPrompt.copy() to copy it');
+      }
+
       // Convert video Blobs to ArrayBuffers for IPC transfer
       const videoArrayBuffers = videoBlobs.length > 0
         ? await Promise.all(videoBlobs.map(blob => blob.arrayBuffer()))
         : undefined;
+
+      if (videoArrayBuffers && videoArrayBuffers.length > 0) {
+        console.log(`[RAG] Sending ${videoArrayBuffers.length} video(s) to LLM for frame extraction`);
+        console.log(`[RAG] Video sizes:`, videoArrayBuffers.map((buf, i) => `Video ${i + 1}: ${(buf.byteLength / 1024).toFixed(1)} KB`));
+      } else {
+        console.log('[RAG] No videos attached to this query');
+      }
 
       await llmService.streamMessage(
         messageWithContext,

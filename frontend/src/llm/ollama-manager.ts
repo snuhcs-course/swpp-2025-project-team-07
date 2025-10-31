@@ -20,8 +20,21 @@ export interface ChatOptions {
 export class OllamaManager {
   private ollama: Ollama;
   private options: OllamaManagerOptions;
-  private modelName: string = 'gemma3:4b';
+  private modelName = 'gemma3:4b';
   private systemPrompts: Map<string, string> = new Map();
+  private readonly defaultSystemPrompt = `You are a helpful AI assistant with access to the user's conversation history and screen recordings.
+
+When you see a message that starts with <CONTEXT> tags, this contains real information from the user's past conversations with you.
+You can treat this information as factual and use it to answer questions.
+The context is provided to help you remember previous interactions across different chat sessions.
+
+Additionally, you may receive screen recording frames as images. These are extracted from the user's screen recordings at 1 frame per second.
+Each sequence of images represents a continuous screen recording session showing what the user was doing or seeing.
+When multiple images are provided together, they show the progression of activity over time (1 image = 1 second of recording).
+Analyze these frame sequences to understand what was visible on the user's screen and help answer questions about their activities.
+
+If asked about information that appears in the <CONTEXT> section or in provided images,
+answer confidently using that information as if you already know it.`;
 
   constructor(options: OllamaManagerOptions = {}) {
     this.options = options;
@@ -92,9 +105,8 @@ export class OllamaManager {
   async createSession(systemPrompt?: string): Promise<string> {
     const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
-    if (systemPrompt) {
-      this.systemPrompts.set(sessionId, systemPrompt);
-    }
+    // Use provided system prompt, or fall back to default
+    this.systemPrompts.set(sessionId, systemPrompt || this.defaultSystemPrompt);
 
     console.log(`Created session: ${sessionId}`);
     return sessionId;
@@ -109,14 +121,15 @@ export class OllamaManager {
     try {
       const messages: Message[] = [];
 
-      // Add system prompt if available
-      const systemPrompt = options.systemPrompt || this.systemPrompts.get(options.sessionId || 'default');
-      if (systemPrompt) {
-        messages.push({
-          role: 'system',
-          content: systemPrompt
-        });
-      }
+      // Add system prompt (use provided, session-specific, or default)
+      const systemPrompt = options.systemPrompt
+        || this.systemPrompts.get(options.sessionId || 'default')
+        || this.defaultSystemPrompt;
+
+      messages.push({
+        role: 'system',
+        content: systemPrompt
+      });
 
       // Add user message with optional images
       const userMessage: Message = {
@@ -151,14 +164,15 @@ export class OllamaManager {
     try {
       const messages: Message[] = [];
 
-      // Add system prompt if available
-      const systemPrompt = options.systemPrompt || this.systemPrompts.get(options.sessionId || 'default');
-      if (systemPrompt) {
-        messages.push({
-          role: 'system',
-          content: systemPrompt
-        });
-      }
+      // Add system prompt (use provided, session-specific, or default)
+      const systemPrompt = options.systemPrompt
+        || this.systemPrompts.get(options.sessionId || 'default')
+        || this.defaultSystemPrompt;
+
+      messages.push({
+        role: 'system',
+        content: systemPrompt
+      });
 
       // Add user message with optional images
       const userMessage: Message = {
@@ -169,6 +183,9 @@ export class OllamaManager {
       if (options.images && options.images.length > 0) {
         userMessage.images = options.images;
         console.log(`[Ollama] Processing message with ${options.images.length} image(s)`);
+        console.log(`[Ollama] Image sizes:`, options.images.map((img, i) => `${i + 1}: ${(img.length / 1024).toFixed(1)} KB`));
+      } else {
+        console.log('[Ollama] No images attached to this message');
       }
 
       messages.push(userMessage);

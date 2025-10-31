@@ -10,6 +10,7 @@ import { ElectronOllama } from 'electron-ollama';
 import * as fs from 'node:fs';
 import * as https from 'node:https';
 import { URL } from 'node:url';
+import { extractFramesFromVideos } from './utils/video-frame-extractor';
 
 let selectedSourceId: string | null = null;
 
@@ -499,10 +500,14 @@ function setupLLMHandlers() {
     const sessionId = options?.sessionId || 'default';
     const streamId = options?.streamId || 'default';
 
-    // Convert videos/images from IPC-serialized format to base64 strings
+    // Extract frames from videos at 1 fps and convert to base64 images for Ollama
     let images: string[] | undefined = undefined;
     if (options?.videos && Array.isArray(options.videos)) {
-      const convertedImages = options.videos.map((video: any) => {
+      console.log(`[IPC] Processing ${options.videos.length} video(s) for frame extraction...`);
+
+      // Convert video buffers from IPC-serialized format
+      const videoBuffers: Buffer[] = [];
+      for (const video of options.videos) {
         let buffer: Buffer;
         if (video?.data && video?.type === 'Buffer') {
           buffer = Buffer.from(video.data);
@@ -511,14 +516,35 @@ function setupLLMHandlers() {
         } else if (video instanceof ArrayBuffer) {
           buffer = Buffer.from(video);
         } else {
-          return null;
+          console.warn('[IPC] Skipping invalid video format');
+          continue;
         }
-        // Convert to base64 for Ollama
-        return buffer.toString('base64');
-      }).filter((img: string | null): img is string => img !== null);
+        videoBuffers.push(buffer);
+      }
 
-      images = convertedImages;
-      console.log(`[IPC] Converted ${convertedImages.length} image(s) to base64 for Ollama`);
+      // Extract frames at 1 fps from all videos
+      // Note: maxFrames is a cap, not a target
+      // - 10 second video → 10 frames
+      // - 60 second video → 50 frames (capped)
+      try {
+        console.log(`[IPC] Starting frame extraction: ${videoBuffers.length} video(s), total size: ${videoBuffers.reduce((sum, buf) => sum + buf.length, 0) / 1024 / 1024} MB`);
+
+        const frames = await extractFramesFromVideos(videoBuffers, {
+          fps: 1, // 1 frame per second
+          quality: 85, // JPEG quality
+          maxFrames: 30 // Max frames per video (cap for long videos)
+        });
+
+        images = frames.map(frame => frame.base64);
+        console.log(`[IPC] ✓ Successfully extracted ${images.length} frames from ${videoBuffers.length} video(s)`);
+        console.log(`[IPC] Frame details:`, frames.map((f, i) => `Frame ${i + 1}: ${f.timestamp.toFixed(2)}s, ${(f.base64.length / 1024).toFixed(1)} KB`));
+        console.log(`[IPC] Total frame data size: ${images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024} MB`);
+      } catch (error) {
+        console.error('[IPC] ✗ Error extracting frames from videos:', error);
+        console.error('[IPC] Stack trace:', (error as Error).stack);
+        // Continue without images if extraction fails
+        images = undefined;
+      }
     }
 
     await ollamaManager.streamChat(message, {
