@@ -39,21 +39,6 @@ contextBridge.exposeInMainWorld("recorder", {
   stop: () => stopRecording(),
 });
 
-contextBridge.exposeInMainWorld('vembedAPI', {
-  isModelReady: () => ipcRenderer.invoke('video-model:is-ready'),
-  startModelDownload: () => ipcRenderer.invoke('video-model:start-download'),
-  onDownloadProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void) => {
-    ipcRenderer.on('video-model:progress', (_e, data) => cb(data));
-  },
-  onDownloadComplete: (cb: () => void) => {
-    ipcRenderer.on('video-model:complete', () => cb());
-  },
-  onDownloadError: (cb: (msg: string) => void) => {
-    ipcRenderer.on('video-model:error', (_e, msg) => cb(msg));
-  },
-  getModelBytes: (): Promise<ArrayBuffer> => ipcRenderer.invoke('video-model:get-bytes'),
-});
-
 // Expose LLM API to renderer process
 contextBridge.exposeInMainWorld('llmAPI', {
   // Chat methods
@@ -73,6 +58,9 @@ contextBridge.exposeInMainWorld('llmAPI', {
   // Model info
   getModelInfo: (): Promise<LLMModelInfo> =>
     ipcRenderer.invoke('llm:model-info'),
+
+  getVideoModelBytes: (): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke('model:get-video-model-bytes'),
 
   // Event listeners for streaming
   onStreamChunk: (callback: (chunk: LLMStreamChunk) => void): void => {
