@@ -25,6 +25,14 @@ export interface LLMChatOptions {
   systemPrompt?: string;
   sessionId?: string;
   streamId?: string;
+  /**
+   * Video data for multimodal input (Gemma 3 via Ollama)
+   * - Videos are automatically converted to image frames at 1 fps using FFmpeg
+   * - Each video is processed to extract keyframes which are passed to the LLM
+   * - ArrayBuffers for IPC compatibility
+   * - Maximum 30 frames total to stay within context window
+   */
+  videos?: ArrayBuffer[];
 }
 
 export interface ModelDownloadProgress {

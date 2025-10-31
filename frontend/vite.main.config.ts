@@ -18,6 +18,16 @@ export default defineConfig({
         'transformers',
         // Also externalize electron-dl for model downloads
         'electron-dl',
+        // Externalize FFmpeg dependencies
+        'fluent-ffmpeg',
+        '@ffmpeg-installer/ffmpeg',
+        '@ffmpeg-installer/darwin-arm64',
+        '@ffmpeg-installer/darwin-x64',
+        '@ffmpeg-installer/linux-arm64',
+        '@ffmpeg-installer/linux-ia32',
+        '@ffmpeg-installer/linux-x64',
+        '@ffmpeg-installer/win32-ia32',
+        '@ffmpeg-installer/win32-x64',
       ]
     }
   }

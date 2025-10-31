@@ -15,7 +15,7 @@ export class EmbeddingService {
   }
 
   /**
-   * Embed a query text
+   * Embed a query text using DRAGON (768-dim) for chat search
    */
   async embedQuery(text: string): Promise<number[]> {
     if (!this.isAvailable()) {
@@ -31,7 +31,7 @@ export class EmbeddingService {
   }
 
   /**
-   * Embed a context text
+   * Embed a context text using DRAGON (768-dim)
    */
   async embedContext(text: string): Promise<number[]> {
     if (!this.isAvailable()) {
@@ -43,6 +43,23 @@ export class EmbeddingService {
     } catch (error) {
       console.error('Failed to embed context:', error);
       throw new Error('Failed to generate context embedding');
+    }
+  }
+
+  /**
+   * Embed a query text using CLIP (512-dim) for video search
+   * Returns null if CLIP text embedding is not available (vision-only model)
+   */
+  async embedVideoQuery(text: string): Promise<number[] | null> {
+    try {
+      // Lazy-load ClipVideoEmbedder to avoid circular dependencies
+      const { ClipVideoEmbedder } = await import('@/embedding/ClipVideoEmbedder');
+      const embedder = await ClipVideoEmbedder.get();
+      const embedding = await embedder.embedText(text);
+      return Array.from(embedding);
+    } catch (error) {
+      console.warn('[embedding] CLIP text embedding not available (vision-only model):', error);
+      return null;
     }
   }
 

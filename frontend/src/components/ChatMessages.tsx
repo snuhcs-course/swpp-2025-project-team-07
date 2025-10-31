@@ -9,6 +9,7 @@ import { MarkdownMessage } from './MarkdownMessage';
 interface ChatMessagesProps {
   user: AuthUser | null;
   messages: Message[];
+  isLoading?: boolean;
 }
 
 function UserMessageBubble({ content, className }: { content: string; className?: string }) {
@@ -49,7 +50,7 @@ function UserMessageBubble({ content, className }: { content: string; className?
   );
 }
 
-export function ChatMessages({ user, messages }: ChatMessagesProps) {
+export function ChatMessages({ user, messages, isLoading = false }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const userInitials = getUserInitials(user?.username, user?.email);
@@ -57,6 +58,10 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  if (isLoading) {
+    return <div className="flex-1" />;
+  }
 
   if (messages.length === 0) {
     return (
@@ -98,7 +103,7 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
             <div className={`flex-1 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
               {message.isUser ? (
                 <motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
+                  initial={{ scale: 1, opacity: 0.8 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
                 >
@@ -106,7 +111,7 @@ export function ChatMessages({ user, messages }: ChatMessagesProps) {
                 </motion.div>
               ) : (
                 <motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
+                  initial={{ scale: 1, opacity: 0.8 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ duration: 0.3, delay: index * 0.05 + 0.1, ease: "easeOut" }}
                   className="py-2"

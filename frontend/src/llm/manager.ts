@@ -19,6 +19,7 @@ export interface ChatOptions {
   sessionId?: string;
   onChunk?: (chunk: string) => void;
   onComplete?: () => void;
+  videos?: Buffer[]; // Video buffers for multimodal input (Gemma 3n) - converted from Blobs in IPC
 }
 
 interface SessionData {
@@ -93,7 +94,21 @@ export class LLMManager {
 
     const session = new LlamaChatSessionClass({
       contextSequence: context.getSequence(),
-      systemPrompt: systemPrompt || 'You are a helpful AI assistant.'
+      systemPrompt: systemPrompt || `
+You are a helpful AI assistant with access to the user's conversation history and screen recordings.
+
+When you see a message that starts with <CONTEXT> tags, this contains real information from the user's past conversations with you.
+You can treat this information as factual and use it to answer questions.
+The context is provided to help you remember previous interactions across different chat sessions.
+
+Additionally, you may receive screen recording frames as images. These are extracted from the user's screen recordings at 1 frame per second.
+Each sequence of images represents a continuous screen recording session showing what the user was doing or seeing.
+When multiple images are provided together, they show the progression of activity over time (1 image = 1 second of recording).
+Analyze these frame sequences to understand what was visible on the user's screen and help answer questions about their activities.
+
+If asked about information that appears in the <CONTEXT> section or in provided images,
+answer confidently using that information as if you already know it.
+`
     });
 
     this.sessions.set(sessionId, {
@@ -157,7 +172,8 @@ export class LLMManager {
     }
 
     try {
-      await sessionData.session.prompt(message, {
+      // Prepare prompt options with video support
+      const promptOptions: any = {
         temperature: options.temperature ?? 0.7,
         maxTokens: options.maxTokens ?? 2048,
         topP: options.topP ?? 0.9,
@@ -166,7 +182,16 @@ export class LLMManager {
             options.onChunk(chunk);
           }
         }
-      });
+      };
+
+      // Add videos if provided (for Gemma 3n multimodal support)
+      // NOTE: Current GGUF model doesn't support multimodal yet - this is prepared for future use
+      if (options.videos && options.videos.length > 0) {
+        promptOptions.images = options.videos;
+        console.log(`[LLM] Prepared ${options.videos.length} video(s) for multimodal input (not yet supported by current model)`);
+      }
+
+      await sessionData.session.prompt(message, promptOptions);
 
       sessionData.messageCount++;
 

@@ -60,12 +60,12 @@ export async function refreshToken(refresh: string): Promise<AuthTokens> {
   });
 }
 
-export async function getProfile(accessToken: string): Promise<AuthUser> {
-  return apiRequest<AuthUser>('/api/user/profile/', {
+export async function getProfile(): Promise<AuthUser> {
+  // Import at function level to avoid circular dependency
+  const { apiRequestWithAuth } = await import('@/utils/apiRequest');
+
+  return apiRequestWithAuth<AuthUser>('/api/user/profile/', {
     method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
   });
 }
 

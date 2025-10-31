@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Menu, Settings, LogOut, Circle, Square } from "lucide-react";
+import { PanelLeft, Settings, LogOut, Circle, Square } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -17,6 +17,8 @@ import { type AuthUser } from "@/services/auth";
 import { getUserInitials } from "@/utils/user";
 import { useRecorder } from '@/recording/provider';
 import { ClipVideoEmbedder } from '@/embedding/ClipVideoEmbedder';
+import { sampleUniformFrames } from '@/embedding/video-sampler';
+import { memoryService } from '@/services/memory';
 
 
 interface ChatHeaderProps {
@@ -91,14 +93,34 @@ export function ChatHeader({
       // (선택) 미리보기는 유지
       window.open(result.objectUrl ?? URL.createObjectURL(result.blob), '_blank');
 
-      // 2) CLIP 임베딩
-      setIsEmbedding(true);
-      const embedder = await ClipVideoEmbedder.get();
-      const { pooled, frames } = await embedder.embedVideo(result.blob, 10); // 10프레임 고정
-      console.log('[embedding] pooled=', pooled.length, 'frames=', frames.length);
+      // 2) Get video dimensions
+      const videoDimensions = await new Promise<{ width: number; height: number }>((resolve) => {
+        const video = document.createElement('video');
+        video.onloadedmetadata = () => {
+          resolve({ width: video.videoWidth, height: video.videoHeight });
+        };
+        video.src = result.objectUrl ?? URL.createObjectURL(result.blob);
+      });
+      console.log('[recording] Video dimensions:', videoDimensions);
 
-      // TODO(3단계): 서버 전송 코드 연결 지점
-      // await uploadVideoAndEmbedding({ blob: result.blob, embedding: pooled, frames });
+      // 3) Get CLIP embedding (sample frames for embedding only, not storage)
+      setIsEmbedding(true);
+      const frameCount = 10; // Sample 10 frames for embedding
+      const embedder = await ClipVideoEmbedder.get();
+      const { pooled } = await embedder.embedVideo(result.blob, frameCount);
+      console.log('[embedding] CLIP embedding:', pooled.length, 'dimensions');
+
+      // 4) Store ORIGINAL VIDEO BLOB + embedding in vectorDB for RAG (globally available)
+      await memoryService.storeVideoEmbedding(
+        pooled,
+        result.blob, // Store original video blob
+        {
+          duration: result.durationMs,
+          width: videoDimensions.width,
+          height: videoDimensions.height
+        }
+      );
+      console.log('[memory] Stored original video:', (result.blob.size / 1024).toFixed(1), 'KB');
 
     } catch (e) {
       console.error('[recording] stop+embed failed:', e);
@@ -120,19 +142,25 @@ export function ChatHeader({
     >
       {/* Left side - Sidebar toggle and current chat info */}
       <div className="flex items-center space-x-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          className="hover:bg-accent transition-all duration-300 rounded-xl"
+        <motion.div
+          animate={{
+            opacity: isSidebarOpen ? 0 : 1,
+            x: isSidebarOpen ? -20 : 0,
+            width: isSidebarOpen ? 0 : 'auto',
+          }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          style={{ overflow: 'hidden' }}
         >
-          <motion.div
-            animate={{ rotate: isSidebarOpen ? 0 : 180 }}
-            transition={{ duration: 0.2 }}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            className="hover:bg-accent transition-all duration-300 rounded-xl"
+            disabled={isSidebarOpen}
           >
-            <Menu className="w-5 h-5" />
-          </motion.div>
-        </Button>
+            <PanelLeft className="w-5 h-5" />
+          </Button>
+        </motion.div>
 
         {currentSession && (
           <motion.div

@@ -118,6 +118,37 @@ export class LLMService {
   isAvailable(): boolean {
     return typeof window !== 'undefined' && typeof window.llmAPI !== 'undefined';
   }
+
+  /**
+   * Generate a concise title for a conversation based on the first user message
+   * and assistant response. Uses the local LLM (Gemma-3) for generation.
+   */
+  async generateTitle(userMessage: string, assistantResponse: string): Promise<string> {
+    try {
+      const prompt = `Based on the following conversation, generate a very short and concise title (maximum 5 words, no quotes or punctuation at the end):
+
+User: ${userMessage.substring(0, 200)}
+Assistant: ${assistantResponse.substring(0, 200)}
+
+Title:`;
+
+      const title = await window.llmAPI.chat(prompt, {
+        temperature: 0.3,
+        maxTokens: 20,
+      });
+
+      // Clean up the title (remove quotes, trim, limit length)
+      return title
+        .trim()
+        .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+        .replace(/[.!?]+$/, '') // Remove trailing punctuation
+        .substring(0, 50); // Limit to 50 characters
+    } catch (error) {
+      console.error('Failed to generate title:', error);
+      // Fallback to a simple title based on first words of user message
+      return userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : '');
+    }
+  }
 }
 
 // Export singleton instance

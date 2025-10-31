@@ -166,8 +166,8 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
                 ? `Downloading: ${currentModelName}...` 
                 : 'Preparing to download...'
             ) : (
-              // [수정] 텍스트 일반화
-              'To use the AI chat features, you need to download the required AI models (LLM and Embedders, ~7.3 GB total).'
+              // Updated for Gemma 3 via Ollama
+              'To use the AI chat features, you need to download the required AI models (LLM and Embedders, ~5.4 GB total).'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -184,15 +184,15 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Models:</span>
-                <span className="font-medium">Gemma-3n-E4B (LLM) + 2 DRAGON (Embedders)</span>
+                <span className="font-medium">Gemma 3 4B (LLM) + 2 DRAGON (Embedders)</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Size:</span>
-                <span className="font-medium">~7.5 GB</span>
+                <span className="font-medium">~5.4 GB</span>
               </div>
               <div className="flex justify-between">
                 <span>Context:</span>
-                <span className="font-medium">32768 tokens</span>
+                <span className="font-medium">8192 tokens</span>
               </div>
             </div>
           )}
