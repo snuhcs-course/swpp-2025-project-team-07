@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatHeader } from './ChatHeader';
@@ -80,7 +80,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const [isModelReady, setIsModelReady] = useState(false);
+  const [isCheckingModels, setIsCheckingModels] = useState(true);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+
+  // Ref to prevent duplicate session creation during race conditions
+  const sessionCreationInProgressRef = useRef(false);
+  // Ref to track if initial model check is complete
+  const initialModelCheckCompleteRef = useRef(false);
 
   const currentSession = currentSessionId
     ? sessions.find(s => s.id === currentSessionId)
@@ -166,21 +172,35 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   }, [currentSessionId]);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+
     const checkModelStatus = async () => {
       try {
+        // Wait a bit for backend initialization to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         const status = await window.llmAPI.checkModelDownloaded();
 
+        // Mark initial check as complete
+        initialModelCheckCompleteRef.current = true;
+        setIsCheckingModels(false);
+
         if (!status.downloaded) {
+          // Only show dialog if models are truly not downloaded
           setShowDownloadDialog(true);
           setIsModelReady(false);
         } else if (status.initialized) {
           setIsModelReady(true);
           setShowDownloadDialog(false);
         } else {
+          // Models downloaded but not initialized yet - wait for llm:ready event
           setIsModelReady(false);
+          setShowDownloadDialog(false);
         }
       } catch (error) {
         console.error('Failed to check model status:', error);
+        setIsCheckingModels(false);
+        initialModelCheckCompleteRef.current = true;
       }
     };
 
@@ -188,13 +208,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
     // Listen for model status events
     const handleModelNotFound = () => {
-      setShowDownloadDialog(true);
-      setIsModelReady(false);
+      // Only show dialog if initial check is complete
+      // This prevents flashing the dialog during startup network errors
+      if (initialModelCheckCompleteRef.current) {
+        setShowDownloadDialog(true);
+        setIsModelReady(false);
+      }
     };
 
     const handleLLMReady = () => {
       setIsModelReady(true);
       setShowDownloadDialog(false);
+      setIsCheckingModels(false);
     };
 
     const handleLLMError = (error: { message: string; error: string }) => {
@@ -206,7 +231,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     window.llmAPI.onLLMReady(handleLLMReady);
     window.llmAPI.onLLMError(handleLLMError);
 
-    // Cleanup would go here if we had removeListener functions
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   const handleSendMessage = async (content: string) => {
@@ -215,7 +242,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     // Auto-create session if none exists
     let session = currentSession;
     if (!session) {
+      // Check if session creation is already in progress
+      // This prevents duplicate session creation in race conditions (e.g., React 18 Strict Mode double-mounting)
+      if (sessionCreationInProgressRef.current) {
+        console.log('Session creation already in progress, skipping duplicate call');
+        return;
+      }
+
       try {
+        // Mark session creation as in progress
+        sessionCreationInProgressRef.current = true;
+
         // Create new session synchronously
         const backendSession = await chatService.createSession('New Conversation');
         const localSession = toLocalSession(backendSession);
@@ -225,6 +262,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       } catch (error) {
         console.error('Failed to create session:', error);
         return;
+      } finally {
+        // Reset the flag after session creation
+        sessionCreationInProgressRef.current = false;
       }
     }
 
@@ -516,10 +556,13 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n\n'
           if (!o) setVideoReady(true); // 닫힘 = 다운로드 완료로 간주
         }}
       />
-      <ModelDownloadDialog
-        open={showDownloadDialog}
-        onOpenChange={setShowDownloadDialog}
-      />
+      {/* Only show download dialog after initial model check is complete */}
+      {!isCheckingModels && (
+        <ModelDownloadDialog
+          open={showDownloadDialog}
+          onOpenChange={setShowDownloadDialog}
+        />
+      )}
 
       <div className="h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex">
         {/* Animated background elements */}
