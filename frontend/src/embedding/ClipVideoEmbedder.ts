@@ -17,6 +17,26 @@ export type ClipVideoEmbedding = {
   modelOutput: string;
 };
 
+// Simple tokenizer for CLIP text (basic implementation)
+function tokenizeText(text: string, maxLength: number = 77): number[] {
+  // This is a simplified tokenizer. In production, use a proper CLIP tokenizer
+  // For now, use character-level encoding as a placeholder
+  const tokens = [49406]; // Start token (CLIP standard)
+
+  for (let i = 0; i < Math.min(text.length, maxLength - 2); i++) {
+    tokens.push(text.charCodeAt(i) % 49407);
+  }
+
+  tokens.push(49407); // End token (CLIP standard)
+
+  // Pad to maxLength
+  while (tokens.length < maxLength) {
+    tokens.push(0); // Padding token
+  }
+
+  return tokens.slice(0, maxLength);
+}
+
 export class ClipVideoEmbedder {
   private static _inst: ClipVideoEmbedder | null = null;
   static async get(): Promise<ClipVideoEmbedder> {
@@ -68,7 +88,7 @@ export class ClipVideoEmbedder {
   }
 
   private async init() {
-    const bytes: ArrayBuffer = await (window as any).vembedAPI.getModelBytes();
+    const bytes: ArrayBuffer = await (window as any).llmAPI.getVideoModelBytes();
 
     this.session = await ort.InferenceSession.create(bytes, {
       executionProviders: ['webgpu', 'wasm'],
@@ -149,6 +169,47 @@ export class ClipVideoEmbedder {
         const t = this.makeZerosTensor('attention_mask', this.inputDTypes['attention_mask'] ?? 'int64', [1, this.textSeqLen], /*ones*/ true);
         feeds['attention_mask'] = t;
       }
+    }
+
+    const outMap = await this.session.run(feeds);
+    const out = outMap[this.outputName];
+    if (!out) throw new Error(`output "${this.outputName}" not found: ${Object.keys(outMap)}`);
+
+    if (out.dims.length <= 2) {
+      const data = out.data as Float32Array | number[];
+      return l2norm(data instanceof Float32Array ? data : Float32Array.from(data));
+    }
+    if (out.dims.length === 3) {
+      const [b, t, c] = out.dims;
+      if (b !== 1) throw new Error(`unexpected batch size ${b}`);
+      const data = out.data as Float32Array;
+      const cls = new Float32Array(c);
+      for (let i = 0; i < c; i++) cls[i] = data[0 * t * c + 0 * c + i];
+      return l2norm(cls);
+    }
+    throw new Error(`unhandled output shape ${out.dims.join('x')}`);
+  }
+
+  async embedText(text: string): Promise<Float32Array> {
+    await this.ensureReady();
+
+    // For unified CLIP models with text support
+    if (!this.needTextFeeds) {
+      throw new Error('This CLIP model does not support text embedding (vision-only model). Text embedding requires a unified CLIP model.');
+    }
+
+    const tokens = tokenizeText(text, this.textSeqLen);
+    const inputIds = new BigInt64Array(tokens.map(t => BigInt(t)));
+    const attentionMask = new BigInt64Array(tokens.map(t => t !== 0 ? 1n : 0n));
+
+    const feeds: Record<string, ort.Tensor> = {
+      input_ids: new ort.Tensor(this.inputDTypes['input_ids'] ?? 'int64', inputIds, [1, this.textSeqLen]),
+      attention_mask: new ort.Tensor(this.inputDTypes['attention_mask'] ?? 'int64', attentionMask, [1, this.textSeqLen]),
+    };
+
+    // Add zero pixel values since unified model might need both inputs
+    if (this.session.inputNames.includes(this.inputName)) {
+      feeds[this.inputName] = this.makeZerosTensor(this.inputName, 'float32', [1, 3, 224, 224]);
     }
 
     const outMap = await this.session.run(feeds);

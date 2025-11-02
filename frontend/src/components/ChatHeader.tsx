@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Menu, Settings, LogOut, Circle, Square } from "lucide-react";
+import { PanelLeft, Settings, LogOut, Circle } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -16,6 +16,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { type AuthUser } from "@/services/auth";
 import { getUserInitials } from "@/utils/user";
 import { useRecorder, useChunkedEmbeddingQueue } from '@/recording/provider';
+import { memoryService } from '@/services/memory';
 
 
 interface ChatHeaderProps {
@@ -54,14 +55,21 @@ export function ChatHeader({
     stopChunked,
     isRecording,
     isProcessing,
-    pending,
-    processed,
   } = useChunkedEmbeddingQueue({
-    onEmbeddedChunk: async ({ chunk, pooled, frames }) => {
-      // TODO: Send to server here
-      // await uploadVideoChunkAndEmbedding({ blob: chunk.blob, vec: pooled, frames });
-      console.log('[chunk embedded]',
-        { dur: (chunk.durationMs/1000).toFixed(2)+'s', vecLen: pooled.length, frames: (frames as any[]).length });
+    onEmbeddedChunk: async ({ chunk, pooled }) => {
+      try {
+        await memoryService.storeVideoEmbedding(
+          pooled,
+          chunk.blob,
+          {
+            duration: chunk.durationMs,
+            width: chunk.width,
+            height: chunk.height,
+          }
+        );
+      } catch (error) {
+        console.error('[video upload] failed:', error);
+      }
     },
   });
 
@@ -99,19 +107,25 @@ export function ChatHeader({
     >
       {/* Left side - Sidebar toggle and current chat info */}
       <div className="flex items-center space-x-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          className="hover:bg-accent transition-all duration-300 rounded-xl"
+        <motion.div
+          animate={{
+            opacity: isSidebarOpen ? 0 : 1,
+            x: isSidebarOpen ? -20 : 0,
+            width: isSidebarOpen ? 0 : 'auto',
+          }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          style={{ overflow: 'hidden' }}
         >
-          <motion.div
-            animate={{ rotate: isSidebarOpen ? 0 : 180 }}
-            transition={{ duration: 0.2 }}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            className="hover:bg-accent transition-all duration-300 rounded-xl"
+            disabled={isSidebarOpen}
           >
-            <Menu className="w-5 h-5" />
-          </motion.div>
-        </Button>
+            <PanelLeft className="w-5 h-5" />
+          </Button>
+        </motion.div>
 
         {currentSession && (
           <motion.div
@@ -157,6 +171,7 @@ export function ChatHeader({
             size="sm"
             onClick={handleStartRecording}
             className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+            disabled={isProcessing}
             title="Start screen recording"
           >
             <Circle className="w-4 h-4 mr-1" />
