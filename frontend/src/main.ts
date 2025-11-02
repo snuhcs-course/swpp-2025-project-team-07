@@ -8,11 +8,7 @@ import { downloadFile } from './utils/downloader';
 import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
 import * as fs from 'node:fs';
-import * as https from 'node:https';
-import { URL } from 'node:url';
 import { extractFramesFromVideos } from './utils/video-frame-extractor';
-
-let selectedSourceId: string | null = null;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -137,6 +133,36 @@ function getEmbeddingModelPath(modelInfo: { directory: string, files: { relative
   return path.join(app.getPath('userData'), modelInfo.directory);
 }
 
+function isOllamaDownloaded(): boolean {
+  try {
+    const ollamaBasePath = path.join(app.getPath('userData'), 'electron-ollama');
+
+    if (!existsSync(ollamaBasePath)) {
+      return false;
+    }
+
+    // Check if any version directory exists
+    const fs = require('fs');
+    const versions = fs.readdirSync(ollamaBasePath).filter((file: string) => file.startsWith('v'));
+
+    if (versions.length === 0) {
+      return false;
+    }
+
+    // Check if the ollama binary exists in the latest version
+    // electron-ollama stores at: electron-ollama/v{version}/darwin/arm64/ollama
+    const latestVersion = versions[versions.length - 1];
+    const platform = process.platform;
+    const arch = process.arch;
+    const binaryPath = path.join(ollamaBasePath, latestVersion, platform, arch, 'ollama');
+
+    return existsSync(binaryPath);
+  } catch (error) {
+    console.error('Error checking Ollama download status:', error);
+    return false;
+  }
+}
+
 let ollamaManager: OllamaManager | null = null;
 let electronOllama: ElectronOllama | null = null;
 let embeddingManager: EmbeddingManager | null = null;
@@ -181,11 +207,6 @@ const createWindow = () => {
   return mainWindow;
 };
 
-// Initialize Video Embed Model
-function ensureDir(p: string) {
-  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
-}
-
 // Initialize Ollama Server and Manager
 async function initializeOllama() {
   if (ollamaManager) {
@@ -221,7 +242,7 @@ async function initializeOllama() {
         console.warn('Failed to fetch Ollama metadata from GitHub:', metadataError.message);
         console.log('Looking for locally installed Ollama version...');
 
-        const ollamaBasePath = path.join(app.getPath('userData'), 'ollama');
+        const ollamaBasePath = path.join(app.getPath('userData'), 'electron-ollama');
         const { readdir } = await import('node:fs/promises');
 
         if (existsSync(ollamaBasePath)) {
@@ -514,7 +535,7 @@ function setupLLMHandlers() {
           console.warn('Failed to fetch Ollama metadata from GitHub:', metadataError.message);
           console.log('Checking for locally installed Ollama version...');
 
-          const ollamaBasePath = path.join(app.getPath('userData'), 'ollama');
+          const ollamaBasePath = path.join(app.getPath('userData'), 'electron-ollama');
           const { readdir } = await import('node:fs/promises');
 
           if (existsSync(ollamaBasePath)) {
@@ -785,6 +806,10 @@ app.on('ready', async () => {
                           isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO) &&
                           isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO);
 
+  // Check if Ollama binary is downloaded (filesystem check - fast and reliable)
+  const ollamaBinaryDownloaded = isOllamaDownloaded();
+  console.log(`Ollama binary downloaded: ${ollamaBinaryDownloaded}`);
+
   // Try to initialize or start Ollama
   try {
     electronOllama = new ElectronOllama({
@@ -792,10 +817,9 @@ app.on('ready', async () => {
     });
 
     let ollamaRunning = await electronOllama.isRunning();
-    let hasOllamaModel = false;
 
-    // If Ollama not running but models exist, try to start it
-    if (!ollamaRunning && embeddingsReady) {
+    // If Ollama not running but binary exists, try to start it
+    if (!ollamaRunning && ollamaBinaryDownloaded) {
       console.log('Models exist but Ollama not running. Attempting to start Ollama server...');
 
       try {
@@ -817,7 +841,7 @@ app.on('ready', async () => {
 
         try {
           // Look for locally installed Ollama binaries
-          const ollamaBasePath = path.join(app.getPath('userData'), 'ollama');
+          const ollamaBasePath = path.join(app.getPath('userData'), 'electron-ollama');
           const { readdir } = await import('node:fs/promises');
 
           if (existsSync(ollamaBasePath)) {
@@ -845,20 +869,7 @@ app.on('ready', async () => {
       }
     }
 
-    // Check if Ollama model is available
-    if (ollamaRunning) {
-      try {
-        const tempOllamaManager = new OllamaManager();
-        await tempOllamaManager.initialize();
-        hasOllamaModel = await tempOllamaManager.isModelAvailable();
-        await tempOllamaManager.cleanup();
-      } catch (error) {
-        console.error('Failed to check Ollama model:', error);
-      }
-    }
-
-    // If all models exist, initialize everything
-    if (embeddingsReady && ollamaRunning && hasOllamaModel) {
+    if (embeddingsReady && ollamaRunning && ollamaBinaryDownloaded) {
       console.log('All models ready, initializing...');
       try {
         await initializeOllama();
@@ -868,11 +879,11 @@ app.on('ready', async () => {
     } else {
       console.log('Models not ready. User will need to download them.');
       console.log(`  Embeddings ready: ${embeddingsReady}`);
+      console.log(`  Ollama binary downloaded: ${ollamaBinaryDownloaded}`);
       console.log(`  Ollama running: ${ollamaRunning}`);
-      console.log(`  Ollama model available: ${hasOllamaModel}`);
 
-      // Only show download dialog if models are actually missing, not on network errors
-      const shouldShowDialog = !embeddingsReady || !hasOllamaModel;
+      // Only show download dialog if we can confirm models are missing via filesystem check
+      const shouldShowDialog = !embeddingsReady || !ollamaBinaryDownloaded;
       if (mainWindow && shouldShowDialog) {
         // Delay sending model-not-found to allow frontend to complete initial check
         // This prevents dialog from flashing during startup
@@ -937,8 +948,8 @@ ipcMain.handle('rec:list-sources', async () => {
   }));
 });
 
-ipcMain.handle('rec:choose-source', (_e, id: string) => {
-  selectedSourceId = id;
+ipcMain.handle('rec:choose-source', (_e, _id: string) => {
+  // Source selection is handled by the browser's native picker
   return true;
 });
 
