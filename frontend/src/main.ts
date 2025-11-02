@@ -3,10 +3,14 @@ import fsp from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import { LLMManager } from './llm/manager';
+import { OllamaManager } from './llm/ollama-manager';
 import { downloadFile } from './utils/downloader';
 import { EmbeddingManager } from './llm/embedding';
+import { ElectronOllama } from 'electron-ollama';
 import * as fs from 'node:fs';
+import * as https from 'node:https';
+import { URL } from 'node:url';
+import { extractFramesFromVideos } from './utils/video-frame-extractor';
 
 let selectedSourceId: string | null = null;
 
@@ -14,13 +18,6 @@ let selectedSourceId: string | null = null;
 if (started) {
   app.quit();
 }
-
-const LLM_MODEL_INFO = {
-  fileName: 'gemma-3n-E4B-it-Q8_0.gguf',
-  directory: 'models',
-  expectedSize: 7_353_292_928,
-  url: 'https://huggingface.co/unsloth/gemma-3n-E4B-it-GGUF/resolve/main/gemma-3n-E4B-it-Q8_0.gguf'
-};
 
 const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
 
@@ -124,22 +121,6 @@ const VIDEO_EMBEDDER_INFO = {
   ]
 };
 
-function getLLMModelPath(): string {
-  const devModelPath = path.join(process.cwd(), LLM_MODEL_INFO.directory, LLM_MODEL_INFO.fileName);
-  if (existsSync(devModelPath)) {
-    return devModelPath;
-  }
-  return path.join(
-    app.getPath('userData'),
-    LLM_MODEL_INFO.directory,
-    LLM_MODEL_INFO.fileName
-  );
-}
-
-function isLLMModelDownloaded(): boolean {
-  return existsSync(getLLMModelPath());
-}
-
 function isEmbeddingModelDownloaded(modelInfo: { directory: string, files: { relativePath: string }[] }): boolean {
   return modelInfo.files.every(file => {
     const filePath = path.join(app.getPath('userData'), modelInfo.directory, file.relativePath);
@@ -156,7 +137,8 @@ function getEmbeddingModelPath(modelInfo: { directory: string, files: { relative
   return path.join(app.getPath('userData'), modelInfo.directory);
 }
 
-let llmManager: LLMManager | null = null;
+let ollamaManager: OllamaManager | null = null;
+let electronOllama: ElectronOllama | null = null;
 let embeddingManager: EmbeddingManager | null = null;
 let mainWindow: BrowserWindow | null = null;
 
@@ -166,8 +148,8 @@ const createWindow = () => {
   const { width, height } = primaryDisplay.workAreaSize;
 
   // Calculate 70% of viewport
-  const windowWidth = Math.floor(width * 0.8);
-  const windowHeight = Math.floor(height * 0.8);
+  const windowWidth = width;
+  const windowHeight = height;
 
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -204,49 +186,160 @@ function ensureDir(p: string) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
-// Initialize LLM Manager
-async function initializeLLM() {
-  if (llmManager) {
-    console.log('LLM Manager already initialized');
+// Initialize Ollama Server and Manager
+async function initializeOllama() {
+  if (ollamaManager) {
+    console.log('Ollama Manager already initialized');
     return;
   }
 
   try {
-    const llmPath = getLLMModelPath();
-    const chatQueryEncoderPath = getEmbeddingModelPath(CHAT_QUERY_ENCODER_INFO);
-    const chatKeyEncoderPath = getEmbeddingModelPath(CHAT_KEY_ENCODER_INFO);
+    // Initialize ElectronOllama to manage the Ollama server
+    electronOllama = new ElectronOllama({
+      basePath: app.getPath('userData')
+    });
 
-    console.log('Initializing LLM with model:', llmPath);
-    
-    // Initialize LLM
-    llmManager = new LLMManager({
-      modelPath: llmPath,
+    console.log('Checking if Ollama server is running...');
+    const isRunning = await electronOllama.isRunning();
+
+    if (!isRunning) {
+      console.log('Downloading and preparing Ollama server...');
+      if (mainWindow) {
+        mainWindow.webContents.send('llm:loading-progress', 0.1);
+      }
+
+      let versionToUse: `v${number}.${number}.${number}` | null = null;
+
+      try {
+        // Try to get metadata for latest version
+        console.log('Resolving latest Ollama version...');
+        const metadata = await electronOllama.getMetadata('latest');
+        console.log(`Latest Ollama version: ${metadata.version}`);
+        versionToUse = metadata.version;
+      } catch (metadataError: any) {
+        // If GitHub API fails, try to find locally installed version
+        console.warn('Failed to fetch Ollama metadata from GitHub:', metadataError.message);
+        console.log('Looking for locally installed Ollama version...');
+
+        const ollamaBasePath = path.join(app.getPath('userData'), 'ollama');
+        const { readdir } = await import('node:fs/promises');
+
+        if (existsSync(ollamaBasePath)) {
+          const versions = await readdir(ollamaBasePath);
+          if (versions.length > 0) {
+            versionToUse = versions[0] as `v${number}.${number}.${number}`;
+            console.log(`Using locally installed version: ${versionToUse}`);
+          }
+        }
+
+        if (!versionToUse) {
+          throw new Error('Cannot start Ollama: No version available (GitHub unreachable and no local installation)');
+        }
+      }
+
+      // Check if binary exists, if not download it
+      const isDownloaded = await electronOllama.isDownloaded(versionToUse);
+
+      if (!isDownloaded) {
+        console.log(`Downloading Ollama ${versionToUse}...`);
+        await electronOllama.download(versionToUse, undefined, {
+          log: (percent, msg) => {
+            console.log(`[Ollama Download] ${percent}%: ${msg}`);
+            if (mainWindow) {
+              mainWindow.webContents.send('llm:loading-progress', percent / 100);
+            }
+          }
+        });
+      }
+
+      // Set execute permissions on the binary
+      const binPath = electronOllama.getBinPath(versionToUse);
+      const ollamaBinary = path.join(binPath, electronOllama.getExecutableName(electronOllama.currentPlatformConfig()));
+
+      if (existsSync(ollamaBinary)) {
+        console.log('Setting execute permissions on Ollama binary...');
+        const { exec } = await import('child_process');
+        await new Promise<void>((resolve, reject) => {
+          exec(`chmod +x "${ollamaBinary}"`, (error) => {
+            if (error) {
+              console.error('Failed to set execute permissions:', error);
+              reject(error);
+            } else {
+              console.log('Execute permissions set successfully');
+              resolve();
+            }
+          });
+        });
+      } else {
+        throw new Error(`Ollama binary not found at: ${ollamaBinary}`);
+      }
+
+      // Now start the server
+      console.log('Starting Ollama server...');
+      await electronOllama.serve(versionToUse, {
+        serverLog: (msg) => console.log('[Ollama Server]', msg)
+      });
+
+      console.log('Ollama server started successfully');
+    } else {
+      console.log('Ollama server is already running');
+    }
+
+    // Initialize Ollama Manager
+    ollamaManager = new OllamaManager({
       onProgress: (progress) => {
         if (mainWindow) {
           mainWindow.webContents.send('llm:loading-progress', progress);
         }
       }
     });
-    await llmManager.initialize();
-    
+
+    await ollamaManager.initialize();
+
+    // Check if model is available
+    const hasModel = await ollamaManager.isModelAvailable();
+    if (!hasModel) {
+      console.log('Gemma 3 model not found, needs to be pulled');
+      if (mainWindow) {
+        mainWindow.webContents.send('llm:model-not-found');
+      }
+      return;
+    }
+
+    console.log('Ollama and Gemma 3 initialized successfully');
+
     // Initialize Embedding Manager separately
+    const chatQueryEncoderPath = getEmbeddingModelPath(CHAT_QUERY_ENCODER_INFO);
+    const chatKeyEncoderPath = getEmbeddingModelPath(CHAT_KEY_ENCODER_INFO);
+
     console.log('Initializing Embedding Manager...');
+    console.log('chatQueryEncoderPath:', chatQueryEncoderPath);
+    console.log('chatKeyEncoderPath:', chatKeyEncoderPath);
+
     embeddingManager = new EmbeddingManager({
       chatQueryEncoderPath: chatQueryEncoderPath,
       chatKeyEncoderPath: chatKeyEncoderPath,
     });
-    await embeddingManager.initialize();
-    
-    console.log('LLM and Embedding initialized successfully');
+
+    try {
+      await embeddingManager.initialize();
+      console.log('✓ Embedding Manager initialized successfully');
+    } catch (embeddingError: any) {
+      console.error('✗ Embedding Manager initialization failed:', embeddingError);
+      embeddingManager = null; // Clear it so status checks work correctly
+      throw embeddingError;
+    }
+
+    console.log('Ollama, Gemma 3, and Embedding initialized successfully');
 
     if (mainWindow) {
       mainWindow.webContents.send('llm:ready');
     }
   } catch (error: any) {
-    console.error('Failed to initialize LLM:', error);
+    console.error('Failed to initialize Ollama:', error);
     if (mainWindow) {
       mainWindow.webContents.send('llm:error', {
-        message: 'Failed to load AI model',
+        message: 'Failed to start Ollama server',
         error: error.message
       });
     }
@@ -288,19 +381,67 @@ async function registerDisplayMediaHandler() {
 function setupLLMHandlers() {
   // Chat handler (non-streaming)
   ipcMain.handle('llm:chat', async (_event, message: string, options?: any) => {
-    if (!llmManager) throw new Error('LLM not initialized');
-    return await llmManager.chat(message, options);
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    return await ollamaManager.chat(message, options);
   });
 
   // Streaming chat handler
   ipcMain.handle('llm:stream-start', async (_event, message: string, options?: any) => {
-    if (!llmManager) throw new Error('LLM not initialized');
+    if (!ollamaManager) throw new Error('LLM not initialized');
 
     const sessionId = options?.sessionId || 'default';
     const streamId = options?.streamId || 'default';
 
-    await llmManager.streamChat(message, {
+    // Extract frames from videos at 1 fps and convert to base64 images for Ollama
+    let images: string[] | undefined = undefined;
+    if (options?.videos && Array.isArray(options.videos)) {
+      console.log(`[IPC] Processing ${options.videos.length} video(s) for frame extraction...`);
+
+      // Convert video buffers from IPC-serialized format
+      const videoBuffers: Buffer[] = [];
+      for (const video of options.videos) {
+        let buffer: Buffer;
+        if (video?.data && video?.type === 'Buffer') {
+          buffer = Buffer.from(video.data);
+        } else if (ArrayBuffer.isView(video)) {
+          buffer = Buffer.from(video.buffer, video.byteOffset, video.byteLength);
+        } else if (video instanceof ArrayBuffer) {
+          buffer = Buffer.from(video);
+        } else {
+          console.warn('[IPC] Skipping invalid video format');
+          continue;
+        }
+        videoBuffers.push(buffer);
+      }
+
+      // Extract frames at 1 fps from all videos
+      // Note: maxFrames is a cap, not a target
+      // - 10 second video → 10 frames
+      // - 60 second video → 50 frames (capped)
+      try {
+        console.log(`[IPC] Starting frame extraction: ${videoBuffers.length} video(s), total size: ${videoBuffers.reduce((sum, buf) => sum + buf.length, 0) / 1024 / 1024} MB`);
+
+        const frames = await extractFramesFromVideos(videoBuffers, {
+          fps: 1, // 1 frame per second
+          quality: 85, // JPEG quality
+          maxFrames: 30 // Max frames per video (cap for long videos)
+        });
+
+        images = frames.map(frame => frame.base64);
+        console.log(`[IPC] ✓ Successfully extracted ${images.length} frames from ${videoBuffers.length} video(s)`);
+        console.log(`[IPC] Frame details:`, frames.map((f, i) => `Frame ${i + 1}: ${f.timestamp.toFixed(2)}s, ${(f.base64.length / 1024).toFixed(1)} KB`));
+        console.log(`[IPC] Total frame data size: ${images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024} MB`);
+      } catch (error) {
+        console.error('[IPC] ✗ Error extracting frames from videos:', error);
+        console.error('[IPC] Stack trace:', (error as Error).stack);
+        // Continue without images if extraction fails
+        images = undefined;
+      }
+    }
+
+    await ollamaManager.streamChat(message, {
       ...options,
+      images, // Pass base64 encoded images
       onChunk: (chunk: string) => {
         if (mainWindow) {
           mainWindow.webContents.send('llm:stream-chunk', {
@@ -321,19 +462,19 @@ function setupLLMHandlers() {
 
   // Session management
   ipcMain.handle('llm:create-session', async (_event, systemPrompt?: string) => {
-    if (!llmManager) throw new Error('LLM not initialized');
-    return await llmManager.createSession(systemPrompt);
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    return await ollamaManager.createSession(systemPrompt);
   });
 
   ipcMain.handle('llm:clear-session', async (_event, sessionId: string) => {
-    if (!llmManager) throw new Error('LLM not initialized');
-    await llmManager.clearSession(sessionId);
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    await ollamaManager.clearSession(sessionId);
   });
 
   // Model info
   ipcMain.handle('llm:model-info', async () => {
-    if (!llmManager) throw new Error('LLM not initialized');
-    return llmManager.getModelInfo();
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    return ollamaManager.getModelInfo();
   });
 
   // Model download handler (for download-on-first-run)
@@ -343,17 +484,105 @@ function setupLLMHandlers() {
     try {
       const downloadTasks = [];
 
-      if (!isLLMModelDownloaded()) {
+      // Check if Ollama needs to be initialized
+      if (!electronOllama) {
+        electronOllama = new ElectronOllama({
+          basePath: app.getPath('userData')
+        });
+      }
+
+      // Check if Ollama server is running
+      const isRunning = await electronOllama.isRunning();
+      if (!isRunning) {
+        console.log('Downloading and starting Ollama server...');
+        mainWindow.webContents.send('model:download-progress', {
+          modelName: 'Ollama Server',
+          percent: 0,
+          transferred: 0,
+          total: 25_000_000 // ~25MB actual size
+        });
+
+        let versionToDownload: `v${number}.${number}.${number}` | null = null;
+
+        try {
+          // Try to get metadata for latest version
+          const metadata = await electronOllama.getMetadata('latest');
+          console.log(`Latest Ollama version: ${metadata.version}`);
+          versionToDownload = metadata.version;
+        } catch (metadataError: any) {
+          // If GitHub API fails, check for local version
+          console.warn('Failed to fetch Ollama metadata from GitHub:', metadataError.message);
+          console.log('Checking for locally installed Ollama version...');
+
+          const ollamaBasePath = path.join(app.getPath('userData'), 'ollama');
+          const { readdir } = await import('node:fs/promises');
+
+          if (existsSync(ollamaBasePath)) {
+            const versions = await readdir(ollamaBasePath);
+            if (versions.length > 0) {
+              versionToDownload = versions[0] as `v${number}.${number}.${number}`;
+              console.log(`Using locally installed version: ${versionToDownload}`);
+            }
+          }
+
+          if (!versionToDownload) {
+            throw new Error('Cannot download Ollama: GitHub API unavailable and no local installation found. Please check your internet connection.');
+          }
+        }
+
+        // Check if binary is downloaded
+        const isDownloaded = await electronOllama.isDownloaded(versionToDownload);
+
+        if (!isDownloaded) {
+          console.log(`Downloading Ollama ${versionToDownload}...`);
+          await electronOllama.download(versionToDownload, undefined, {
+            log: (percent, msg) => {
+              console.log(`[Ollama Download] ${percent}%: ${msg}`);
+              mainWindow?.webContents.send('model:download-progress', {
+                modelName: 'Ollama Server',
+                percent: percent / 100,
+                transferred: Math.floor((percent / 100) * 25_000_000),
+                total: 25_000_000
+              });
+            }
+          });
+        }
+
+        // Set execute permissions
+        const binPath = electronOllama.getBinPath(versionToDownload);
+        const ollamaBinary = path.join(binPath, electronOllama.getExecutableName(electronOllama.currentPlatformConfig()));
+
+        if (existsSync(ollamaBinary)) {
+          const { exec } = await import('child_process');
+          await new Promise<void>((resolve, reject) => {
+            exec(`chmod +x "${ollamaBinary}"`, (error) => {
+              if (error) reject(error);
+              else resolve();
+            });
+          });
+          console.log('Execute permissions set on Ollama binary');
+        }
+
+        // Start server
+        await electronOllama.serve(versionToDownload, {
+          serverLog: (msg) => console.log('[Ollama Server]', msg)
+        });
+        console.log('Ollama server started');
+      }
+
+      // Initialize Ollama Manager if needed
+      if (!ollamaManager) {
+        ollamaManager = new OllamaManager();
+        await ollamaManager.initialize();
+      }
+
+      // Check if Gemma 3 model needs to be pulled
+      const hasModel = await ollamaManager.isModelAvailable();
+      if (!hasModel) {
         downloadTasks.push({
           type: 'llm',
-          name: 'Gemma-3n-E4B-IT (LLM)',
-          files: [{
-            fileName: LLM_MODEL_INFO.fileName,
-            relativePath: LLM_MODEL_INFO.fileName,
-            directory: LLM_MODEL_INFO.directory,
-            url: LLM_MODEL_INFO.url,
-            expectedSize: LLM_MODEL_INFO.expectedSize
-          }]
+          name: 'Gemma 3 4B (Multimodal)',
+          needsPull: true
         });
       }
 
@@ -392,46 +621,65 @@ function setupLLMHandlers() {
 
       if (downloadTasks.length === 0) {
         console.log('All models already downloaded');
-        await initializeLLM();
+        await initializeOllama();
         mainWindow.webContents.send('model:download-complete');
         return { success: true };
       }
 
       console.log(`Need to download ${downloadTasks.length} model(s)`);
 
+      // Download models
       for (const task of downloadTasks) {
-        console.log(`\n=== Downloading ${task.name} ===`);
-        
-        for (const file of task.files) {
-          console.log(`  Downloading: ${file.relativePath}`);
-          
-          try {
-            const targetDir = file.directory;
-            
-            await downloadFile(mainWindow, {
-              downloadUrl: file.url,
-              targetFileName: file.fileName,
-              targetDirectory: targetDir,
-              expectedSize: file.expectedSize,
-              modelName: `${task.name} - ${file.fileName}`
+        if (task.type === 'llm' && task.needsPull) {
+          // Download Gemma 3 via Ollama
+          console.log(`\n=== Pulling ${task.name} ===`);
+
+          await ollamaManager!.pullModel((percent, status) => {
+            mainWindow?.webContents.send('model:download-progress', {
+              modelName: task.name,
+              percent: percent / 100,
+              transferred: Math.floor((percent / 100) * 4_435_402_752),
+              total: 4_435_402_752 // ~4.13 GB
             });
-            
-            console.log(`  ✓ ${file.relativePath} downloaded`);
-            
-          } catch (downloadError: any) {
-            console.error(`  ✗ Failed to download ${file.relativePath}:`, downloadError.message);
-            throw new Error(`Failed to download ${task.name} (${file.relativePath}): ${downloadError.message}`);
+            console.log(`  [${percent.toFixed(1)}%] ${status}`);
+          });
+
+          console.log(`✓ ${task.name} complete\n`);
+        } else if (task.files) {
+          // Download embedding models (DRAGON encoders)
+          console.log(`\n=== Downloading ${task.name} ===`);
+
+          for (const file of task.files) {
+            console.log(`  Downloading: ${file.relativePath}`);
+
+            try {
+                const targetDir = file.directory;
+
+              await downloadFile(mainWindow, {
+                downloadUrl: file.url,
+                targetFileName: file.fileName,
+                targetDirectory: targetDir,
+                expectedSize: file.expectedSize,
+                modelName: `${task.name} - ${file.fileName}`
+              });
+
+              console.log(`  ✓ ${file.relativePath} downloaded`);
+
+            } catch (downloadError: any) {
+              console.error(`  ✗ Failed to download ${file.relativePath}:`, downloadError.message);
+              throw new Error(`Failed to download ${task.name} (${file.relativePath}): ${downloadError.message}`);
+            }
           }
+
+          console.log(`✓ ${task.name} complete\n`);
         }
-        
-        console.log(`✓ ${task.name} complete\n`);
-        
+
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       console.log('=== All models downloaded successfully ===\n');
 
-      await initializeLLM();
+      await initializeOllama();
 
       mainWindow.webContents.send('model:download-complete');
       return { success: true };
@@ -446,7 +694,16 @@ function setupLLMHandlers() {
 
   // Check if model is downloaded
   ipcMain.handle('model:check-downloaded', async () => {
-    const llmDownloaded = isLLMModelDownloaded();
+    // Check if Ollama model is available
+    let llmDownloaded = false;
+    try {
+      if (ollamaManager) {
+        llmDownloaded = await ollamaManager.isModelAvailable();
+      }
+    } catch (error) {
+      console.error('Error checking Ollama model:', error);
+    }
+
     const chatQueryEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO);
     const chatKeyEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
     const videoEmbedderDownloaded = isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO);
@@ -454,7 +711,7 @@ function setupLLMHandlers() {
     return {
       models: {
         llm: {
-          name: 'Gemma-3n-E4B-IT (LLM)',
+          name: 'Gemma 3 4B (Multimodal)',
           downloaded: llmDownloaded
         },
         queryEncoder: {
@@ -471,7 +728,7 @@ function setupLLMHandlers() {
         }
       },
       downloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded && videoEmbedderDownloaded,
-      initialized: llmManager !== null
+      initialized: ollamaManager !== null && embeddingManager !== null && embeddingManager.isReady()
     };
   });
 
@@ -493,12 +750,16 @@ function setupLLMHandlers() {
 
   // Embedding handlers
   ipcMain.handle('embedding:query', async (_event, text: string) => {
-    if (!embeddingManager) throw new Error('Embedding manager not initialized');
+    if (!embeddingManager || !embeddingManager.isReady()) {
+      throw new Error('Embedding manager not initialized');
+    }
     return await embeddingManager.embedQuery(text);
   });
 
   ipcMain.handle('embedding:context', async (_event, text: string) => {
-    if (!embeddingManager) throw new Error('Embedding manager not initialized');
+    if (!embeddingManager || !embeddingManager.isReady()) {
+      throw new Error('Embedding manager not initialized');
+    }
     return await embeddingManager.embedContext(text);
   });
 
@@ -519,35 +780,123 @@ app.on('ready', async () => {
   // Setup IPC handlers first
   setupLLMHandlers();
 
-  const allModelsReady = isLLMModelDownloaded() &&
-                         isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
-                         isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO) &&
-                         isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO);
+  // Check if embedding models are downloaded
+  const embeddingsReady = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
+                          isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO) &&
+                          isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO);
 
-  if (allModelsReady) {
-    console.log('All models found, initializing LLM...');
-    try {
-      await initializeLLM();
-    } catch (error) {
-      console.error('LLM initialization failed:', error);
-      // App will still run, but LLM features won't work
+  // Try to initialize or start Ollama
+  try {
+    electronOllama = new ElectronOllama({
+      basePath: app.getPath('userData')
+    });
+
+    let ollamaRunning = await electronOllama.isRunning();
+    let hasOllamaModel = false;
+
+    // If Ollama not running but models exist, try to start it
+    if (!ollamaRunning && embeddingsReady) {
+      console.log('Models exist but Ollama not running. Attempting to start Ollama server...');
+
+      try {
+        // Try to get metadata with timeout handling
+        const metadata = await electronOllama.getMetadata('latest');
+        const isDownloaded = await electronOllama.isDownloaded(metadata.version);
+
+        if (isDownloaded) {
+          await electronOllama.serve(metadata.version, {
+            serverLog: (msg) => console.log('[Ollama Server]', msg)
+          });
+          ollamaRunning = true;
+          console.log('Ollama server started successfully');
+        }
+      } catch (metadataError: any) {
+        // If GitHub API fails, try to start with manually detected local version
+        console.warn('Failed to fetch Ollama metadata from GitHub:', metadataError.message);
+        console.log('Trying to start Ollama with locally installed version...');
+
+        try {
+          // Look for locally installed Ollama binaries
+          const ollamaBasePath = path.join(app.getPath('userData'), 'ollama');
+          const { readdir } = await import('node:fs/promises');
+
+          if (existsSync(ollamaBasePath)) {
+            const versions = await readdir(ollamaBasePath);
+
+            if (versions.length > 0) {
+              // Use the first available version (cast to proper type)
+              const localVersion = versions[0] as `v${number}.${number}.${number}`;
+              console.log(`Found local Ollama version: ${localVersion}`);
+
+              await electronOllama.serve(localVersion, {
+                serverLog: (msg) => console.log('[Ollama Server]', msg)
+              });
+              ollamaRunning = true;
+              console.log('Ollama server started successfully with local version');
+            } else {
+              console.log('No local Ollama versions found');
+            }
+          } else {
+            console.log('Ollama base path does not exist');
+          }
+        } catch (localStartError: any) {
+          console.error('Failed to start Ollama with local version:', localStartError.message);
+        }
+      }
     }
-  } else {
-    console.log('One or more models not found. User will need to download them.');
-    // Notify the renderer that model needs to be downloaded
-    if (mainWindow) {
-      mainWindow.webContents.send('llm:model-not-found');
+
+    // Check if Ollama model is available
+    if (ollamaRunning) {
+      try {
+        const tempOllamaManager = new OllamaManager();
+        await tempOllamaManager.initialize();
+        hasOllamaModel = await tempOllamaManager.isModelAvailable();
+        await tempOllamaManager.cleanup();
+      } catch (error) {
+        console.error('Failed to check Ollama model:', error);
+      }
     }
+
+    // If all models exist, initialize everything
+    if (embeddingsReady && ollamaRunning && hasOllamaModel) {
+      console.log('All models ready, initializing...');
+      try {
+        await initializeOllama();
+      } catch (error) {
+        console.error('Ollama initialization failed:', error);
+      }
+    } else {
+      console.log('Models not ready. User will need to download them.');
+      console.log(`  Embeddings ready: ${embeddingsReady}`);
+      console.log(`  Ollama running: ${ollamaRunning}`);
+      console.log(`  Ollama model available: ${hasOllamaModel}`);
+
+      // Only show download dialog if models are actually missing, not on network errors
+      const shouldShowDialog = !embeddingsReady || !hasOllamaModel;
+      if (mainWindow && shouldShowDialog) {
+        // Delay sending model-not-found to allow frontend to complete initial check
+        // This prevents dialog from flashing during startup
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('llm:model-not-found');
+          }
+        }, 1500);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to check/start Ollama:', error);
+    // Don't show download dialog on general errors - user might just need to retry
+    console.warn('Skipping download dialog due to initialization error');
   }
 });
 
 // Cleanup on app quit
 app.on('before-quit', async () => {
-  if (llmManager) {
-    console.log('Cleaning up LLM Manager...');
-    await llmManager.cleanup();
+  if (ollamaManager) {
+    console.log('Cleaning up Ollama Manager...');
+    await ollamaManager.cleanup();
   }
-  
+
   if (embeddingManager) {
     console.log('Cleaning up Embedding Manager...');
     await embeddingManager.cleanup();

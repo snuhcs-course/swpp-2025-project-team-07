@@ -171,7 +171,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
                 ? `Downloading: ${currentModelName}...` 
                 : 'Preparing to download...'
             ) : (
-              'To use the AI features, you need to download the required models (LLM, Text Embedders, and Video Embedder, ~8.1 GB total).'
+              'To use the AI features, you need to download the required models (LLM, Text Embedders, and Video Embedder, ~6.9 GB total).'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -188,15 +188,15 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Models:</span>
-                <span className="font-medium">Gemma-3n-E4B (LLM) + 2 DRAGON (Text) + CLIP (Video)</span>
+                <span className="font-medium">Gemma-3n-E4B (LLM) + Embedders</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Size:</span>
-                <span className="font-medium">~8.1 GB</span>
+                <span className="font-medium">~6.9 GB</span>
               </div>
               <div className="flex justify-between">
                 <span>Context:</span>
-                <span className="font-medium">32768 tokens</span>
+                <span className="font-medium">8192 tokens</span>
               </div>
             </div>
           )}
