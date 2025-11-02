@@ -11,6 +11,8 @@ import {
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Alert, AlertDescription } from './ui/alert';
+import { ModelDownloadProgress } from '@/types/electron';
+// import type { ModelDownloadProgress } from '@/types/electron';
 
 interface ModelDownloadDialogProps {
   open: boolean;
@@ -32,7 +34,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
   useEffect(() => {
     // Listen for download progress
-    const handleProgress = (progressData: {modelName: string; percent: number; transferred: number; total: number }) => {
+    const handleProgress = (progressData: ModelDownloadProgress) => {
       setCurrentModelName(progressData.modelName);
       setProgress(progressData.percent * 100);
       setTransferred(progressData.transferred);
@@ -80,6 +82,8 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
     setCurrentModelName(null);
     setError(null);
     setProgress(0);
+    setTransferred(0);
+    setTotal(0);
     startTimeRef.current = Date.now();
     setDownloadSpeed(0);
     setEstimatedTimeLeft(0);
@@ -101,6 +105,8 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
     setCurrentModelName(null);
     setError(null);
     setProgress(0);
+    setTransferred(0);
+    setTotal(0);
     startTimeRef.current = null;
     setDownloadSpeed(0);
     setEstimatedTimeLeft(0);
@@ -130,7 +136,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
 
   return (
     <Dialog open={open} onOpenChange={downloadState === 'idle' || downloadState === 'error' ? onOpenChange : undefined}>
-      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => {
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => {
         // Prevent closing while downloading
         if (downloadState === 'downloading') {
           e.preventDefault();
@@ -151,23 +157,21 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
             ) : (
               <>
                 <Download className="h-5 w-5" />
-                Download AI Model
+                Download Required Models
               </>
             )}
           </DialogTitle>
           <DialogDescription>
             {downloadState === 'completed' ? (
-              'All AI models have been downloaded successfully. Initializing...' // [수정]
+              'All AI models have been downloaded successfully. Initializing...'
             ) : downloadState === 'error' ? (
-              'There was a problem downloading the AI models.' // [수정]
+              'There was a problem downloading the AI models.'
             ) : downloadState === 'downloading' ? (
-              // [수정] currentModelName을 사용
               currentModelName 
                 ? `Downloading: ${currentModelName}...` 
                 : 'Preparing to download...'
             ) : (
-              // [수정] 텍스트 일반화
-              'To use the AI chat features, you need to download the required AI models (LLM and Embedders, ~7.3 GB total).'
+              'To use the AI features, you need to download the required models (LLM, Text Embedders, and Video Embedder, ~8.1 GB total).'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -184,11 +188,11 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Models:</span>
-                <span className="font-medium">Gemma-3n-E4B (LLM) + 2 DRAGON (Embedders)</span>
+                <span className="font-medium">Gemma-3n-E4B (LLM) + 2 DRAGON (Text) + CLIP (Video)</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Size:</span>
-                <span className="font-medium">~7.5 GB</span>
+                <span className="font-medium">~8.1 GB</span>
               </div>
               <div className="flex justify-between">
                 <span>Context:</span>
