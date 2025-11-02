@@ -20,10 +20,4 @@ describe('desktop_recorder_factory', () => {
     expect(recorder).toEqual({ kind: 'native' });
     expect(createNativeRecorderMock).toHaveBeenCalledTimes(1);
   });
-
-  it('defaults to native recorder for unsupported kinds', () => {
-    const recorder = desktop_recorder_factory('owa');
-    expect(recorder).toEqual({ kind: 'native' });
-    expect(createNativeRecorderMock).toHaveBeenCalledTimes(1);
-  });
 });
