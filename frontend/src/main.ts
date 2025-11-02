@@ -973,32 +973,32 @@ ipcMain.handle('rec:save-file', async (_e, data: Buffer) => {
   return filePath;
 });
 
-// Test utilities (excluded from production use)
-export const __test__ = {
-  createWindow,
-  initializeLLM,
-  registerDisplayMediaHandler,
-  setupLLMHandlers,
-  getLLMModelPath,
-  getEmbeddingModelPath,
-  isLLMModelDownloaded,
-  isEmbeddingModelDownloaded,
-  resetState: () => {
-    selectedSourceId = null;
-    mainWindow = null;
-    llmManager = null;
-    embeddingManager = null;
-  },
-  setMainWindow: (window: BrowserWindow | null) => {
-    mainWindow = window;
-  },
-  getMainWindow: () => mainWindow,
-  getSelectedSourceId: () => selectedSourceId,
-  getLLMManager: () => llmManager,
-  getEmbeddingManager: () => embeddingManager,
-  constants: {
-    LLM_MODEL_INFO,
-    CHAT_QUERY_ENCODER_INFO,
-    CHAT_KEY_ENCODER_INFO,
-  },
-};
+// // Test utilities (excluded from production use)
+// export const __test__ = {
+//   createWindow,
+//   initializeLLM,
+//   registerDisplayMediaHandler,
+//   setupLLMHandlers,
+//   getLLMModelPath,
+//   getEmbeddingModelPath,
+//   isLLMModelDownloaded,
+//   isEmbeddingModelDownloaded,
+//   resetState: () => {
+//     selectedSourceId = null;
+//     mainWindow = null;
+//     llmManager = null;
+//     embeddingManager = null;
+//   },
+//   setMainWindow: (window: BrowserWindow | null) => {
+//     mainWindow = window;
+//   },
+//   getMainWindow: () => mainWindow,
+//   getSelectedSourceId: () => selectedSourceId,
+//   getLLMManager: () => llmManager,
+//   getEmbeddingManager: () => embeddingManager,
+//   constants: {
+//     LLM_MODEL_INFO,
+//     CHAT_QUERY_ENCODER_INFO,
+//     CHAT_KEY_ENCODER_INFO,
+//   },
+// };
