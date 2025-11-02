@@ -21,14 +21,14 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
         {/* Logo and Toggle */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <img src={logo} alt="Logo" className="w-8 h-8 bg-white/90 rounded-full" />
+            <img src={logo} alt="Logo" className="w-8 h-8 rounded-full" />
           </div>
           {onToggleSidebar && (
             <Button
               variant="ghost"
               size="icon"
               onClick={onToggleSidebar}
-              className="h-8 w-8 hover:bg-accent"
+              className="h-8 w-8 hover:bg-accent cursor-pointer"
             >
               <PanelLeft className="w-4 h-4" />
             </Button>
@@ -43,7 +43,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
         >
           <Button
             onClick={onNewChat}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 group shadow-lg hover:shadow-xl"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 group shadow-lg hover:shadow-xl cursor-pointer"
           >
             <SquarePen className="w-4 h-4 mr-2" />
             New Chat
@@ -63,9 +63,9 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
             >
               <button
                 onClick={() => onSelectSession(session.id)}
-                className={`w-full p-3 rounded-xl text-left transition-all duration-300 group hover:bg-accent backdrop-blur-sm ${
-                  currentSessionId === session.id 
-                    ? 'bg-accent text-accent-foreground shadow-lg' 
+                className={`w-full p-3 rounded-xl text-left transition-all group hover:bg-accent backdrop-blur-sm cursor-pointer ${
+                  currentSessionId === session.id
+                    ? 'bg-accent text-accent-foreground shadow-lg'
                     : 'text-foreground hover:text-foreground'
                 }`}
               >
