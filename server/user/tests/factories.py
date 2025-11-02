@@ -1,6 +1,7 @@
 """
 Factory Boy factories for user app models.
 """
+
 import factory
 from factory.django import DjangoModelFactory
 from faker import Faker
@@ -27,21 +28,23 @@ class UserFactory(DjangoModelFactory):
         # Create without saving to database
         user = UserFactory.build()
     """
+
     class Meta:
         model = User
-        django_get_or_create = ('email',)
+        django_get_or_create = ("email",)
 
     email = factory.LazyAttribute(lambda _: fake.unique.email())
     username = factory.LazyAttribute(lambda _: fake.unique.user_name()[:30])
     is_active = True
     is_staff = False
-    password = factory.PostGenerationMethodCall('set_password', 'testpassword123')
+    password = factory.PostGenerationMethodCall("set_password", "testpassword123")
 
 
 class StaffUserFactory(UserFactory):
     """
     Factory for creating staff users.
     """
+
     is_staff = True
     is_superuser = False
 
@@ -50,5 +53,6 @@ class SuperUserFactory(UserFactory):
     """
     Factory for creating superusers/admin users.
     """
+
     is_staff = True
     is_superuser = True

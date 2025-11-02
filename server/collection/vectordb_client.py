@@ -1,6 +1,7 @@
 """
 HTTP client helper for VectorDB API calls with parallel request support.
 """
+
 from typing import Dict, List, Optional, Tuple, Any
 from concurrent.futures import ThreadPoolExecutor, Future
 import requests
@@ -37,7 +38,7 @@ class VectorDBClient:
             response.raise_for_status()
             data = response.json()
 
-            if not data.get('ok', False):
+            if not data.get("ok", False):
                 return False, None, f"VectorDB returned ok=False: {data}"
             return True, data, None
         except requests.exceptions.Timeout:
@@ -65,36 +66,36 @@ class VectorDBClient:
             (success, results_dict, error_message)
         """
         results = {
-            'chat_insert_count': 0,
-            'screen_insert_count': 0,
+            "chat_insert_count": 0,
+            "screen_insert_count": 0,
         }
 
         futures: Dict[str, Future] = {}
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if chat_data:
-                chat_collection = self._get_collection_name(user_id, 'chat')
+                chat_collection = self._get_collection_name(user_id, "chat")
                 chat_payload = {
-                    'collection_name': chat_collection,
-                    'data': chat_data,
+                    "collection_name": chat_collection,
+                    "data": chat_data,
                 }
-                futures['chat'] = executor.submit(
+                futures["chat"] = executor.submit(
                     self._make_request,
                     self.chat_url,
-                    'insert',
+                    "insert",
                     chat_payload,
                 )
 
             if screen_data:
-                screen_collection = self._get_collection_name(user_id, 'screen')
+                screen_collection = self._get_collection_name(user_id, "screen")
                 screen_payload = {
-                    'collection_name': screen_collection,
-                    'data': screen_data,
+                    "collection_name": screen_collection,
+                    "data": screen_data,
                 }
-                futures['screen'] = executor.submit(
+                futures["screen"] = executor.submit(
                     self._make_request,
                     self.screen_url,
-                    'insert',
+                    "insert",
                     screen_payload,
                 )
 
@@ -104,8 +105,8 @@ class VectorDBClient:
             if not success:
                 return False, {}, f"{db_type} vectordb insert failed: {error}"
 
-            insert_count = data.get('result', {}).get('insert_count', 0)
-            results[f'{db_type}_insert_count'] = insert_count
+            insert_count = data.get("result", {}).get("insert_count", 0)
+            results[f"{db_type}_insert_count"] = insert_count
 
         return True, results, None
 
@@ -127,36 +128,36 @@ class VectorDBClient:
             (success, results_dict, error_message)
         """
         results = {
-            'chat_scores': None,
-            'screen_scores': None,
+            "chat_scores": None,
+            "screen_scores": None,
         }
 
         futures: Dict[str, Future] = {}
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if chat_data:
-                chat_collection = self._get_collection_name(user_id, 'chat')
+                chat_collection = self._get_collection_name(user_id, "chat")
                 chat_payload = {
-                    'collection_name': chat_collection,
-                    'data': chat_data,
+                    "collection_name": chat_collection,
+                    "data": chat_data,
                 }
-                futures['chat'] = executor.submit(
+                futures["chat"] = executor.submit(
                     self._make_request,
                     self.chat_url,
-                    'search',
+                    "search",
                     chat_payload,
                 )
 
             if screen_data:
-                screen_collection = self._get_collection_name(user_id, 'screen')
+                screen_collection = self._get_collection_name(user_id, "screen")
                 screen_payload = {
-                    'collection_name': screen_collection,
-                    'data': screen_data,
+                    "collection_name": screen_collection,
+                    "data": screen_data,
                 }
-                futures['screen'] = executor.submit(
+                futures["screen"] = executor.submit(
                     self._make_request,
                     self.screen_url,
-                    'search',
+                    "search",
                     screen_payload,
                 )
 
@@ -166,10 +167,10 @@ class VectorDBClient:
             if not success:
                 return False, {}, f"{db_type} vectordb search failed: {error}"
 
-            scores = data.get('scores', [])
-            ids = data.get('ids', [])
-            results[f'{db_type}_scores'] = scores
-            results[f'{db_type}_ids'] = ids
+            scores = data.get("scores", [])
+            ids = data.get("ids", [])
+            results[f"{db_type}_scores"] = scores
+            results[f"{db_type}_ids"] = ids
 
         return True, results, None
 
@@ -195,38 +196,38 @@ class VectorDBClient:
             (success, results_dict, error_message)
         """
         results = {
-            'chat_results': [],
-            'screen_results': [],
+            "chat_results": [],
+            "screen_results": [],
         }
 
         futures: Dict[str, Future] = {}
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if chat_ids and chat_output_fields:
-                chat_collection = self._get_collection_name(user_id, 'chat')
+                chat_collection = self._get_collection_name(user_id, "chat")
                 chat_payload = {
-                    'collection_name': chat_collection,
-                    'ids': chat_ids,
-                    'output_fields': chat_output_fields,
+                    "collection_name": chat_collection,
+                    "ids": chat_ids,
+                    "output_fields": chat_output_fields,
                 }
-                futures['chat'] = executor.submit(
+                futures["chat"] = executor.submit(
                     self._make_request,
                     self.chat_url,
-                    'query',
+                    "query",
                     chat_payload,
                 )
 
             if screen_ids and screen_output_fields:
-                screen_collection = self._get_collection_name(user_id, 'screen')
+                screen_collection = self._get_collection_name(user_id, "screen")
                 screen_payload = {
-                    'collection_name': screen_collection,
-                    'ids': screen_ids,
-                    'output_fields': screen_output_fields,
+                    "collection_name": screen_collection,
+                    "ids": screen_ids,
+                    "output_fields": screen_output_fields,
                 }
-                futures['screen'] = executor.submit(
+                futures["screen"] = executor.submit(
                     self._make_request,
                     self.screen_url,
-                    'query',
+                    "query",
                     screen_payload,
                 )
 
@@ -236,8 +237,8 @@ class VectorDBClient:
             if not success:
                 return False, {}, f"{db_type} vectordb query failed: {error}"
 
-            documents = data.get('result', [])
-            results[f'{db_type}_results'] = documents
+            documents = data.get("result", [])
+            results[f"{db_type}_results"] = documents
 
         return True, results, None
 
@@ -258,32 +259,32 @@ class VectorDBClient:
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             # Create chat collection (768-dim, IP metric)
-            chat_collection = self._get_collection_name(user_id, 'chat')
+            chat_collection = self._get_collection_name(user_id, "chat")
             chat_payload = {
-                'collection_name': chat_collection,
-                'dimension': 768,
-                'metric_type': 'IP',
-                'id_type': 'string',
+                "collection_name": chat_collection,
+                "dimension": 768,
+                "metric_type": "IP",
+                "id_type": "string",
             }
-            futures['chat'] = executor.submit(
+            futures["chat"] = executor.submit(
                 self._make_request,
                 self.chat_url,
-                'create_collection',
+                "create_collection",
                 chat_payload,
             )
 
             # Create screen collection (512-dim, COSINE metric)
-            screen_collection = self._get_collection_name(user_id, 'screen')
+            screen_collection = self._get_collection_name(user_id, "screen")
             screen_payload = {
-                'collection_name': screen_collection,
-                'dimension': 512,
-                'metric_type': 'COSINE',
-                'id_type': 'string',
+                "collection_name": screen_collection,
+                "dimension": 512,
+                "metric_type": "COSINE",
+                "id_type": "string",
             }
-            futures['screen'] = executor.submit(
+            futures["screen"] = executor.submit(
                 self._make_request,
                 self.screen_url,
-                'create_collection',
+                "create_collection",
                 screen_payload,
             )
 
