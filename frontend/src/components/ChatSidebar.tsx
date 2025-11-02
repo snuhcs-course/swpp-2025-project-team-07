@@ -21,7 +21,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
         {/* Logo and Toggle */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <img src={logo} alt="Logo" className="w-8 h-8 bg-white/90 rounded-full" />
+            <img src={logo} alt="Logo" className="w-8 h-8 rounded-full" />
           </div>
           {onToggleSidebar && (
             <Button
