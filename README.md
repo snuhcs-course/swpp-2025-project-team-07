@@ -210,14 +210,15 @@ Visit the [Swagger Documentation](http://43.202.157.112:8000/swagger/) for inter
 ### **Goals Achieved in Iteration 3**
 ✅ **End-to-End RAG System**: Complete Retrieval-Augmented Generation with dual memory  
 ✅ **Text Memory**: Auto-bundling of chat messages with DRAGON embeddings into VectorDB  
-✅ **Video Memory**: Screen recordings with CLIP embeddings for visual context  
+✅ **Video Memory**: Screen recordings with CLIP embeddings for visual context   
+✅ **Real-time Video Embedding**: On-device embedding during recording  
 ✅ **Chat Session Management**: Full CRUD operations for sessions and messages  
 ✅ **VectorDB Integration**: Backend integration with dual Milvus instances  
 ✅ **Unified Model Download**: Single dialog for all model downloads (~8.1 GB)  
 ✅ **Video Embedding Pipeline**: On-device video frame sampling → CLIP embedding → mean pooling  
 ✅ **Collection Management**: Automatic per-user collection creation during signup  
 ✅ **Comprehensive Testing**: Unit tests + E2E tests with CI/CD integration  
-✅ **Test Coverage**: >80% coverage for both frontend and backend
+✅ **Test Coverage**: >80% coverage for both frontend and backend  
 ✅ **HE VectorDB Development**: Homomorphic Encryption layer implementation in progress (backend architecture & API server integration completed)
 
 ### **Goals Achieved in Iteration 2**
@@ -248,8 +249,9 @@ Visit the [Swagger Documentation](http://43.202.157.112:8000/swagger/) for inter
 ### Iteration 3
 [Iteration 3 Demo Video](./iteration3_demo.mp4)
 
-The demo video showcases the following features added in Iteration 3:
-1. ~
+The demo video showcases the Video RAG feature added in Iteration 3:
+1. Real-time video embedding
+2. Chat responses with real-time video context
 
 ### Iteration 2
 [Iteration 2 Demo Video](./iteration2_demo.mp4)
