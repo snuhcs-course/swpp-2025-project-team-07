@@ -13,5 +13,19 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    outDir: 'dist/renderer',
+    assetsDir: 'assets',
+    emptyOutDir: false,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        'embedding-worker': path.resolve(__dirname, 'embedding-worker.html'),
+      },
+      output: {
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
+      },
+    },
   },
 });
