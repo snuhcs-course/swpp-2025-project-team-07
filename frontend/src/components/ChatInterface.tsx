@@ -96,10 +96,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         const localSessions = backendSessions.map(toLocalSession);
         setSessions(localSessions);
 
-        // Select first session if available
-        if (localSessions.length > 0 && !currentSessionId) {
-          setCurrentSessionId(localSessions[0].id);
-        }
+        // Don't auto-select any session - show new chat page by default
+        // Users can click on existing sessions from the sidebar if needed
       } catch (error) {
         console.error('Failed to load sessions:', error);
         // Don't auto-create session on error - let user create manually

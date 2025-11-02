@@ -120,7 +120,7 @@ export function ChatHeader({
             variant="ghost"
             size="icon"
             onClick={onToggleSidebar}
-            className="hover:bg-accent transition-all duration-300 rounded-xl"
+            className="hover:bg-accent transition-all duration-300 rounded-xl cursor-pointer"
             disabled={isSidebarOpen}
           >
             <PanelLeft className="w-5 h-5" />
@@ -151,7 +151,7 @@ export function ChatHeader({
             size="sm"
             variant="destructive"
             onClick={handleStopRecording}
-            className="rounded-xl"
+            className="rounded-xl cursor-pointer"
             title="Stop (enqueue last) & embed"
           >
             <Circle className="w-4 h-4 mr-1" />
@@ -170,7 +170,7 @@ export function ChatHeader({
           <Button
             size="sm"
             onClick={handleStartRecording}
-            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
             disabled={isProcessing}
             title="Start screen recording"
           >
@@ -192,7 +192,7 @@ export function ChatHeader({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg"
+              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg cursor-pointer"
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             >
               <Avatar className="h-9 w-9 bg-primary text-primary-foreground items-center justify-center">
