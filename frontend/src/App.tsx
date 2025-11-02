@@ -10,16 +10,3 @@ export default function App() {
     </RecorderProvider>
   );
 }
-
-const handleVideoEmbedding = async (videoBlob: Blob) => {
-  try {
-    const videoBuffer = await videoBlob.arrayBuffer();
-
-    const embeddingResult = await window.electronAPI.runVideoEmbedding(Buffer.from(videoBuffer));
-
-    console.log('Embedding result received in UI:', embeddingResult);
-
-  } catch (error) {
-    console.error('Failed to get video embedding:', error);
-  }
-};
