@@ -88,7 +88,7 @@ export class ClipVideoEmbedder {
   }
 
   private async init() {
-    const bytes: ArrayBuffer = await (window as any).vembedAPI.getModelBytes();
+    const bytes: ArrayBuffer = await (window as any).llmAPI.getVideoModelBytes();
 
     this.session = await ort.InferenceSession.create(bytes, {
       executionProviders: ['wasm'],

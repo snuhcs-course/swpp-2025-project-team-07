@@ -5,7 +5,6 @@ import { ChatHeader } from './ChatHeader';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
-import VideoModelDownloadDialog from './VideoModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
 import { useRecorderWithEmbed } from '@/recording/provider';
@@ -72,8 +71,6 @@ function toLocalSession(session: BackendChatSession): ChatSession {
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const { stopAndEmbed } = useRecorderWithEmbed();
   const [isEmbedding, setIsEmbedding] = useState(false);
-  const [videoReady, setVideoReady] = useState<boolean | null>(null);
-  const [videoOpen, setVideoOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -92,23 +89,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const currentSession = currentSessionId
     ? sessions.find(s => s.id === currentSessionId)
     : undefined;
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const ready = await window.vembedAPI.isModelReady();
-        if (cancelled) return;
-        setVideoReady(ready);
-        setVideoOpen(!ready); // 없으면 모달 오픈
-      } catch {
-        if (cancelled) return;
-        setVideoReady(false);
-        setVideoOpen(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   // Load sessions from backend on mount
   useEffect(() => {
@@ -647,13 +627,6 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
   return (
     <>
-      <VideoModelDownloadDialog
-        open={videoOpen}
-        onOpenChange={(o) => {
-          setVideoOpen(o);
-          if (!o) setVideoReady(true); // 닫힘 = 다운로드 완료로 간주
-        }}
-      />
       {/* Only show download dialog after initial model check is complete */}
       {!isCheckingModels && (
         <ModelDownloadDialog

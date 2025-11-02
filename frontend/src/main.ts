@@ -109,16 +109,29 @@ const CHAT_KEY_ENCODER_INFO = {
   files: CHAT_KEY_ENCODER_FILES
 };
 
-function isEmbeddingModelDownloaded(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): boolean {
+const VIDEO_EMBEDDER_INFO = {
+  directory: 'embeddings/clip-vit-b-32',
+  files: [
+    {
+      fileName: 'model.onnx',
+      relativePath: 'model.onnx',
+      expectedSize: 605_778_322, // ~577.74 MB
+      url: 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/12b36594d53414ecfba93c7200dbb7c7db3c900a/onnx/model.onnx?download=true'
+    }
+  ]
+};
+
+function isEmbeddingModelDownloaded(modelInfo: { directory: string, files: { relativePath: string }[] }): boolean {
   return modelInfo.files.every(file => {
     const filePath = path.join(app.getPath('userData'), modelInfo.directory, file.relativePath);
     return existsSync(filePath);
   });
 }
 
-function getEmbeddingModelPath(modelInfo: typeof CHAT_QUERY_ENCODER_INFO): string {
+function getEmbeddingModelPath(modelInfo: { directory: string, files: { relativePath: string }[] }): string {
   const devPath = path.join(process.cwd(), modelInfo.directory);
-  if (existsSync(path.join(devPath, 'onnx/model_quantized.onnx'))) {
+  const mainModelFile = modelInfo.files[0].relativePath;
+  if (existsSync(path.join(devPath, mainModelFile))) {
     return devPath;
   }
   return path.join(app.getPath('userData'), modelInfo.directory);
@@ -168,131 +181,10 @@ const createWindow = () => {
   return mainWindow;
 };
 
-const VEMBED_FILE = 'model.onnx';
-const VEMBED_URL  = 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/12b36594d53414ecfba93c7200dbb7c7db3c900a/onnx/model.onnx?download=true';
-const VEMBED_DIR  = path.join(app.getPath('userData'), 'models', 'clip-vit-b-32');
-const VEMBED_PATH = path.join(VEMBED_DIR, VEMBED_FILE);
-
-
 // Initialize Video Embed Model
 function ensureDir(p: string) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
-
-function followRedirectsGet(
-  urlStr: string,
-  headers: Record<string, string>,
-  onResponse: (res: https.IncomingMessage) => void,
-  redirectCount = 0
-) {
-  if (redirectCount > 5) {
-    throw new Error('Too many redirects');
-  }
-
-  const u = new URL(urlStr);
-  const req = https.request(
-    {
-      protocol: u.protocol,
-      hostname: u.hostname,
-      port: u.port || (u.protocol === 'https:' ? 443 : 80),
-      path: u.pathname + u.search,
-      method: 'GET',
-      headers,
-    },
-    (res) => {
-      const status = res.statusCode || 0;
-
-      if ([301, 302, 303, 307, 308].includes(status)) {
-        const loc = res.headers.location;
-        if (!loc) return onResponse(res); 
-        const nextUrl = new URL(loc, u).toString();
-        res.resume(); 
-        followRedirectsGet(nextUrl, headers, onResponse, redirectCount + 1);
-        return;
-      }
-
-      onResponse(res);
-    }
-  );
-
-  req.on('error', (err) => onResponse(Object.assign(new https.IncomingMessage(req.socket), { statusCode: 500, statusMessage: String(err) }) as any));
-  req.end();
-}
-
-function downloadWithProgress(
-  url: string,
-  dest: string,
-  onProgress: (total: number, received: number) => void
-) {
-  return new Promise<void>((resolve, reject) => {
-    const out = fs.createWriteStream(dest);
-
-    const HF_TOKEN = '';
-
-    const headers: Record<string, string> = {
-      'User-Agent': 'CloneApp/1.0 (+electron)',
-      'Accept': '*/*',
-      'Connection': 'keep-alive',
-    };
-    if (HF_TOKEN) headers['Authorization'] = `Bearer ${HF_TOKEN}`;
-
-    followRedirectsGet(url, headers, (res) => {
-      const status = res.statusCode || 0;
-      if (status >= 400) {
-        res.resume();
-        return reject(new Error(`HTTP ${status}`));
-      }
-
-      const total = Number(res.headers['content-length'] || 0);
-      let received = 0;
-
-      res.on('data', (chunk) => {
-        received += chunk.length;
-        try { onProgress(total, received); } catch {}
-      });
-
-      res.pipe(out);
-      out.on('finish', () => out.close(() => resolve()));
-      res.on('error', reject);
-    });
-  });
-}
-
-// Check whether the video embedding model is ready
-ipcMain.handle('video-model:is-ready', async () => {
-  try {
-    return fs.existsSync(VEMBED_PATH) && fs.statSync(VEMBED_PATH).size > 0;
-  } catch {
-    return false;
-  }
-});
-
-// Start downloading the video embedding model
-ipcMain.handle('video-model:start-download', async () => {
-  try {
-    if (!VEMBED_URL) throw new Error('VITE_VEMBED_MODEL_URL is empty');
-
-    ensureDir(VEMBED_DIR);
-    if (fs.existsSync(VEMBED_PATH)) fs.unlinkSync(VEMBED_PATH);
-
-    await downloadWithProgress(VEMBED_URL, VEMBED_PATH, (total, received) => {
-      if (!mainWindow) return;
-      const percent = total > 0 ? received / total : 0;
-      mainWindow.webContents.send('video-model:progress', { percent, transferred: received, total });
-    });
-
-    if (mainWindow) mainWindow.webContents.send('video-model:complete');
-    return { success: true };
-  } catch (e: any) {
-    if (mainWindow) mainWindow.webContents.send('video-model:error', String(e?.message || e));
-    return { success: false, error: String(e?.message || e) };
-  }
-});
-
-ipcMain.handle('video-model:get-bytes', async () => {
-  const buf = await fsp.readFile(VEMBED_PATH);
-  return buf;
-});
 
 // Initialize Ollama Server and Manager
 async function initializeOllama() {
@@ -716,6 +608,17 @@ function setupLLMHandlers() {
         });
       }
 
+      if (!isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO)) {
+        downloadTasks.push({
+          type: 'video-embedder',
+          name: 'CLIP ViT-B/32 (Video Embedder)',
+          files: VIDEO_EMBEDDER_INFO.files.map(f => ({
+            ...f,
+            directory: VIDEO_EMBEDDER_INFO.directory
+          }))
+        });
+      }
+
       if (downloadTasks.length === 0) {
         console.log('All models already downloaded');
         await initializeOllama();
@@ -750,8 +653,7 @@ function setupLLMHandlers() {
             console.log(`  Downloading: ${file.relativePath}`);
 
             try {
-              const targetPath = path.join(file.directory, file.relativePath);
-              const targetDir = path.dirname(targetPath);
+                const targetDir = file.directory;
 
               await downloadFile(mainWindow, {
                 downloadUrl: file.url,
@@ -804,6 +706,7 @@ function setupLLMHandlers() {
 
     const chatQueryEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO);
     const chatKeyEncoderDownloaded = isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
+    const videoEmbedderDownloaded = isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO);
 
     return {
       models: {
@@ -818,11 +721,31 @@ function setupLLMHandlers() {
         contextEncoder: {
           name: 'DRAGON Context Encoder',
           downloaded: chatKeyEncoderDownloaded
+        },
+        videoEmbedder: {
+          name: 'CLIP ViT-B/32 (Video Embedder)',
+          downloaded: videoEmbedderDownloaded
         }
       },
-      downloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded,
+      downloaded: llmDownloaded && chatQueryEncoderDownloaded && chatKeyEncoderDownloaded && videoEmbedderDownloaded,
       initialized: ollamaManager !== null && embeddingManager !== null && embeddingManager.isReady()
     };
+  });
+
+  // Taking video model bytes hadnler
+  ipcMain.handle('model:get-video-model-bytes', async () => {
+    try {
+      const videoModelBasePath = getEmbeddingModelPath(VIDEO_EMBEDDER_INFO);
+      const videoModelFilePath = path.join(videoModelBasePath, VIDEO_EMBEDDER_INFO.files[0].relativePath);
+      if (!existsSync(videoModelFilePath)) {
+        throw new Error('Video model file not found at ' + videoModelFilePath);
+      }
+      const buf = await fsp.readFile(videoModelFilePath);
+      return buf;
+    } catch (error: any) {
+      console.error('Failed to get video model bytes:', error);
+      throw error;
+    }
   });
 
   // Embedding handlers
@@ -856,11 +779,11 @@ app.on('ready', async () => {
 
   // Setup IPC handlers first
   setupLLMHandlers();
-  console.log('[userData]', app.getPath('userData'));
 
   // Check if embedding models are downloaded
   const embeddingsReady = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
-                          isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO);
+                          isEmbeddingModelDownloaded(CHAT_KEY_ENCODER_INFO) &&
+                          isEmbeddingModelDownloaded(VIDEO_EMBEDDER_INFO);
 
   // Try to initialize or start Ollama
   try {
