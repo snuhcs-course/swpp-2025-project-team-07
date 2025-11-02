@@ -462,10 +462,27 @@ describe('main process module', () => {
   });
 
   it('quits the application when all windows are closed on non-mac platforms', async () => {
-    const mainModule = await import('./main');
-    const handlers = electronModule.__mock.appHandlers.get('window-all-closed') ?? [];
-    handlers[0]?.();
-    expect(appQuit).toHaveBeenCalled();
+    // Mock process.platform to simulate a non-Mac platform
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'win32',
+      writable: true,
+      configurable: true,
+    });
+
+    try {
+      const mainModule = await import('./main');
+      const handlers = electronModule.__mock.appHandlers.get('window-all-closed') ?? [];
+      handlers[0]?.();
+      expect(appQuit).toHaveBeenCalled();
+    } finally {
+      // Restore original platform
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        writable: true,
+        configurable: true,
+      });
+    }
   });
 
   it('re-creates the main window when activate event fires without open windows', async () => {
