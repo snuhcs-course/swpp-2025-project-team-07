@@ -1,28 +1,22 @@
-# SNU-SWPP-Template
+# Clone
 
-You can use the README file to showcase and promote your mobile app. The template provided below is just a starting point. Feel free to craft your README as you see fit. 
+<img width="300" height="300" alt="clone_logo_trans_hq" src="https://github.com/user-attachments/assets/2aa69400-38cc-4e3d-9e4d-1c2aae52299f" />
 
-Please note that the README doesn't affect your grade and is not included in documentation(Wiki).
+**[Clone](https://clone.is/)** is a desktop app that creates a highly personalized AI assistant by continuously recording and understanding your digital activities.
 
-# [Your Application Name]
-
-[Short application description here]
-
-![Application Screenshot](path_to_screenshot.png)
-
-## Features
-
-- Feature 1: Brief description
-- Feature 2: Brief description
-- ...
-
-## Getting Started
-
-### Prerequisites
-
-- Android Studio [version, e.g., 4.2.1]
-- Minimum Android SDK Version [e.g., 21]
-
-### Installation
-
-[Installation link here]
+## Collaboration
+### Branch Management
+* No change should be pushed to `main` directly. All changes must be applied via pull request.
+  * All code in `main` should be correct at (almost) all times.
+* There are 3 main directories (`frontend`, `server`, `vectordb`), each for its respective component.
+* There are 3 active branches for development (`frontend`, `server`, `vectordb`), each for its respective component.
+  * Each branch is the most up-to-date state for the respective component.
+  * Changes to each component should be made to its respective branch, ideally via pull request.
+  * Collected changes to each component branch can be merged into `main` after being tested for correctness.
+### Commit Message
+* `[$task_id] $description`
+  * `task_id`: id in [Schedule Sheet](https://docs.google.com/spreadsheets/d/1RDozyzTpZBL-NxpSjT-ezQPIt7C7JA1TW0pTQpUxRD0/edit?gid=41332019#gid=41332019)
+  * `description`: short description of changes made in commit
+* ex)
+  * [P9] fix: dependency errors for deployment
+  * [P12] implemented chat view

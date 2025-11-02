@@ -1,0 +1,50 @@
+# ============================
+# Stage 1: Builder (Conda environment)
+# ============================
+FROM mambaorg/micromamba:1.5.8 AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MAMBA_DOCKERFILE_ACTIVATE=1
+
+WORKDIR /usr/src/app
+
+# Create the Conda environment
+COPY ./encrypted_vectordb/evd/conda/evd-dev.yml /tmp/evd-dev.yml
+RUN micromamba create -y -n evd-dev -f /tmp/evd-dev.yml && \
+    micromamba clean --all --yes
+
+# --- Cache-friendly install of the 'evd' package ---
+# NOTE: set ownership to the default user 'mamba' to avoid permission errors during wheel build
+COPY --chown=${MAMBA_USER}:${MAMBA_USER} ./encrypted_vectordb/evd /tmp/evd
+RUN micromamba run -n evd-dev python -m pip install --no-cache-dir /tmp/evd
+
+
+# ============================
+# Stage 2: Runtime environment
+# ============================
+FROM mambaorg/micromamba:1.5.8
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8002 \
+    MAMBA_DOCKERFILE_ACTIVATE=1
+
+WORKDIR /usr/src/app
+
+# Copy the pre-built Conda environment from the builder stage
+COPY --from=builder /opt/conda /opt/conda
+
+# Copy the entire project
+COPY . .
+
+STOPSIGNAL SIGTERM
+EXPOSE 8002
+
+# Startup script: run the EVD server with positional $PORT
+RUN echo '#!/bin/bash
+set -euo pipefail
+exec micromamba run -n evd-dev python ./encrypted_vectordb/run_server.py "${PORT}"' > /usr/src/app/start.sh && \
+    chmod +x /usr/src/app/start.sh
+
+CMD ["/usr/src/app/start.sh"]
