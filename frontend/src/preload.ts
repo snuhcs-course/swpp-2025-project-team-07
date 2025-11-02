@@ -128,5 +128,8 @@ contextBridge.exposeInMainWorld('embeddingAPI', {
     ipcRenderer.invoke('embedding:context', text),
 
   isReady: (): Promise<boolean> =>
-    ipcRenderer.invoke('embedding:is-ready')
+    ipcRenderer.invoke('embedding:is-ready'),
+
+  runVideoEmbedding: (videoBlob: Buffer): Promise<any> =>
+    ipcRenderer.invoke('video-embed:run', videoBlob),
 });

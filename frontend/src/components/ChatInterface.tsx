@@ -7,7 +7,6 @@ import { ChatInput } from './ChatInput';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
-import { useRecorderWithEmbed } from '@/recording/provider';
 import { chatService } from '@/services/chat';
 import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
@@ -69,8 +68,6 @@ function toLocalSession(session: BackendChatSession): ChatSession {
 }
 
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
-  const { stopAndEmbed } = useRecorderWithEmbed();
-  const [isEmbedding, setIsEmbedding] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
