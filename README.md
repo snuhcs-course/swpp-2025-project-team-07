@@ -38,7 +38,7 @@
 - **On-device Video Embedding**: Extract embeddings from screen recordings after video stops
 - **CLIP Model Integration**: Uses CLIP ViT-B-32 for video frame embedding
 - **Unified Model Download**: Single download dialog for all required models (LLM, text embedders, video embedder)
-- **Model Management**: Automatic detection and download of missing models (~8.1 GB total)
+- **Model Management**: Automatic detection and download of missing models
 - **Frame Sampling**: Uniform frame sampling (1 fps) for efficient video processing
 - **Video Storage**: Screen recordings linked to embeddings in Vector DB
 
