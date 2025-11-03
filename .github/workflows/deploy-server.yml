@@ -61,6 +61,8 @@ jobs:
               -p 8000:8000 \
               -e DJANGO_SETTINGS_MODULE="config.settings.production" \
               -e SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}" \
+              -e VECTORDB_CHAT_HOST="${{ secrets.VECTORDB_CHAT_HOST }}" \
+              -e VECTORDB_SCREEN_HOST="${{ secrets.VECTORDB_SCREEN_HOST }}" \
               -e DB_NAME="${{ secrets.API_DB_NAME }}" \
               -e DB_USERNAME="${{ secrets.API_DB_USERNAME }}" \
               -e DB_PASSWORD="${{ secrets.API_DB_PASSWORD }}" \
