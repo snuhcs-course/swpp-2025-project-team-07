@@ -681,7 +681,7 @@ function setupLLMHandlers() {
 
               await downloadFile(mainWindow, {
                 downloadUrl: file.url,
-                targetFileName: file.fileName,
+                targetFileName: file.relativePath,
                 targetDirectory: targetDir,
                 expectedSize: file.expectedSize,
                 modelName: `${task.name} - ${file.fileName}`
