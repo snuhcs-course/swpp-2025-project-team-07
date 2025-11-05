@@ -241,7 +241,7 @@ export async function searchAndQuery(
 
   // Combine results and tag with source type
   const allResults: VectorData[] = [
-    // ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
+    ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
     ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
   ];
 
