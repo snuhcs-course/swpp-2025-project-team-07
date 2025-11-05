@@ -44,6 +44,11 @@ const NATIVE_DEPENDENCIES = [
 
 const config: ForgeConfig = {
   packagerConfig: {
+    name: 'Clone',
+    executableName: 'Clone',
+    appBundleId: 'com.clone.app',
+    appCategoryType: 'public.app-category.productivity',
+    icon: './build/icon', // Path to icon (without extension - Forge will add .icns for macOS)
     asar: {
       unpack:
         '{**/node_modules/node-llama-cpp/**,**/node_modules/onnxruntime-node/**,**/node_modules/sharp/**,**/node_modules/@img/**,**/node_modules/@ffmpeg-installer/**,**/node_modules/ffmpeg-static/**}',
@@ -113,7 +118,10 @@ const config: ForgeConfig = {
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),
-    new MakerDMG({}),
+    new MakerDMG({
+      icon: './build/icon.icns', // DMG icon
+      format: 'ULFO',
+    }),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
