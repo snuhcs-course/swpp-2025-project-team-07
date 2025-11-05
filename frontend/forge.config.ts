@@ -44,6 +44,7 @@ const NATIVE_DEPENDENCIES = [
 
 const config: ForgeConfig = {
   packagerConfig: {
+    icon: path.join(__dirname, 'src', 'assets', 'logo'),
     asar: {
       unpack:
         '{**/node_modules/node-llama-cpp/**,**/node_modules/onnxruntime-node/**,**/node_modules/sharp/**,**/node_modules/@img/**,**/node_modules/@ffmpeg-installer/**,**/node_modules/ffmpeg-static/**}',
@@ -109,11 +110,15 @@ const config: ForgeConfig = {
     },
   },
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      setupIcon: path.join(__dirname, 'src', 'assets', 'logo.ico'),
+    }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),
-    new MakerDMG({}),
+    new MakerDMG({
+      icon: path.join(__dirname, 'src', 'assets', 'logo.icns'),
+    }),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
