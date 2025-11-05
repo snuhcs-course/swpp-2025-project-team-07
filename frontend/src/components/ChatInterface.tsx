@@ -74,6 +74,9 @@ const getTimestamp = () =>
     ? performance.now()
     : Date.now());
 
+const MIN_SEARCH_DISPLAY_MS = 900;
+const MIN_PROCESSING_DISPLAY_MS = 1200;
+
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -361,7 +364,15 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         console.error('Failed to retrieve context:', error);
         // Continue without context if retrieval fails
       } finally {
-        const searchElapsed = getTimestamp() - searchPhaseStart;
+        let searchElapsed = getTimestamp() - searchPhaseStart;
+
+        if (searchElapsed < MIN_SEARCH_DISPLAY_MS) {
+          await new Promise(resolve =>
+            setTimeout(resolve, MIN_SEARCH_DISPLAY_MS - searchElapsed)
+          );
+          searchElapsed = MIN_SEARCH_DISPLAY_MS;
+        }
+
         phaseDurations.searching = searchElapsed;
 
         const searchMessages = searchErrored
@@ -461,7 +472,15 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         processingErrored = true;
         console.error('Failed to process retrieved context:', error);
       } finally {
-        const secureProcessingElapsed = getTimestamp() - secureProcessingStart;
+        let secureProcessingElapsed = getTimestamp() - secureProcessingStart;
+
+        if (secureProcessingElapsed < MIN_PROCESSING_DISPLAY_MS) {
+          await new Promise(resolve =>
+            window.setTimeout(resolve, MIN_PROCESSING_DISPLAY_MS - secureProcessingElapsed)
+          );
+          secureProcessingElapsed = MIN_PROCESSING_DISPLAY_MS;
+        }
+
         phaseDurations.processing = secureProcessingElapsed;
 
         const secureMessages: string[] = ['Processing encrypted data'];
@@ -585,11 +604,17 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
       let generatedChunks = 0;
       let generatedCharacters = 0;
       let streamingErrored = false;
+      let tokensAnnounced = false;
 
       try {
         await llmService.streamMessage(
           messageWithContext,
           (chunk) => {
+            if (!tokensAnnounced) {
+              tokensAnnounced = true;
+              processingStatusService.tokensStarted();
+            }
+
             generatedChunks += 1;
             generatedCharacters += chunk.length;
             fullResponse += chunk;

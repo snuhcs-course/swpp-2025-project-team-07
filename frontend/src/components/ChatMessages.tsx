@@ -67,12 +67,12 @@ export function ChatMessages({ user, messages, isLoading = false, statusIndicato
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex flex-col items-center justify-center gap-8 p-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="text-center space-y-6"
+          className="text-center space-y-6 max-w-md"
         >
           <div className="w-20 h-20 bg-gradient-to-br from-primary/30 to-primary/20 rounded-3xl flex items-center justify-center mx-auto shadow-xl">
             <span className="text-3xl font-medium text-primary">AI</span>
@@ -84,6 +84,12 @@ export function ChatMessages({ user, messages, isLoading = false, statusIndicato
             </p>
           </div>
         </motion.div>
+
+        {statusIndicator && (
+          <div className="w-full max-w-xl self-start sm:self-center">
+            {statusIndicator}
+          </div>
+        )}
       </div>
     );
   }
@@ -131,8 +137,11 @@ export function ChatMessages({ user, messages, isLoading = false, statusIndicato
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
+            className="flex items-start space-x-4"
           >
-            {statusIndicator}
+            <div className="flex-1 max-w-full">
+              {statusIndicator}
+            </div>
           </motion.div>
         )}
         <div ref={bottomRef} />

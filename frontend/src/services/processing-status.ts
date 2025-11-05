@@ -27,6 +27,10 @@ export interface PhaseCompletedEvent {
   metrics?: PhaseMetrics;
 }
 
+export interface TokensStartedEvent {
+  timestamp: number;
+}
+
 export interface ProcessingCompleteEvent {
   totalElapsedMs: number;
   phaseBreakdown: Record<ProcessingPhaseKey, number>;
@@ -47,6 +51,7 @@ export interface ProcessingResetEvent {
 type StatusEventPayloads = {
   'phase-started': PhaseStartedEvent;
   'phase-completed': PhaseCompletedEvent;
+  'tokens-started': TokensStartedEvent;
   'processing-complete': ProcessingCompleteEvent;
   'processing-error': ProcessingErrorEvent;
   'processing-reset': ProcessingResetEvent;
@@ -74,6 +79,7 @@ class ProcessingStatusService {
     this.listeners = {
       'phase-started': new Set(),
       'phase-completed': new Set(),
+      'tokens-started': new Set(),
       'processing-complete': new Set(),
       'processing-error': new Set(),
       'processing-reset': new Set(),
@@ -106,6 +112,10 @@ class ProcessingStatusService {
 
   completePhase(phase: ProcessingPhaseKey, elapsedMs: number, metrics?: PhaseMetrics): void {
     this.emit('phase-completed', { phase, elapsedMs, metrics });
+  }
+
+  tokensStarted(): void {
+    this.emit('tokens-started', { timestamp: now() });
   }
 
   completeProcessing(event: Omit<ProcessingCompleteEvent, 'completedAt'>): void {
