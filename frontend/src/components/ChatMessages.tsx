@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { ScrollArea } from './ui/scroll-area';
 import { Message } from './ChatInterface';
@@ -10,6 +11,7 @@ interface ChatMessagesProps {
   user: AuthUser | null;
   messages: Message[];
   isLoading?: boolean;
+  statusIndicator?: ReactNode;
 }
 
 function UserMessageBubble({ content, className }: { content: string; className?: string }) {
@@ -50,7 +52,7 @@ function UserMessageBubble({ content, className }: { content: string; className?
   );
 }
 
-export function ChatMessages({ user, messages, isLoading = false }: ChatMessagesProps) {
+export function ChatMessages({ user, messages, isLoading = false, statusIndicator }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const userInitials = getUserInitials(user?.username, user?.email);
@@ -122,6 +124,17 @@ export function ChatMessages({ user, messages, isLoading = false }: ChatMessages
             </div>
           </motion.div>
         ))}
+        {statusIndicator && (
+          <motion.div
+            layout
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            {statusIndicator}
+          </motion.div>
+        )}
         <div ref={bottomRef} />
       </div>
     </ScrollArea>

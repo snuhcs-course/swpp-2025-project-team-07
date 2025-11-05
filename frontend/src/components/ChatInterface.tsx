@@ -4,6 +4,7 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
+import { ChatStatusIndicators } from './ChatStatusIndicators';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
@@ -11,6 +12,7 @@ import { chatService } from '@/services/chat';
 import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
+import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 
@@ -66,6 +68,11 @@ function toLocalSession(session: BackendChatSession): ChatSession {
     messages,
   };
 }
+
+const getTimestamp = () =>
+  (typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now());
 
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -247,6 +254,20 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     const sessionIdNum = parseInt(session.id);
     setIsLoading(true);
 
+    const runStartTime = getTimestamp();
+    const phaseDurations: Record<ProcessingPhaseKey, number> = {
+      searching: 0,
+      processing: 0,
+      generating: 0,
+    };
+    const retrievalSummary: RetrievalMetrics = {
+      memoriesRetrieved: 0,
+      encryptedDataProcessed: false,
+      screenRecordings: 0,
+      embeddingsSearched: 0,
+    };
+    processingStatusService.reset();
+
     try {
       // Send user message to backend (encrypted automatically)
       const userMsg = await chatService.sendMessage(sessionIdNum, 'user', content);
@@ -312,6 +333,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       const videoUrls: string[] = []; // Store object URLs for debugging
       const chatContexts: string[] = []; // Chat memory contexts
       let videoCount = 0; // Number of screen recordings retrieved
+      let relevantDocs: any[] = [];
+      let searchErrored = false;
+
+      processingStatusService.startPhase('searching');
+      const searchPhaseStart = getTimestamp();
 
       try {
         // Generate embeddings for the user's query
@@ -322,12 +348,43 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
         // Search and retrieve top 3 from chat + top 3 from screen (6 total max)
         // Pass separate embeddings to avoid dimension mismatch
-        const relevantDocs = await collectionService.searchAndQuery(
+        relevantDocs = await collectionService.searchAndQuery(
           chatQueryEmbedding,
           3,
           videoQueryEmbedding || undefined
         );
 
+        retrievalSummary.memoriesRetrieved = relevantDocs.length;
+        retrievalSummary.embeddingsSearched = relevantDocs.length;
+      } catch (error) {
+        searchErrored = true;
+        console.error('Failed to retrieve context:', error);
+        // Continue without context if retrieval fails
+      } finally {
+        const searchElapsed = getTimestamp() - searchPhaseStart;
+        phaseDurations.searching = searchElapsed;
+
+        const searchMessages = searchErrored
+          ? ['Secure search encountered an issue']
+          : relevantDocs.length > 0
+            ? ['Secure search completed']
+            : ['Secure search completed (no matches found)'];
+
+        processingStatusService.completePhase('searching', searchElapsed, {
+          retrievalMetrics: {
+            memoriesRetrieved: relevantDocs.length,
+            embeddingsSearched: relevantDocs.length,
+            encryptedDataProcessed: false,
+          },
+          securityMessages: searchMessages,
+        });
+      }
+
+      processingStatusService.startPhase('processing');
+      const secureProcessingStart = getTimestamp();
+      let processingErrored = false;
+
+      try {
         if (relevantDocs.length > 0) {
           // Separate chat and video contexts
 
@@ -362,7 +419,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                 },
                 // Extract and preview frames sent to LLM
                 frames: async (fps = 1, maxFrames = 50) => {
-                  console.log(`[Frame Extractor] Extracting frames from video ${videoCount} at ${fps} fps...`);
+                  console.log(
+                    `[Frame Extractor] Extracting frames from video ${videoCount} at ${fps} fps...`
+                  );
                   const frames = await extractFramesFromVideoBlob(doc.video_blob, fps, maxFrames);
                   console.log(`[Frame Extractor] Extracted ${frames.length} frames`);
                   displayFramesInConsole(frames);
@@ -399,8 +458,36 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           }
         }
       } catch (error) {
-        console.error('Failed to retrieve context:', error);
-        // Continue without context if retrieval fails
+        processingErrored = true;
+        console.error('Failed to process retrieved context:', error);
+      } finally {
+        const secureProcessingElapsed = getTimestamp() - secureProcessingStart;
+        phaseDurations.processing = secureProcessingElapsed;
+
+        const secureMessages: string[] = ['Processing encrypted data'];
+        if (processingErrored) {
+          secureMessages.push('Secure processing encountered an issue');
+        } else if (videoCount > 0) {
+          secureMessages.push(
+            `Prepared ${videoCount} secure screen capture${videoCount === 1 ? '' : 's'}`
+          );
+        }
+
+        retrievalSummary.memoriesRetrieved = chatContexts.length + videoCount;
+        retrievalSummary.screenRecordings = videoCount;
+        if (retrievalSummary.memoriesRetrieved > 0 && !processingErrored) {
+          retrievalSummary.encryptedDataProcessed = true;
+        }
+
+        processingStatusService.completePhase('processing', secureProcessingElapsed, {
+          retrievalMetrics: {
+            memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+            screenRecordings: videoCount,
+            embeddingsSearched: retrievalSummary.embeddingsSearched,
+            encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+          },
+          securityMessages: secureMessages,
+        });
       }
 
       // Stream the LLM response with RAG context + videos
@@ -493,34 +580,73 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         console.log('[RAG] No videos attached to this query');
       }
 
-      await llmService.streamMessage(
-        messageWithContext,
-        (chunk) => {
-          fullResponse += chunk;
-          // Update the AI message content with each chunk
-          setSessions(prevSessions =>
-            prevSessions.map(s =>
-              s.id === sessionId
-                ? {
-                    ...s,
-                    messages: (s.messages || []).map(msg =>
-                      msg.id === aiMessageId
-                        ? { ...msg, content: fullResponse }
-                        : msg
-                    ),
-                    lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
-                    timestamp: new Date()
-                  }
-                : s
-            )
-          );
-        },
-        {
-          temperature: 0.7,
-          maxTokens: 2048,
-          videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
+      processingStatusService.startPhase('generating');
+      const generationPhaseStart = getTimestamp();
+      let generatedChunks = 0;
+      let generatedCharacters = 0;
+      let streamingErrored = false;
+
+      try {
+        await llmService.streamMessage(
+          messageWithContext,
+          (chunk) => {
+            generatedChunks += 1;
+            generatedCharacters += chunk.length;
+            fullResponse += chunk;
+            // Update the AI message content with each chunk
+            setSessions(prevSessions =>
+              prevSessions.map(s =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      messages: (s.messages || []).map(msg =>
+                        msg.id === aiMessageId
+                          ? { ...msg, content: fullResponse }
+                          : msg
+                      ),
+                      lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
+                      timestamp: new Date()
+                    }
+                  : s
+              )
+            );
+          },
+          {
+            temperature: 0.7,
+            maxTokens: 2048,
+            videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
+          }
+        );
+      } catch (streamError) {
+        streamingErrored = true;
+        throw streamError;
+      } finally {
+        const generationElapsed = getTimestamp() - generationPhaseStart;
+        phaseDurations.generating = generationElapsed;
+        processingStatusService.completePhase('generating', generationElapsed, {
+          generatedChunks,
+          generatedCharacters,
+          retrievalMetrics: {
+            memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+            encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+            screenRecordings: retrievalSummary.screenRecordings,
+            embeddingsSearched: retrievalSummary.embeddingsSearched,
+          },
+        });
+
+        if (!streamingErrored) {
+          processingStatusService.completeProcessing({
+            totalElapsedMs: getTimestamp() - runStartTime,
+            phaseBreakdown: phaseDurations,
+            retrievalMetrics: {
+              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+              screenRecordings: retrievalSummary.screenRecordings,
+              embeddingsSearched: retrievalSummary.embeddingsSearched,
+            },
+          });
         }
-      );
+      }
 
       // Cleanup initial video object URLs (blobs remain accessible via window.__ragVideoN)
       videoUrls.forEach(url => URL.revokeObjectURL(url));
@@ -573,6 +699,9 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
     } catch (error: any) {
       console.error('Failed to send message:', error);
+      processingStatusService.fail(
+        error instanceof Error ? error.message : 'Failed to process message'
+      );
 
       // Check if it's a "LLM not initialized" error
       const isLLMNotInitialized = error?.message?.includes('LLM not initialized');
@@ -672,6 +801,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
               user={user}
               messages={currentSession?.messages || []}
               isLoading={isLoadingMessages}
+              statusIndicator={<ChatStatusIndicators />}
             />
             <ChatInput
               onSendMessage={handleSendMessage}
