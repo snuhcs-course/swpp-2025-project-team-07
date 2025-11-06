@@ -5,8 +5,10 @@ from .base import *
 DEBUG = False
 
 ALLOWED_HOSTS = [
-    "43.202.157.112",
-    "ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com",
+    '43.202.157.112',
+    'ec2-43-202-157-112.ap-northeast-2.compute.amazonaws.com',
+    '3.35.36.43',
+    'ec2-3-35-36-43.ap-northeast-2.compute.amazonaws.com',
 ]
 
 # django-storages configuration for S3
