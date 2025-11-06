@@ -212,8 +212,13 @@ const createWindow = () => {
 
 // Initialize Ollama Server and Manager
 async function initializeOllama() {
-  if (ollamaManager) {
-    console.log('Ollama Manager already initialized');
+  const managersInitialized =
+    ollamaManager !== null &&
+    embeddingManager !== null &&
+    embeddingManager.isReady();
+
+  if (managersInitialized) {
+    console.log('Ollama and Embedding Managers already initialized');
     return;
   }
 
@@ -281,19 +286,23 @@ async function initializeOllama() {
       const ollamaBinary = path.join(binPath, electronOllama.getExecutableName(electronOllama.currentPlatformConfig()));
 
       if (existsSync(ollamaBinary)) {
-        console.log('Setting execute permissions on Ollama binary...');
-        const { exec } = await import('child_process');
-        await new Promise<void>((resolve, reject) => {
-          exec(`chmod +x "${ollamaBinary}"`, (error) => {
-            if (error) {
-              console.error('Failed to set execute permissions:', error);
-              reject(error);
-            } else {
-              console.log('Execute permissions set successfully');
-              resolve();
-            }
+        console.log('Ensuring Ollama binary is executable...');
+        if (process.platform === 'win32') {
+          console.log('Skipping chmod on Windows; executable permission not required.');
+        } else {
+          const { exec } = await import('child_process');
+          await new Promise<void>((resolve, reject) => {
+            exec(`chmod +x "${ollamaBinary}"`, (error) => {
+              if (error) {
+                console.error('Failed to set execute permissions:', error);
+                reject(error);
+              } else {
+                console.log('Execute permissions set successfully');
+                resolve();
+              }
+            });
           });
-        });
+        }
       } else {
         throw new Error(`Ollama binary not found at: ${ollamaBinary}`);
       }
@@ -310,13 +319,17 @@ async function initializeOllama() {
     }
 
     // Initialize Ollama Manager
-    ollamaManager = new OllamaManager({
-      onProgress: (progress) => {
-        if (mainWindow) {
-          mainWindow.webContents.send('llm:loading-progress', progress);
+    if (!ollamaManager) {
+      ollamaManager = new OllamaManager({
+        onProgress: (progress) => {
+          if (mainWindow) {
+            mainWindow.webContents.send('llm:loading-progress', progress);
+          }
         }
-      }
-    });
+      });
+    } else {
+      console.log('Reusing existing Ollama Manager instance');
+    }
 
     await ollamaManager.initialize();
 
@@ -577,14 +590,19 @@ function setupLLMHandlers() {
         const ollamaBinary = path.join(binPath, electronOllama.getExecutableName(electronOllama.currentPlatformConfig()));
 
         if (existsSync(ollamaBinary)) {
-          const { exec } = await import('child_process');
-          await new Promise<void>((resolve, reject) => {
-            exec(`chmod +x "${ollamaBinary}"`, (error) => {
-              if (error) reject(error);
-              else resolve();
+          console.log('Ensuring Ollama binary is executable...');
+          if (process.platform === 'win32') {
+            console.log('Skipping chmod on Windows; executable permission not required.');
+          } else {
+            const { exec } = await import('child_process');
+            await new Promise<void>((resolve, reject) => {
+              exec(`chmod +x "${ollamaBinary}"`, (error) => {
+                if (error) reject(error);
+                else resolve();
+              });
             });
-          });
-          console.log('Execute permissions set on Ollama binary');
+            console.log('Execute permissions set on Ollama binary');
+          }
         }
 
         // Start server
@@ -681,7 +699,7 @@ function setupLLMHandlers() {
 
               await downloadFile(mainWindow, {
                 downloadUrl: file.url,
-                targetFileName: file.fileName,
+                targetFileName: file.relativePath,
                 targetDirectory: targetDir,
                 expectedSize: file.expectedSize,
                 modelName: `${task.name} - ${file.fileName}`

@@ -133,8 +133,9 @@ export async function downloadFile(
     }
   }
 
-  if (!fs.existsSync(saveDir)) {
-    fs.mkdirSync(saveDir, { recursive: true });
+  const fileDir = path.dirname(savePath);
+  if (!fs.existsSync(fileDir)) {
+    fs.mkdirSync(fileDir, { recursive: true });
   }
 
   try {

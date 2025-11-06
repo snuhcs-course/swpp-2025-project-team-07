@@ -5,8 +5,12 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 
 // Set ffmpeg binary path (use @ffmpeg-installer/ffmpeg for Electron compatibility)
-console.log('[FFmpeg] Binary path:', ffmpegInstaller.path);
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+const ffmpegBinaryPath = ffmpegInstaller.path.includes('app.asar')
+  ? ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked')
+  : ffmpegInstaller.path;
+
+console.log('[FFmpeg] Binary path:', ffmpegBinaryPath);
+ffmpeg.setFfmpegPath(ffmpegBinaryPath);
 
 export interface FrameExtractionOptions {
   fps?: number; // Frames per second (default: 1)
