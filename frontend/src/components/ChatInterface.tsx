@@ -768,6 +768,23 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
     setCurrentSessionId(null);
   };
 
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      // Call backend to delete session
+      await chatService.deleteSession(Number(sessionId));
+
+      // Remove session from local state
+      setSessions(prevSessions => prevSessions.filter(s => s.id !== sessionId));
+
+      // If deleted session is current session, show empty chat state
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+    }
+  };
+
   if (isLoadingSessions) {
     return (
       null
@@ -808,6 +825,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
             onSelectSession={setCurrentSessionId}
             onNewChat={createNewChat}
             onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            onDeleteSession={handleDeleteSession}
           />
         </motion.div>
 
