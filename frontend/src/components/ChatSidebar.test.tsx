@@ -94,15 +94,15 @@ describe('ChatSidebar', () => {
       await user.click(menuButton);
 
       // Check if delete menu item appears
-      const deleteMenuItem = await screen.findByText(/Delete Session/i);
+      const deleteMenuItem = await screen.findByText(/^Delete$/i);
       expect(deleteMenuItem).toBeInTheDocument();
 
       // Click delete menu item
       await user.click(deleteMenuItem);
 
       // Check if confirmation dialog appears
-      expect(await screen.findByText(/Delete Chat Session\?/i)).toBeInTheDocument();
-      expect(screen.getByText(/This will permanently delete this chat session/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Delete Chat\?/i)).toBeInTheDocument();
+      expect(screen.getByText(/This will permanently delete this chat/i)).toBeInTheDocument();
     }
   });
 
@@ -129,7 +129,7 @@ describe('ChatSidebar', () => {
       await user.click(menuButton);
 
       // Click delete menu item
-      const deleteMenuItem = await screen.findByText(/Delete Session/i);
+      const deleteMenuItem = await screen.findByText(/^Delete$/i);
       await user.click(deleteMenuItem);
 
       // Click cancel in confirmation dialog
@@ -164,12 +164,12 @@ describe('ChatSidebar', () => {
       await user.click(menuButton);
 
       // Click delete menu item
-      const deleteMenuItem = await screen.findByText(/Delete Session/i);
+      const deleteMenuItem = await screen.findByText(/^Delete$/i);
       await user.click(deleteMenuItem);
 
       // Click delete in confirmation dialog
       const deleteButtons = await screen.findAllByRole('button', { name: /Delete/i });
-      const confirmButton = deleteButtons.find(btn => btn.className.includes('destructive'));
+      const confirmButton = deleteButtons.find(btn => btn.className.includes('e02e2a'));
       if (confirmButton) {
         await user.click(confirmButton);
 
