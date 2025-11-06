@@ -95,7 +95,7 @@ def insert_to_collection(request):
 
 @swagger_auto_schema(
     method="post",
-    operation_description="(Plaintext Mock) Perform homomorphic search across collections. Returns HE-encrypted similarity scores.",
+    operation_description="Perform homomorphic search across collections. Returns HE-encrypted similarity scores.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -170,7 +170,7 @@ def search_collections(request):
 
 @swagger_auto_schema(
     method="post",
-    operation_description="(Plaintext Mock) Query documents by ID and return selected fields.",
+    operation_description="Query documents by ID and return selected fields.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -251,6 +251,93 @@ def query_collection(request):
             "ok": True,
             "chat_results": results.get("chat_results", []),
             "screen_results": results.get("screen_results", []),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_description="[DEBUG ONLY] Clear (drop and re-create) chat and/or screen collections for specified user.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            "userId": openapi.Schema(
+                type=openapi.TYPE_INTEGER,
+                description="User ID (must match authenticated user)",
+            ),
+            "clear_chat": openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description="Whether to clear the chat collection",
+            ),
+            "clear_screen": openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description="Whether to clear the screen collection",
+            ),
+        },
+        required=["userId", "clear_chat", "clear_screen"],
+    ),
+    responses={
+        200: openapi.Response(
+            description="Collections cleared successfully",
+            examples={
+                "application/json": {
+                    "ok": True,
+                    "message": "Collections cleared and recreated successfully",
+                }
+            },
+        ),
+        400: "Bad Request - Invalid parameters or userId mismatch",
+        401: "Unauthorized - Invalid or missing token",
+        500: "Server Error - VectorDB operation failed",
+    },
+    security=[{"Bearer": []}],
+)
+@api_view(["POST"])
+def clear_collections(request):
+    """Clear (drop and re-create) chat and/or screen collections."""
+    user_id = request.data.get("userId")
+    clear_chat = request.data.get("clear_chat", False)
+    clear_screen = request.data.get("clear_screen", False)
+
+    # Validate at least one collection is being cleared
+    if not clear_chat and not clear_screen:
+        return Response(
+            {"detail": "At least one of clear_chat or clear_screen must be true"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Drop the collections
+    drop_success, drop_error = vectordb_client.drop_collection_parallel(
+        user_id=user_id,
+        drop_chat=clear_chat,
+        drop_screen=clear_screen,
+    )
+
+    if not drop_success:
+        return Response(
+            {"detail": f"Failed to drop collections: {drop_error}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    # Re-create the collections that were dropped
+    if clear_chat or clear_screen:
+        create_success, create_error = vectordb_client.create_collections_parallel(
+            user_id=user_id,
+            create_chat=clear_chat,
+            create_screen=clear_screen,
+        )
+
+        if not create_success:
+            return Response(
+                {"detail": f"Failed to re-create collections: {create_error}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    return Response(
+        {
+            "ok": True,
+            "message": "Collections cleared and recreated successfully",
         },
         status=status.HTTP_200_OK,
     )

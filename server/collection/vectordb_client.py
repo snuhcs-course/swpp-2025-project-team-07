@@ -245,54 +245,118 @@ class VectorDBClient:
     def create_collections_parallel(
         self,
         user_id: int,
+        create_chat: bool = True,
+        create_screen: bool = True,
     ) -> Tuple[bool, Optional[str]]:
         """
-        Create both chat and screen collections for a user in parallel.
+        Create chat and/or screen collections for a user in parallel.
 
         Args:
             user_id: User ID for collection naming
+            create_chat: Whether to create the chat collection
+            create_screen: Whether to create the screen collection
 
         Returns:
             (success, error_message)
         """
+        if not create_chat and not create_screen:
+            return True, None  # Nothing to create
+
         futures: Dict[str, Future] = {}
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            # Create chat collection (768-dim, IP metric)
-            chat_collection = self._get_collection_name(user_id, "chat")
-            chat_payload = {
-                "collection_name": chat_collection,
-                "dimension": 768,
-                "metric_type": "IP",
-                "id_type": "string",
-            }
-            futures["chat"] = executor.submit(
-                self._make_request,
-                self.chat_url,
-                "create_collection",
-                chat_payload,
-            )
+            if create_chat:
+                # Create chat collection (768-dim, IP metric)
+                chat_collection = self._get_collection_name(user_id, "chat")
+                chat_payload = {
+                    "collection_name": chat_collection,
+                    "dimension": 768,
+                    "metric_type": "IP",
+                    "id_type": "string",
+                }
+                futures["chat"] = executor.submit(
+                    self._make_request,
+                    self.chat_url,
+                    "create_collection",
+                    chat_payload,
+                )
 
-            # Create screen collection (512-dim, COSINE metric)
-            screen_collection = self._get_collection_name(user_id, "screen")
-            screen_payload = {
-                "collection_name": screen_collection,
-                "dimension": 512,
-                "metric_type": "COSINE",
-                "id_type": "string",
-            }
-            futures["screen"] = executor.submit(
-                self._make_request,
-                self.screen_url,
-                "create_collection",
-                screen_payload,
-            )
+            if create_screen:
+                # Create screen collection (512-dim, COSINE metric)
+                screen_collection = self._get_collection_name(user_id, "screen")
+                screen_payload = {
+                    "collection_name": screen_collection,
+                    "dimension": 512,
+                    "metric_type": "COSINE",
+                    "id_type": "string",
+                }
+                futures["screen"] = executor.submit(
+                    self._make_request,
+                    self.screen_url,
+                    "create_collection",
+                    screen_payload,
+                )
 
         # Collect results
         for db_type, future in futures.items():
             success, data, error = future.result()
             if not success:
                 return False, f"{db_type} collection creation failed: {error}"
+
+        return True, None
+
+    def drop_collection_parallel(
+        self,
+        user_id: int,
+        drop_chat: bool = False,
+        drop_screen: bool = False,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Drop chat and/or screen collections for a user in parallel.
+
+        Args:
+            user_id: User ID for collection naming
+            drop_chat: Whether to drop the chat collection
+            drop_screen: Whether to drop the screen collection
+
+        Returns:
+            (success, error_message)
+        """
+        if not drop_chat and not drop_screen:
+            return True, None  # Nothing to drop
+
+        futures: Dict[str, Future] = {}
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            if drop_chat:
+                chat_collection = self._get_collection_name(user_id, "chat")
+                chat_payload = {
+                    "collection_name": chat_collection,
+                }
+                futures["chat"] = executor.submit(
+                    self._make_request,
+                    self.chat_url,
+                    "drop_collection",
+                    chat_payload,
+                )
+
+            if drop_screen:
+                screen_collection = self._get_collection_name(user_id, "screen")
+                screen_payload = {
+                    "collection_name": screen_collection,
+                }
+                futures["screen"] = executor.submit(
+                    self._make_request,
+                    self.screen_url,
+                    "drop_collection",
+                    screen_payload,
+                )
+
+        # Collect results
+        for db_type, future in futures.items():
+            success, data, error = future.result()
+            if not success:
+                return False, f"{db_type} collection drop failed: {error}"
 
         return True, None
 
