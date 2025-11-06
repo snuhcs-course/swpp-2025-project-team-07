@@ -4,10 +4,9 @@ from django.conf import settings
 
 class ChatSession(models.Model):
     """Chat session belonging to a user."""
+
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='chat_sessions'
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_sessions"
     )
     title = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -17,8 +16,8 @@ class ChatSession(models.Model):
     class Meta:
         ordering = [
             # Chats with no messages should come first
-            models.F('last_message_timestamp').desc(nulls_first=True),
-            '-created_at'
+            models.F("last_message_timestamp").desc(nulls_first=True),
+            "-created_at",
         ]
 
     def __str__(self):
@@ -27,17 +26,14 @@ class ChatSession(models.Model):
 
 class ChatMessage(models.Model):
     """Individual message in a chat session."""
+
     ROLE_CHOICES = [
-        ('user', 'User'),
-        ('assistant', 'Assistant'),
-        ('system', 'System'),
+        ("user", "User"),
+        ("assistant", "Assistant"),
+        ("system", "System"),
     ]
 
-    session = models.ForeignKey(
-        ChatSession,
-        on_delete=models.CASCADE,
-        related_name='messages'
-    )
+    session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name="messages")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     content = models.TextField()
     timestamp = models.BigIntegerField()
@@ -45,7 +41,7 @@ class ChatMessage(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['timestamp']
+        ordering = ["timestamp"]
 
     def __str__(self):
         return f"{self.session.title} - {self.role}: {self.content[:50]}"

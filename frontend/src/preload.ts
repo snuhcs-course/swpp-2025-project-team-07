@@ -39,7 +39,6 @@ contextBridge.exposeInMainWorld("recorder", {
   stop: () => stopRecording(),
 });
 
-
 // Expose LLM API to renderer process
 contextBridge.exposeInMainWorld('llmAPI', {
   // Chat methods
@@ -59,6 +58,9 @@ contextBridge.exposeInMainWorld('llmAPI', {
   // Model info
   getModelInfo: (): Promise<LLMModelInfo> =>
     ipcRenderer.invoke('llm:model-info'),
+
+  getVideoModelBytes: (): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke('model:get-video-model-bytes'),
 
   // Event listeners for streaming
   onStreamChunk: (callback: (chunk: LLMStreamChunk) => void): void => {
@@ -126,5 +128,8 @@ contextBridge.exposeInMainWorld('embeddingAPI', {
     ipcRenderer.invoke('embedding:context', text),
 
   isReady: (): Promise<boolean> =>
-    ipcRenderer.invoke('embedding:is-ready')
+    ipcRenderer.invoke('embedding:is-ready'),
+
+  runVideoEmbedding: (videoBlob: Buffer): Promise<any> =>
+    ipcRenderer.invoke('video-embed:run', videoBlob),
 });

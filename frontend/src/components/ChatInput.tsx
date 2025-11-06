@@ -83,7 +83,7 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
               disabled={!message.trim() || disabled}
               className={`flex-shrink-0 transition-all duration-300 backdrop-blur-sm rounded-xl ${
                 message.trim() && !disabled
-                  ? 'bg-gradient-to-br from-primary/90 to-primary hover:from-primary hover:to-primary/90 text-primary-foreground shadow-lg hover:shadow-xl'
+                  ? 'bg-gradient-to-br from-primary/90 to-primary hover:from-primary hover:to-primary/90 text-primary-foreground shadow-lg hover:shadow-xl cursor-pointer'
                   : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
               }`}
               size="icon"

@@ -27,12 +27,12 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type TabValue = 'profile' | 'appearance' | 'privacy';
+type TabValue = 'profile' // | 'appearance' | 'privacy';
 
 const tabs = [
   { value: 'profile' as TabValue, label: 'Profile', icon: User },
-  { value: 'appearance' as TabValue, label: 'Appearance', icon: Palette },
-  { value: 'privacy' as TabValue, label: 'Privacy', icon: Shield },
+  // { value: 'appearance' as TabValue, label: 'Appearance', icon: Palette },
+  // { value: 'privacy' as TabValue, label: 'Privacy', icon: Shield },
 ];
 
 export function SettingsDialog({ user, open, onOpenChange }: SettingsDialogProps) {
@@ -100,101 +100,101 @@ export function SettingsDialog({ user, open, onOpenChange }: SettingsDialogProps
           </div>
         );
       
-      case 'appearance':
-        return (
-          <div className="space-y-8">
-            <div>
-              <h3 className="text-lg font-medium mb-6">Appearance</h3>
+      // case 'appearance':
+      //   return (
+      //     <div className="space-y-8">
+      //       <div>
+      //         <h3 className="text-lg font-medium mb-6">Appearance</h3>
               
-              <div className="space-y-8">
-                <div className="space-y-4">
-                  <Label className="text-sm">Theme</Label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {themeOptions.map((option) => {
-                      const IconComponent = option.icon;
-                      return (
-                        <motion.button
-                          key={option.value}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => setPreferences(prev => ({ ...prev, theme: option.value }))}
-                          className={`p-4 rounded-xl border transition-all duration-300 ${
-                            preferences.theme === option.value
-                              ? 'border-primary bg-primary/10 shadow-sm'
-                              : 'border-border/50 hover:border-border bg-accent/20 hover:bg-accent/40'
-                          }`}
-                        >
-                          <IconComponent className="w-6 h-6 mx-auto mb-2" />
-                          <p className="text-sm">{option.label}</p>
-                        </motion.button>
-                      );
-                    })}
-                  </div>
-                </div>
+      //         <div className="space-y-8">
+      //           <div className="space-y-4">
+      //             <Label className="text-sm">Theme</Label>
+      //             <div className="grid grid-cols-3 gap-3">
+      //               {themeOptions.map((option) => {
+      //                 const IconComponent = option.icon;
+      //                 return (
+      //                   <motion.button
+      //                     key={option.value}
+      //                     whileHover={{ scale: 1.02 }}
+      //                     whileTap={{ scale: 0.98 }}
+      //                     onClick={() => setPreferences(prev => ({ ...prev, theme: option.value }))}
+      //                     className={`p-4 rounded-xl border transition-all duration-300 ${
+      //                       preferences.theme === option.value
+      //                         ? 'border-primary bg-primary/10 shadow-sm'
+      //                         : 'border-border/50 hover:border-border bg-accent/20 hover:bg-accent/40'
+      //                     }`}
+      //                   >
+      //                     <IconComponent className="w-6 h-6 mx-auto mb-2" />
+      //                     <p className="text-sm">{option.label}</p>
+      //                   </motion.button>
+      //                 );
+      //               })}
+      //             </div>
+      //           </div>
 
-                <Separator className="bg-border/30" />
+      //           <Separator className="bg-border/30" />
 
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between py-2">
-                    <div className="space-y-1">
-                      <Label className="text-sm">Compact Mode</Label>
-                      <p className="text-xs text-muted-foreground">Use smaller UI elements</p>
-                    </div>
-                    <Switch
-                      checked={preferences.compactMode}
-                      onCheckedChange={() => handlePreferenceToggle('compactMode')}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <div className="space-y-1">
-                      <Label className="text-sm">Sound Effects</Label>
-                      <p className="text-xs text-muted-foreground">Play sounds for interactions</p>
-                    </div>
-                    <Switch
-                      checked={preferences.soundEffects}
-                      onCheckedChange={() => handlePreferenceToggle('soundEffects')}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+      //           <div className="space-y-6">
+      //             <div className="flex items-center justify-between py-2">
+      //               <div className="space-y-1">
+      //                 <Label className="text-sm">Compact Mode</Label>
+      //                 <p className="text-xs text-muted-foreground">Use smaller UI elements</p>
+      //               </div>
+      //               <Switch
+      //                 checked={preferences.compactMode}
+      //                 onCheckedChange={() => handlePreferenceToggle('compactMode')}
+      //               />
+      //             </div>
+      //             <div className="flex items-center justify-between py-2">
+      //               <div className="space-y-1">
+      //                 <Label className="text-sm">Sound Effects</Label>
+      //                 <p className="text-xs text-muted-foreground">Play sounds for interactions</p>
+      //               </div>
+      //               <Switch
+      //                 checked={preferences.soundEffects}
+      //                 onCheckedChange={() => handlePreferenceToggle('soundEffects')}
+      //               />
+      //             </div>
+      //           </div>
+      //         </div>
+      //       </div>
+      //     </div>
+      //   );
       
-      case 'privacy':
-        return (
-          <div className="space-y-8">
-            <div>
-              <h3 className="text-lg font-medium mb-6">Privacy & Security</h3>
+      // case 'privacy':
+      //   return (
+      //     <div className="space-y-8">
+      //       <div>
+      //         <h3 className="text-lg font-medium mb-6">Privacy & Security</h3>
               
-              <div className="space-y-4">
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start bg-accent/20 hover:bg-accent/40 rounded-xl transition-all duration-300"
-                >
-                  <Shield className="w-4 h-4 mr-3" />
-                  Export My Data
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start bg-accent/20 hover:bg-accent/40 rounded-xl transition-all duration-300"
-                >
-                  <HelpCircle className="w-4 h-4 mr-3" />
-                  Privacy Policy
-                </Button>
+      //         <div className="space-y-4">
+      //           <Button 
+      //             variant="outline" 
+      //             className="w-full justify-start bg-accent/20 hover:bg-accent/40 rounded-xl transition-all duration-300"
+      //           >
+      //             <Shield className="w-4 h-4 mr-3" />
+      //             Export My Data
+      //           </Button>
+      //           <Button 
+      //             variant="outline" 
+      //             className="w-full justify-start bg-accent/20 hover:bg-accent/40 rounded-xl transition-all duration-300"
+      //           >
+      //             <HelpCircle className="w-4 h-4 mr-3" />
+      //             Privacy Policy
+      //           </Button>
                 
-                <Separator className="bg-border/30 my-6" />
+      //           <Separator className="bg-border/30 my-6" />
                 
-                <Button 
-                  variant="destructive" 
-                  className="w-full rounded-xl transition-all duration-300"
-                >
-                  Delete Account
-                </Button>
-              </div>
-            </div>
-          </div>
-        );
+      //           <Button 
+      //             variant="destructive" 
+      //             className="w-full rounded-xl transition-all duration-300"
+      //           >
+      //             Delete Account
+      //           </Button>
+      //         </div>
+      //       </div>
+      //     </div>
+      //   );
       
       default:
         return null;
@@ -232,7 +232,7 @@ export function SettingsDialog({ user, open, onOpenChange }: SettingsDialogProps
                       key={tab.value}
                       whileHover={{ x: 4 }}
                       onClick={() => setActiveTab(tab.value)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 cursor-pointer ${
                         activeTab === tab.value
                           ? 'bg-primary/10 text-primary border border-primary/20'
                           : 'hover:bg-accent/30 text-muted-foreground hover:text-foreground'
@@ -254,18 +254,18 @@ export function SettingsDialog({ user, open, onOpenChange }: SettingsDialogProps
 
               {/* Footer */}
               <div className="flex justify-end gap-3 p-6 border-t border-border/30 bg-accent/5">
-                <Button 
+                {/* <Button 
                   variant="outline" 
                   onClick={() => onOpenChange(false)}
                   className="rounded-xl transition-all duration-300"
                 >
                   Cancel
-                </Button>
+                </Button> */}
                 <Button 
                   onClick={() => onOpenChange(false)}
-                  className="rounded-xl transition-all duration-300"
+                  className="rounded-xl transition-all duration-300 cursor-pointer"
                 >
-                  Save Changes
+                  Done
                 </Button>
               </div>
             </div>
