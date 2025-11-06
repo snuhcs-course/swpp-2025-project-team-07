@@ -79,7 +79,7 @@ class TestSignupView:
         assert "at least 3 characters" in str(response.data["username"][0]).lower()
 
     def test_signup_with_duplicate_username(self, api_client, user):
-        """Test signup fails with duplicate username."""
+        """Test signup succeeds with duplicate username."""
         url = reverse("signup")
         data = {
             "email": "newuser@example.com",
@@ -89,8 +89,11 @@ class TestSignupView:
         }
         response = api_client.post(url, data, format="json")
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "username" in response.data
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["user"]["username"] == user.username
+
+        # Verify user was created in database
+        assert User.objects.filter(email="newuser@example.com").exists()
 
     def test_signup_with_invalid_email(self, api_client):
         """Test signup fails with invalid email format."""

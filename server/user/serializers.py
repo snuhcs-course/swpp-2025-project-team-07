@@ -11,7 +11,7 @@ class UserSignupSerializer(serializers.ModelSerializer):
         model = User
         fields = ("email", "username", "password", "password_confirm")
 
-    # The model layer handles duplicate email, username checks
+    # The model layer handles duplicate email checks
 
     def validate_username(self, value):
         if len(value) < 3:

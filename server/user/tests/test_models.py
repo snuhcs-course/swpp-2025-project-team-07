@@ -39,13 +39,15 @@ class TestUserModel:
                 email="duplicate@example.com", username="user2", password="pass"
             )
 
-    def test_username_must_be_unique(self):
-        """Test that username must be unique."""
-        User.objects.create_user(email="user1@example.com", username="uniqueuser", password="pass")
-        with pytest.raises(IntegrityError):
-            User.objects.create_user(
-                email="user2@example.com", username="uniqueuser", password="pass"
-            )
+    def test_allow_duplicate_username(self):
+        """Test that multiple users with the same username can exist."""
+        user1 = User.objects.create_user(
+            email="user1@example.com", username="username", password="pass"
+        )
+        user2 = User.objects.create_user(
+            email="user2@example.com", username="username", password="pass"
+        )
+        assert user1.username == user2.username
 
     def test_email_is_normalized(self):
         """Test that email is normalized on creation."""
