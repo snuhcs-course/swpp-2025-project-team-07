@@ -1,5 +1,6 @@
 # Vector Database
 pymilvus[model]==2.5.3
+orjson==3.11.3
 
 # Django and REST Framework
 Django==5.2
