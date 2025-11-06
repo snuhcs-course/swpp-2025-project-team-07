@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   processingStatusService,
@@ -26,68 +26,153 @@ const PHASE_CONFIG: Record<
     label: 'Thinking about the best response for you...',
     emoji: '✨',
     accent: 'border-amber-400/40 text-amber-500',
-    description: 'Carefully combining context into a reply',
+    description: 'Carefully combining context into a response',
   },
 };
 
 const HIDE_TRANSITION_MS = 220;
 
-export function ChatStatusIndicators() {
-  const [currentPhase, setCurrentPhase] = useState<ProcessingPhaseKey | null>(null);
-  const [isRendered, setIsRendered] = useState(false);
-  const [isFadingOut, setIsFadingOut] = useState(false);
-  const [errorState, setErrorState] = useState<ProcessingErrorEvent | null>(null);
+type SessionIndicatorState = {
+  currentPhase: ProcessingPhaseKey | null;
+  isRendered: boolean;
+  isFadingOut: boolean;
+  errorState: ProcessingErrorEvent | null;
+};
 
-  const hideTimeoutRef = useRef<number | null>(null);
+const createInitialState = (): SessionIndicatorState => ({
+  currentPhase: null,
+  isRendered: false,
+  isFadingOut: false,
+  errorState: null,
+});
 
-  const clearHideTimeout = () => {
-    if (hideTimeoutRef.current !== null) {
-      window.clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-  };
+interface ChatStatusIndicatorsProps {
+  sessionId: string | null;
+}
 
-  const triggerHide = () => {
-    clearHideTimeout();
-    setIsFadingOut(true);
-    hideTimeoutRef.current = window.setTimeout(() => {
-      setIsRendered(false);
-      setIsFadingOut(false);
-      setCurrentPhase(null);
-      setErrorState(null);
-      hideTimeoutRef.current = null;
-    }, HIDE_TRANSITION_MS);
-  };
-
-  useEffect(() => () => clearHideTimeout(), []);
+export function ChatStatusIndicators({ sessionId }: ChatStatusIndicatorsProps) {
+  const [displayState, setDisplayState] = useState<SessionIndicatorState>(createInitialState);
+  const sessionStatesRef = useRef<Map<string, SessionIndicatorState>>(new Map());
+  const hideTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const activeSessionIdRef = useRef<string | null>(sessionId ?? null);
 
   useEffect(() => {
-    const offReset = processingStatusService.on('processing-reset', () => {
-      triggerHide();
+    activeSessionIdRef.current = sessionId ?? null;
+
+    if (!sessionId) {
+      setDisplayState(createInitialState());
+      return;
+    }
+
+    const storedState = sessionStatesRef.current.get(sessionId);
+    if (storedState) {
+      setDisplayState(storedState);
+    } else {
+      const initialState = createInitialState();
+      sessionStatesRef.current.set(sessionId, initialState);
+      setDisplayState(initialState);
+    }
+  }, [sessionId]);
+
+  useEffect(
+    () => () => {
+      hideTimeoutsRef.current.forEach(timeoutId => window.clearTimeout(timeoutId));
+      hideTimeoutsRef.current.clear();
+    },
+    [],
+  );
+
+  const commitSessionState = useCallback(
+    (targetSessionId: string, nextState: SessionIndicatorState) => {
+      sessionStatesRef.current.set(targetSessionId, nextState);
+      if (activeSessionIdRef.current === targetSessionId) {
+        setDisplayState(nextState);
+      }
+    },
+    [],
+  );
+
+  const updateSessionState = useCallback(
+    (targetSessionId: string, updater: (prev: SessionIndicatorState) => SessionIndicatorState) => {
+      const previousState = sessionStatesRef.current.get(targetSessionId) ?? createInitialState();
+      const nextState = updater(previousState);
+      commitSessionState(targetSessionId, nextState);
+    },
+    [commitSessionState],
+  );
+
+  const clearHideTimeout = useCallback((targetSessionId: string) => {
+    const timeoutId = hideTimeoutsRef.current.get(targetSessionId);
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+      hideTimeoutsRef.current.delete(targetSessionId);
+    }
+  }, []);
+
+  const triggerHide = useCallback(
+    (targetSessionId: string) => {
+      const previousState = sessionStatesRef.current.get(targetSessionId) ?? createInitialState();
+
+      if (!previousState.isRendered && !previousState.errorState) {
+        const resetState = createInitialState();
+        commitSessionState(targetSessionId, resetState);
+        clearHideTimeout(targetSessionId);
+        return;
+      }
+
+      clearHideTimeout(targetSessionId);
+
+      const fadingState: SessionIndicatorState = {
+        ...previousState,
+        isFadingOut: true,
+      };
+      commitSessionState(targetSessionId, fadingState);
+
+      const timeoutId = window.setTimeout(() => {
+        const resetState = createInitialState();
+        commitSessionState(targetSessionId, resetState);
+        hideTimeoutsRef.current.delete(targetSessionId);
+      }, HIDE_TRANSITION_MS);
+
+      hideTimeoutsRef.current.set(targetSessionId, timeoutId);
+    },
+    [clearHideTimeout, commitSessionState],
+  );
+
+  useEffect(() => {
+    const offReset = processingStatusService.on('processing-reset', ({ sessionId: targetSessionId }) => {
+      triggerHide(targetSessionId);
     });
 
-    const offStarted = processingStatusService.on('phase-started', ({ phase }) => {
-      clearHideTimeout();
-      setErrorState(null);
-      setCurrentPhase(phase);
-      setIsRendered(true);
-      setIsFadingOut(false);
+    const offStarted = processingStatusService.on('phase-started', ({ sessionId: targetSessionId, phase }) => {
+      clearHideTimeout(targetSessionId);
+      updateSessionState(targetSessionId, () => ({
+        currentPhase: phase,
+        isRendered: true,
+        isFadingOut: false,
+        errorState: null,
+      }));
     });
 
-    const offTokensStarted = processingStatusService.on('tokens-started', () => {
-      triggerHide();
+    const offTokensStarted = processingStatusService.on('tokens-started', ({ sessionId: targetSessionId }) => {
+      triggerHide(targetSessionId);
     });
 
-    const offProcessingComplete = processingStatusService.on('processing-complete', () => {
-      triggerHide();
+    const offProcessingComplete = processingStatusService.on('processing-complete', ({
+      sessionId: targetSessionId,
+    }) => {
+      triggerHide(targetSessionId);
     });
 
     const offError = processingStatusService.on('processing-error', payload => {
-      clearHideTimeout();
-      setCurrentPhase(null);
-      setErrorState(payload);
-      setIsRendered(true);
-      setIsFadingOut(false);
+      const targetSessionId = payload.sessionId;
+      clearHideTimeout(targetSessionId);
+      updateSessionState(targetSessionId, () => ({
+        currentPhase: null,
+        isRendered: true,
+        isFadingOut: false,
+        errorState: payload,
+      }));
     });
 
     return () => {
@@ -97,9 +182,11 @@ export function ChatStatusIndicators() {
       offProcessingComplete();
       offError();
     };
-  }, []);
+  }, [clearHideTimeout, triggerHide, updateSessionState]);
 
-  if (!isRendered && !errorState) {
+  const { currentPhase, isRendered, isFadingOut, errorState } = displayState;
+
+  if (!sessionId || (!isRendered && !errorState)) {
     return null;
   }
 

@@ -254,7 +254,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       }
     }
 
-    const sessionIdNum = parseInt(session.id);
+    const sessionId = session!.id;
+    const sessionIdNum = parseInt(sessionId, 10);
     setIsLoading(true);
 
     const runStartTime = getTimestamp();
@@ -269,7 +270,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       screenRecordings: 0,
       embeddingsSearched: 0,
     };
-    processingStatusService.reset();
+    processingStatusService.reset(sessionId);
 
     try {
       // Send user message to backend (encrypted automatically)
@@ -279,7 +280,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       // Add user message to UI
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session!.id
+          s.id === sessionId
             ? {
                 ...s,
                 messages: [...s.messages, localUserMsg],
@@ -318,7 +319,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       };
 
       // Add empty AI message to UI
-      const sessionId = session!.id;
       setSessions(prevSessions =>
         prevSessions.map(s =>
           s.id === sessionId
@@ -339,7 +339,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       let relevantDocs: any[] = [];
       let searchErrored = false;
 
-      processingStatusService.startPhase('searching');
+      processingStatusService.startPhase(sessionId, 'searching');
       const searchPhaseStart = getTimestamp();
 
       try {
@@ -381,7 +381,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             ? ['Secure search completed']
             : ['Secure search completed (no matches found)'];
 
-        processingStatusService.completePhase('searching', searchElapsed, {
+        processingStatusService.completePhase(sessionId, 'searching', searchElapsed, {
           retrievalMetrics: {
             memoriesRetrieved: relevantDocs.length,
             embeddingsSearched: relevantDocs.length,
@@ -391,7 +391,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         });
       }
 
-      processingStatusService.startPhase('processing');
+      processingStatusService.startPhase(sessionId, 'processing');
       const secureProcessingStart = getTimestamp();
       let processingErrored = false;
 
@@ -498,7 +498,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           retrievalSummary.encryptedDataProcessed = true;
         }
 
-        processingStatusService.completePhase('processing', secureProcessingElapsed, {
+        processingStatusService.completePhase(sessionId, 'processing', secureProcessingElapsed, {
           retrievalMetrics: {
             memoriesRetrieved: retrievalSummary.memoriesRetrieved,
             screenRecordings: videoCount,
@@ -599,7 +599,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         console.log('[RAG] No videos attached to this query');
       }
 
-      processingStatusService.startPhase('generating');
+      processingStatusService.startPhase(sessionId, 'generating');
       const generationPhaseStart = getTimestamp();
       let generatedChunks = 0;
       let generatedCharacters = 0;
@@ -612,7 +612,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           (chunk) => {
             if (!tokensAnnounced) {
               tokensAnnounced = true;
-              processingStatusService.tokensStarted();
+              processingStatusService.tokensStarted(sessionId);
             }
 
             generatedChunks += 1;
@@ -648,7 +648,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
       } finally {
         const generationElapsed = getTimestamp() - generationPhaseStart;
         phaseDurations.generating = generationElapsed;
-        processingStatusService.completePhase('generating', generationElapsed, {
+        processingStatusService.completePhase(sessionId, 'generating', generationElapsed, {
           generatedChunks,
           generatedCharacters,
           retrievalMetrics: {
@@ -660,7 +660,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         });
 
         if (!streamingErrored) {
-          processingStatusService.completeProcessing({
+          processingStatusService.completeProcessing(sessionId, {
             totalElapsedMs: getTimestamp() - runStartTime,
             phaseBreakdown: phaseDurations,
             retrievalMetrics: {
@@ -725,6 +725,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
     } catch (error: any) {
       console.error('Failed to send message:', error);
       processingStatusService.fail(
+        sessionId,
         error instanceof Error ? error.message : 'Failed to process message'
       );
 
@@ -749,7 +750,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session!.id
+          s.id === sessionId
             ? {
                 ...s,
                 messages: [...(s.messages || []), errorMessage],
@@ -844,7 +845,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
               user={user}
               messages={currentSession?.messages || []}
               isLoading={isLoadingMessages}
-              statusIndicator={<ChatStatusIndicators />}
+              statusIndicator={<ChatStatusIndicators sessionId={currentSession?.id ?? null} />}
             />
             <ChatInput
               onSendMessage={handleSendMessage}
