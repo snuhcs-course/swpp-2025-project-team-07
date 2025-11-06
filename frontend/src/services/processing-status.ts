@@ -1,30 +1,8 @@
 export type ProcessingPhaseKey = 'searching' | 'processing' | 'generating';
 
-export type ProcessingPhase = ProcessingPhaseKey | 'complete';
-
-export interface RetrievalMetrics {
-  memoriesRetrieved: number;
-  encryptedDataProcessed: boolean;
-  screenRecordings?: number;
-  embeddingsSearched?: number;
-}
-
-export interface PhaseMetrics {
-  retrievalMetrics?: Partial<RetrievalMetrics>;
-  securityMessages?: string[];
-  generatedChunks?: number;
-  generatedCharacters?: number;
-}
-
 export interface PhaseStartedEvent {
   phase: ProcessingPhaseKey;
-  startedAt: number;
-}
-
-export interface PhaseCompletedEvent {
-  phase: ProcessingPhaseKey;
-  elapsedMs: number;
-  metrics?: PhaseMetrics;
+  timestamp: number;
 }
 
 export interface TokensStartedEvent {
@@ -32,10 +10,7 @@ export interface TokensStartedEvent {
 }
 
 export interface ProcessingCompleteEvent {
-  totalElapsedMs: number;
-  phaseBreakdown: Record<ProcessingPhaseKey, number>;
-  retrievalMetrics: RetrievalMetrics;
-  completedAt: number;
+  timestamp: number;
 }
 
 export interface ProcessingErrorEvent {
@@ -50,7 +25,6 @@ export interface ProcessingResetEvent {
 
 type StatusEventPayloads = {
   'phase-started': PhaseStartedEvent;
-  'phase-completed': PhaseCompletedEvent;
   'tokens-started': TokensStartedEvent;
   'processing-complete': ProcessingCompleteEvent;
   'processing-error': ProcessingErrorEvent;
@@ -78,7 +52,6 @@ class ProcessingStatusService {
   private constructor() {
     this.listeners = {
       'phase-started': new Set(),
-      'phase-completed': new Set(),
       'tokens-started': new Set(),
       'processing-complete': new Set(),
       'processing-error': new Set(),
@@ -107,22 +80,15 @@ class ProcessingStatusService {
   }
 
   startPhase(phase: ProcessingPhaseKey): void {
-    this.emit('phase-started', { phase, startedAt: now() });
-  }
-
-  completePhase(phase: ProcessingPhaseKey, elapsedMs: number, metrics?: PhaseMetrics): void {
-    this.emit('phase-completed', { phase, elapsedMs, metrics });
+    this.emit('phase-started', { phase, timestamp: now() });
   }
 
   tokensStarted(): void {
     this.emit('tokens-started', { timestamp: now() });
   }
 
-  completeProcessing(event: Omit<ProcessingCompleteEvent, 'completedAt'>): void {
-    this.emit('processing-complete', {
-      ...event,
-      completedAt: now(),
-    });
+  completeProcessing(): void {
+    this.emit('processing-complete', { timestamp: now() });
   }
 
   fail(message: string, phase?: ProcessingPhaseKey): void {
