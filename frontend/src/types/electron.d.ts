@@ -63,6 +63,7 @@ declare global {
         message: string,
         options?: LLMChatOptions
       ) => Promise<void>;
+      stopStream: (streamId: string) => Promise<void>;
 
       // Session management
       createSession: (systemPrompt?: string) => Promise<string>;

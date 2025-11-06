@@ -241,3 +241,47 @@ export function ChatStatusIndicators({ sessionId }: ChatStatusIndicatorsProps) {
     </motion.section>
   );
 }
+
+interface StopIndicatorProps {
+  isStopping?: boolean;
+}
+
+export function StopIndicator({ isStopping = false }: StopIndicatorProps) {
+  return (
+    <motion.section
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      role="status"
+      aria-live="assertive"
+      className="max-w-xl rounded-xl px-4 py-3"
+    >
+      <motion.div
+        layout
+        initial={{ opacity: 0.4, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3 border-red-400/40 text-red-500"
+      >
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="text-lg leading-none">
+          </span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-foreground">
+              {isStopping ? 'Stopping response...' : 'Response stopped'}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {isStopping ? 'Finishing up with the model—almost done.' : 'You can send a new one.'}
+            </span>
+          </div>
+        </div>
+        {isStopping && (
+          <span className="inline-flex h-5 w-5 items-center justify-center text-current" aria-hidden>
+            <span className="h-5 w-5 animate-spin rounded-full border-[2px] border-current border-t-transparent" />
+          </span>
+        )}
+      </motion.div>
+    </motion.section>
+  );
+}

@@ -6,11 +6,13 @@ import { act } from 'react';
 
 const llmMocks = vi.hoisted(() => ({
   streamMessageMock: vi.fn(),
+  stopStreamingMock: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/services/llm', () => ({
   llmService: {
     streamMessage: llmMocks.streamMessageMock,
+    stopStreaming: llmMocks.stopStreamingMock,
   },
 }));
 
@@ -40,10 +42,20 @@ let sendMessageHandler: ((message: string) => void) | undefined;
 let lastInputDisabled = true;
 
 vi.mock('./ChatInput', () => ({
-  ChatInput: ({ onSendMessage, disabled }: { onSendMessage: (message: string) => void; disabled: boolean }) => {
+  ChatInput: ({
+    onSendMessage,
+    onStop,
+    runState,
+    inputDisabled,
+  }: {
+    onSendMessage: (message: string) => void;
+    onStop?: () => void;
+    runState: string;
+    inputDisabled?: boolean;
+  }) => {
     sendMessageHandler = onSendMessage;
-    lastInputDisabled = disabled;
-    return <div data-testid="chat-input" data-disabled={disabled} />;
+    lastInputDisabled = Boolean(inputDisabled);
+    return <div data-testid="chat-input" data-disabled={inputDisabled} data-run-state={runState} />;
   },
 }));
 
@@ -65,6 +77,7 @@ describe('ChatInterface', () => {
 
   beforeEach(() => {
     streamMessageMock.mockReset();
+    llmMocks.stopStreamingMock.mockReset();
     setDownloadDialogOpen = undefined;
     lastDialogOpen = false;
     lastMessagesProp = [];

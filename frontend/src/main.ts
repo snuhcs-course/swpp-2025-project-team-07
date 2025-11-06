@@ -497,6 +497,14 @@ function setupLLMHandlers() {
     });
   });
 
+  ipcMain.handle('llm:stream-stop', async (_event, streamId: string) => {
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    if (!streamId) {
+      return;
+    }
+    await ollamaManager.stopStream(streamId);
+  });
+
   // Session management
   ipcMain.handle('llm:create-session', async (_event, systemPrompt?: string) => {
     if (!ollamaManager) throw new Error('LLM not initialized');

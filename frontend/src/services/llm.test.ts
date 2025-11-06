@@ -13,6 +13,7 @@ describe('LLMService', () => {
     window.llmAPI = {
       chat: vi.fn().mockResolvedValue('ok'),
       streamChat: vi.fn().mockResolvedValue(undefined),
+      stopStream: vi.fn().mockResolvedValue(undefined),
       onStreamChunk: vi.fn(),
       offStreamChunk: vi.fn(),
       createSession: vi.fn().mockResolvedValue('session-abc'),
@@ -73,6 +74,9 @@ describe('LLMService', () => {
     });
     (window.llmAPI.streamChat as any).mockImplementation(async (_message: string, options: any) => {
       expect(options.streamId).toBe('stream-123');
+      queueMicrotask(() => {
+        capturedHandler?.({ streamId: 'stream-123', chunk: 'hi', done: false });
+      });
     });
 
     await instance.streamMessage('hello stream', onChunk, { temperature: 0.9 });
@@ -85,12 +89,134 @@ describe('LLMService', () => {
       streamId: 'stream-123',
     });
 
-    capturedHandler?.({ streamId: 'stream-123', chunk: 'hi', done: false });
     capturedHandler?.({ streamId: 'other', chunk: 'nope', done: false });
     capturedHandler?.({ streamId: 'stream-123', chunk: 'final', done: true });
 
     expect(onChunk).toHaveBeenCalledTimes(1);
     expect(onChunk).toHaveBeenCalledWith('hi');
+  });
+
+  it('stopStreaming requests cancellation and prevents further chunk processing', async () => {
+    const instance = LLMService.getInstance();
+    const onChunk = vi.fn();
+    let capturedHandler: ((chunk: any) => void) | undefined;
+
+    (window.llmAPI.onStreamChunk as any).mockImplementation((handler: (chunk: any) => void) => {
+      capturedHandler = handler;
+    });
+
+    let resolveStream: (() => void) | undefined;
+    (window.llmAPI.streamChat as any).mockImplementation(
+      () =>
+        new Promise<void>(resolve => {
+          resolveStream = resolve;
+        }),
+    );
+
+    (window.llmAPI.stopStream as any).mockImplementation(async () => {
+      resolveStream?.();
+    });
+
+    const streamPromise = instance.streamMessage('stop me', onChunk);
+
+    await instance.stopStreaming();
+    await expect(streamPromise).rejects.toThrow('StreamCancelledError');
+
+    expect(window.llmAPI.stopStream).toHaveBeenCalledWith('stream-123');
+    expect(window.llmAPI.offStreamChunk).toHaveBeenCalledWith(capturedHandler);
+
+    capturedHandler?.({ streamId: 'stream-123', chunk: 'ignored', done: false });
+    expect(onChunk).not.toHaveBeenCalled();
+  });
+
+  it('waits for an active stream to finish before starting a new one', async () => {
+    const instance = LLMService.getInstance();
+    const firstOnChunk = vi.fn();
+    const secondOnChunk = vi.fn();
+    const handlers: ((chunk: any) => void)[] = [];
+
+    (window.llmAPI.onStreamChunk as any).mockImplementation((handler: (chunk: any) => void) => {
+      handlers.push(handler);
+    });
+
+    let resolveFirstStream: (() => void) | undefined;
+    const firstStreamDeferred = new Promise<void>(resolve => {
+      resolveFirstStream = resolve;
+    });
+
+    (window.llmAPI.streamChat as any)
+      .mockImplementationOnce(() => firstStreamDeferred)
+      .mockImplementationOnce(async () => undefined);
+
+    const firstStreamPromise = instance.streamMessage('queued-1', firstOnChunk);
+
+    await Promise.resolve();
+
+    const secondStreamPromise = instance.streamMessage('queued-2', secondOnChunk);
+
+    await Promise.resolve();
+
+    expect(window.llmAPI.streamChat).toHaveBeenCalledTimes(1);
+
+    resolveFirstStream?.();
+    await expect(firstStreamPromise).resolves.toBeUndefined();
+
+    await Promise.resolve();
+    expect(window.llmAPI.streamChat).toHaveBeenCalledTimes(2);
+
+    await expect(secondStreamPromise).resolves.toBeUndefined();
+    expect(handlers).toHaveLength(2);
+  });
+
+  it('allows starting a new stream while a previous stop is still completing', async () => {
+    const instance = LLMService.getInstance();
+    const onChunk = vi.fn();
+    const handlers: ((chunk: any) => void)[] = [];
+
+    (window.llmAPI.onStreamChunk as any).mockImplementation((handler: (chunk: any) => void) => {
+      handlers.push(handler);
+    });
+
+    let resolveFirstStream: (() => void) | undefined;
+    const firstStreamDeferred = new Promise<void>(resolve => {
+      resolveFirstStream = resolve;
+    });
+
+    let resolveSecondStream: (() => void) | undefined;
+    const secondStreamDeferred = new Promise<void>(resolve => {
+      resolveSecondStream = resolve;
+    });
+
+    (window.llmAPI.streamChat as any)
+      .mockImplementationOnce(() => firstStreamDeferred)
+      .mockImplementationOnce(() => secondStreamDeferred);
+
+    let resolveStopStream: (() => void) | undefined;
+    const stopStreamDeferred = new Promise<void>(resolve => {
+      resolveStopStream = resolve;
+    });
+
+    (window.llmAPI.stopStream as any).mockImplementation(() => {
+      resolveFirstStream?.();
+      return stopStreamDeferred;
+    });
+
+    const firstStreamPromise = instance.streamMessage('first', onChunk);
+
+    const stopPromise = instance.stopStreaming();
+
+    expect(window.llmAPI.offStreamChunk).toHaveBeenCalledWith(handlers[0]);
+
+    const secondStreamPromise = instance.streamMessage('second', onChunk);
+
+    resolveSecondStream?.();
+    await expect(secondStreamPromise).resolves.toBeUndefined();
+
+    resolveStopStream?.();
+
+    await expect(stopPromise).resolves.toBeUndefined();
+    await expect(firstStreamPromise).rejects.toThrow('StreamCancelledError');
+    expect(window.llmAPI.onStreamChunk).toHaveBeenCalledTimes(2);
   });
 
   it('creates sessions and stores the current session id', async () => {

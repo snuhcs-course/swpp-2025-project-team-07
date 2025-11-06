@@ -1,17 +1,28 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send } from 'lucide-react';
+import { Send, Square } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+import type { ChatRunState } from './ChatInterface';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
-  disabled?: boolean;
+  onStop?: () => void;
+  runState: ChatRunState;
+  inputDisabled?: boolean;
 }
 
-export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
+export function ChatInput({
+  onSendMessage,
+  onStop,
+  runState,
+  inputDisabled = false,
+}: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isStreaming = runState === 'awaitingFirstToken' || runState === 'streaming';
+  const textareaDisabled = inputDisabled || isStreaming;
+  const showStopButton = isStreaming;
 
   const handleSend = () => {
     if (message.trim()) {
@@ -26,7 +37,7 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !showStopButton) {
       e.preventDefault();
       handleSend();
     }
@@ -34,22 +45,26 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
 
   // Auto-resize textarea
   useEffect(() => {
-    if (textareaRef.current) {
+    if (textareaRef.current && !textareaDisabled) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [message]);
+  }, [message, textareaDisabled]);
 
   // Auto-focus on mount (with small delay for animation)
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (textareaRef.current && !disabled) {
+      if (textareaRef.current && !textareaDisabled) {
         textareaRef.current.focus();
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [disabled]);
+  }, [textareaDisabled]);
 
+  const isSendDisabled = !message.trim() || textareaDisabled;
+  const canStop = showStopButton && !!onStop;
+  const canSend = !showStopButton && !isSendDisabled;
+  const canInteract = canStop || canSend;
 
   return (
     <div className="border-t border-border bg-card/70 backdrop-blur-xl p-6">
@@ -70,8 +85,8 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={disabled ? "AI is thinking..." : "Type your message..."}
-                disabled={disabled}
+                placeholder={textareaDisabled ? "AI is thinking..." : "Type your message..."}
+                disabled={textareaDisabled}
                 className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
@@ -79,21 +94,21 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
 
             {/* Send button */}
             <Button
-              onClick={handleSend}
-              disabled={!message.trim() || disabled}
+              onClick={showStopButton ? onStop : handleSend}
+              disabled={showStopButton ? !onStop : isSendDisabled}
               className={`flex-shrink-0 transition-all duration-300 backdrop-blur-sm rounded-xl ${
-                message.trim() && !disabled
+                canInteract
                   ? 'bg-gradient-to-br from-primary/90 to-primary hover:from-primary hover:to-primary/90 text-primary-foreground shadow-lg hover:shadow-xl cursor-pointer'
                   : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
               }`}
               size="icon"
             >
               <motion.div
-                whileHover={{ scale: message.trim() ? 1.05 : 1 }}
-                whileTap={{ scale: message.trim() ? 0.95 : 1 }}
+                whileHover={{ scale: canInteract ? 1.05 : 1 }}
+                whileTap={{ scale: canInteract ? 0.95 : 1 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
               >
-                <Send className="w-4 h-4" />
+                {showStopButton ? <Square className="w-4 h-4" /> : <Send className="w-4 h-4" />}
               </motion.div>
             </Button>
           </div>
@@ -107,7 +122,7 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
           transition={{ duration: 0.3, delay: 0.2 }}
           className="text-center text-xs text-muted-foreground mt-2"
         >
-          Press Enter to send, Shift + Enter for new line
+          {showStopButton ? 'Stop the AI response' : 'Press Enter to send, Shift + Enter for new line'}
         </motion.div>
       </div>
     </div>

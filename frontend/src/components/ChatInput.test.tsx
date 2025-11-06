@@ -10,7 +10,7 @@ import { ChatInput } from './ChatInput';
 describe('ChatInput', () => {
   it('should render the input field', () => {
     const mockOnSendMessage = vi.fn();
-    render(<ChatInput onSendMessage={mockOnSendMessage} />);
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
 
     const textarea = screen.getByPlaceholderText('Type your message...');
     expect(textarea).toBeInTheDocument();
@@ -20,7 +20,7 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} />);
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
 
     const textarea = screen.getByPlaceholderText('Type your message...');
     const sendButton = screen.getByRole('button');
@@ -39,7 +39,7 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} />);
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
 
     const textarea = screen.getByPlaceholderText('Type your message...');
     const sendButton = screen.getByRole('button');
@@ -56,7 +56,7 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} />);
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
 
     const sendButton = screen.getByRole('button');
 
@@ -70,9 +70,29 @@ describe('ChatInput', () => {
   it('should disable input when disabled prop is true', () => {
     const mockOnSendMessage = vi.fn();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} disabled={true} />);
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" inputDisabled />);
 
     const textarea = screen.getByPlaceholderText('AI is thinking...');
     expect(textarea).toBeDisabled();
+  });
+
+  it('should call onStop when stop button is clicked during streaming', async () => {
+    const mockOnSendMessage = vi.fn();
+    const mockOnStop = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <ChatInput
+        onSendMessage={mockOnSendMessage}
+        onStop={mockOnStop}
+        runState="streaming"
+      />,
+    );
+
+    const stopButton = screen.getByRole('button');
+    await user.click(stopButton);
+
+    expect(mockOnSendMessage).not.toHaveBeenCalled();
+    expect(mockOnStop).toHaveBeenCalled();
   });
 });
