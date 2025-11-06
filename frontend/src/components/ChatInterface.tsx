@@ -477,6 +477,7 @@ These are your memories of previous interactions.
 You can use this information to answer the user's question.
 
 ${chatContexts.join('\n\n')}
+${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}
 ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) provided as image frame sequences. Each recording is split into frames at 1 frame per second, so you'll see multiple images showing the progression of activity over time.` : ''}
 </CONTEXT>
 
