@@ -48,6 +48,10 @@ _strings_2d_array = openapi.Schema(
         properties={
             "chat_data": _array_of_objects,
             "screen_data": _array_of_objects,
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=[],
     ),
@@ -72,6 +76,7 @@ def insert_to_collection(request):
     """Store encrypted vectors and values to chat and/or screen vectordb."""
     chat_data = request.data.get("chat_data")
     screen_data = request.data.get("screen_data")
+    collection_version = request.data.get("collection_version")
 
     # Validate at least one has data
     if not chat_data and not screen_data:
@@ -85,6 +90,7 @@ def insert_to_collection(request):
         user_id=request.user.id,
         chat_data=chat_data if chat_data else None,
         screen_data=screen_data if screen_data else None,
+        collection_version=collection_version,
     )
 
     if not success:
@@ -101,6 +107,10 @@ def insert_to_collection(request):
         properties={
             "chat_data": _array_of_objects,
             "screen_data": _array_of_objects,
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=[],
     ),
@@ -138,6 +148,7 @@ def search_collections(request):
     """Search for similar vectors in chat and/or screen vectordb."""
     chat_data = request.data.get("chat_data")
     screen_data = request.data.get("screen_data")
+    collection_version = request.data.get("collection_version")
 
     # Validate at least one has data
     if not chat_data and not screen_data:
@@ -151,6 +162,7 @@ def search_collections(request):
         user_id=request.user.id,
         chat_data=chat_data if chat_data else None,
         screen_data=screen_data if screen_data else None,
+        collection_version=collection_version,
     )
 
     if not success:
@@ -186,6 +198,10 @@ def search_collections(request):
                 description="List of screen document IDs to fetch",
             ),
             "screen_output_fields": _array_of_strings,
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=[],
     ),
@@ -221,6 +237,7 @@ def query_collection(request):
     chat_output_fields = request.data.get("chat_output_fields")
     screen_ids = request.data.get("screen_ids")
     screen_output_fields = request.data.get("screen_output_fields")
+    collection_version = request.data.get("collection_version")
 
     # Validate at least one query is provided
     has_chat_query = chat_ids and chat_output_fields
@@ -241,6 +258,7 @@ def query_collection(request):
         chat_output_fields=chat_output_fields if has_chat_query else None,
         screen_ids=screen_ids if has_screen_query else None,
         screen_output_fields=screen_output_fields if has_screen_query else None,
+        collection_version=collection_version,
     )
 
     if not success:
@@ -274,6 +292,10 @@ def query_collection(request):
                 type=openapi.TYPE_BOOLEAN,
                 description="Whether to clear the screen collection",
             ),
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=["userId", "clear_chat", "clear_screen"],
     ),
@@ -299,6 +321,14 @@ def clear_collections(request):
     user_id = request.data.get("userId")
     clear_chat = request.data.get("clear_chat", False)
     clear_screen = request.data.get("clear_screen", False)
+    collection_version = request.data.get("collection_version")
+
+    # Validate userId matches authenticated user
+    if user_id != request.user.id:
+        return Response(
+            {"detail": "userId must match authenticated user"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # Validate at least one collection is being cleared
     if not clear_chat and not clear_screen:
@@ -312,6 +342,7 @@ def clear_collections(request):
         user_id=user_id,
         drop_chat=clear_chat,
         drop_screen=clear_screen,
+        collection_version=collection_version,
     )
 
     if not drop_success:
@@ -326,6 +357,7 @@ def clear_collections(request):
             user_id=user_id,
             create_chat=clear_chat,
             create_screen=clear_screen,
+            collection_version=collection_version,
         )
 
         if not create_success:
