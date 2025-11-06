@@ -1,5 +1,6 @@
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -282,7 +283,7 @@ def query_collection(request):
         properties={
             "user_id": openapi.Schema(
                 type=openapi.TYPE_INTEGER,
-                description="User ID (must match authenticated user)",
+                description="User ID",
             ),
             "clear_chat": openapi.Schema(
                 type=openapi.TYPE_BOOLEAN,
@@ -309,13 +310,13 @@ def query_collection(request):
                 }
             },
         ),
-        400: "Bad Request - Invalid parameters or user_id mismatch",
-        401: "Unauthorized - Invalid or missing token",
+        400: "Bad Request - Invalid parameters",
         500: "Server Error - VectorDB operation failed",
     },
-    security=[{"Bearer": []}],
 )
 @api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def clear_collections(request):
     """Clear (drop and re-create) chat and/or screen collections."""
     user_id = request.data.get("user_id")
