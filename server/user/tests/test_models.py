@@ -41,8 +41,12 @@ class TestUserModel:
 
     def test_allow_duplicate_username(self):
         """Test that multiple users with the same username can exist."""
-        user1 = User.objects.create_user(email="user1@example.com", username="username", password="pass")
-        user2 = User.objects.create_user( email="user2@example.com", username="username", password="pass")
+        user1 = User.objects.create_user(
+            email="user1@example.com", username="username", password="pass"
+        )
+        user2 = User.objects.create_user(
+            email="user2@example.com", username="username", password="pass"
+        )
         assert user1.username == user2.username
 
     def test_email_is_normalized(self):
