@@ -16,7 +16,7 @@ if (started) {
   app.quit();
 }
 
-const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
+const S3_BASE_URL = 'https://clone-api.s3.amazonaws.com/static/embeddings/dragon';
 
 const CHAT_QUERY_ENCODER_FILES = [
   {
