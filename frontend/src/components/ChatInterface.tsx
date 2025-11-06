@@ -12,7 +12,7 @@ import { chatService } from '@/services/chat';
 import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
-import { processingStatusService } from '@/services/processing-status';
+import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 
@@ -257,6 +257,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     const sessionIdNum = parseInt(session.id);
     setIsLoading(true);
 
+    const runStartTime = getTimestamp();
+    const phaseDurations: Record<ProcessingPhaseKey, number> = {
+      searching: 0,
+      processing: 0,
+      generating: 0,
+    };
+    const retrievalSummary: RetrievalMetrics = {
+      memoriesRetrieved: 0,
+      encryptedDataProcessed: false,
+      screenRecordings: 0,
+      embeddingsSearched: 0,
+    };
     processingStatusService.reset();
 
     try {
@@ -325,6 +337,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       const chatContexts: string[] = []; // Chat memory contexts
       let videoCount = 0; // Number of screen recordings retrieved
       let relevantDocs: any[] = [];
+      let searchErrored = false;
 
       processingStatusService.startPhase('searching');
       const searchPhaseStart = getTimestamp();
@@ -343,21 +356,44 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           3,
           videoQueryEmbedding || undefined
         );
+
+        retrievalSummary.memoriesRetrieved = relevantDocs.length;
+        retrievalSummary.embeddingsSearched = relevantDocs.length;
       } catch (error) {
+        searchErrored = true;
         console.error('Failed to retrieve context:', error);
         // Continue without context if retrieval fails
       } finally {
-        const searchElapsed = getTimestamp() - searchPhaseStart;
+        let searchElapsed = getTimestamp() - searchPhaseStart;
 
         if (searchElapsed < MIN_SEARCH_DISPLAY_MS) {
           await new Promise(resolve =>
             setTimeout(resolve, MIN_SEARCH_DISPLAY_MS - searchElapsed)
           );
+          searchElapsed = MIN_SEARCH_DISPLAY_MS;
         }
+
+        phaseDurations.searching = searchElapsed;
+
+        const searchMessages = searchErrored
+          ? ['Secure search encountered an issue']
+          : relevantDocs.length > 0
+            ? ['Secure search completed']
+            : ['Secure search completed (no matches found)'];
+
+        processingStatusService.completePhase('searching', searchElapsed, {
+          retrievalMetrics: {
+            memoriesRetrieved: relevantDocs.length,
+            embeddingsSearched: relevantDocs.length,
+            encryptedDataProcessed: false,
+          },
+          securityMessages: searchMessages,
+        });
       }
 
       processingStatusService.startPhase('processing');
       const secureProcessingStart = getTimestamp();
+      let processingErrored = false;
 
       try {
         if (relevantDocs.length > 0) {
@@ -433,15 +469,44 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           }
         }
       } catch (error) {
+        processingErrored = true;
         console.error('Failed to process retrieved context:', error);
       } finally {
-        const processingElapsed = getTimestamp() - secureProcessingStart;
+        let secureProcessingElapsed = getTimestamp() - secureProcessingStart;
 
-        if (processingElapsed < MIN_PROCESSING_DISPLAY_MS) {
+        if (secureProcessingElapsed < MIN_PROCESSING_DISPLAY_MS) {
           await new Promise(resolve =>
-            window.setTimeout(resolve, MIN_PROCESSING_DISPLAY_MS - processingElapsed)
+            window.setTimeout(resolve, MIN_PROCESSING_DISPLAY_MS - secureProcessingElapsed)
+          );
+          secureProcessingElapsed = MIN_PROCESSING_DISPLAY_MS;
+        }
+
+        phaseDurations.processing = secureProcessingElapsed;
+
+        const secureMessages: string[] = ['Processing encrypted data'];
+        if (processingErrored) {
+          secureMessages.push('Secure processing encountered an issue');
+        } else if (videoCount > 0) {
+          secureMessages.push(
+            `Prepared ${videoCount} secure screen capture${videoCount === 1 ? '' : 's'}`
           );
         }
+
+        retrievalSummary.memoriesRetrieved = chatContexts.length + videoCount;
+        retrievalSummary.screenRecordings = videoCount;
+        if (retrievalSummary.memoriesRetrieved > 0 && !processingErrored) {
+          retrievalSummary.encryptedDataProcessed = true;
+        }
+
+        processingStatusService.completePhase('processing', secureProcessingElapsed, {
+          retrievalMetrics: {
+            memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+            screenRecordings: videoCount,
+            embeddingsSearched: retrievalSummary.embeddingsSearched,
+            encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+          },
+          securityMessages: secureMessages,
+        });
       }
 
       // Stream the LLM response with RAG context + videos
@@ -535,6 +600,9 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
       }
 
       processingStatusService.startPhase('generating');
+      const generationPhaseStart = getTimestamp();
+      let generatedChunks = 0;
+      let generatedCharacters = 0;
       let streamingErrored = false;
       let tokensAnnounced = false;
 
@@ -547,6 +615,8 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
               processingStatusService.tokensStarted();
             }
 
+            generatedChunks += 1;
+            generatedCharacters += chunk.length;
             fullResponse += chunk;
             // Update the AI message content with each chunk
             setSessions(prevSessions =>
@@ -576,8 +646,30 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         streamingErrored = true;
         throw streamError;
       } finally {
+        const generationElapsed = getTimestamp() - generationPhaseStart;
+        phaseDurations.generating = generationElapsed;
+        processingStatusService.completePhase('generating', generationElapsed, {
+          generatedChunks,
+          generatedCharacters,
+          retrievalMetrics: {
+            memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+            encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+            screenRecordings: retrievalSummary.screenRecordings,
+            embeddingsSearched: retrievalSummary.embeddingsSearched,
+          },
+        });
+
         if (!streamingErrored) {
-          processingStatusService.completeProcessing();
+          processingStatusService.completeProcessing({
+            totalElapsedMs: getTimestamp() - runStartTime,
+            phaseBreakdown: phaseDurations,
+            retrievalMetrics: {
+              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+              screenRecordings: retrievalSummary.screenRecordings,
+              embeddingsSearched: retrievalSummary.embeddingsSearched,
+            },
+          });
         }
       }
 
