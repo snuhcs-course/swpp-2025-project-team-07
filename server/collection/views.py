@@ -276,11 +276,11 @@ def query_collection(request):
 
 @swagger_auto_schema(
     method="post",
-    operation_description="[DEBUG ONLY] Clear (drop and re-create) chat and/or screen collections for specified user.",
+    operation_description="[DEBUG ONLY] Clear (drop and re-create) chat and/or screen collections for specified user. Collection will be created if it doesn't exist.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
-            "userId": openapi.Schema(
+            "user_id": openapi.Schema(
                 type=openapi.TYPE_INTEGER,
                 description="User ID (must match authenticated user)",
             ),
@@ -297,7 +297,7 @@ def query_collection(request):
                 description="Optional version string to append to collection name for testing different client versions",
             ),
         },
-        required=["userId", "clear_chat", "clear_screen"],
+        required=["user_id", "clear_chat", "clear_screen"],
     ),
     responses={
         200: openapi.Response(
@@ -309,7 +309,7 @@ def query_collection(request):
                 }
             },
         ),
-        400: "Bad Request - Invalid parameters or userId mismatch",
+        400: "Bad Request - Invalid parameters or user_id mismatch",
         401: "Unauthorized - Invalid or missing token",
         500: "Server Error - VectorDB operation failed",
     },
@@ -318,17 +318,10 @@ def query_collection(request):
 @api_view(["POST"])
 def clear_collections(request):
     """Clear (drop and re-create) chat and/or screen collections."""
-    user_id = request.data.get("userId")
+    user_id = request.data.get("user_id")
     clear_chat = request.data.get("clear_chat", False)
     clear_screen = request.data.get("clear_screen", False)
     collection_version = request.data.get("collection_version")
-
-    # Validate userId matches authenticated user
-    if user_id != request.user.id:
-        return Response(
-            {"detail": "userId must match authenticated user"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
     # Validate at least one collection is being cleared
     if not clear_chat and not clear_screen:

@@ -16,7 +16,9 @@ class VectorDBClient:
         self.screen_url = settings.VECTORDB_SCREEN_HOST
         self.timeout = 30  # seconds
 
-    def _get_collection_name(self, user_id: int, db_type: str, collection_version: Optional[str] = None) -> str:
+    def _get_collection_name(
+        self, user_id: int, db_type: str, collection_version: Optional[str] = None
+    ) -> str:
         """Generate collection name for a user and database type."""
         base_name = f"{db_type}_{user_id}"
         if collection_version:
