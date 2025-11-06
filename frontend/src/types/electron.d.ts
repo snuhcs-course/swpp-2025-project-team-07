@@ -25,6 +25,14 @@ export interface LLMChatOptions {
   systemPrompt?: string;
   sessionId?: string;
   streamId?: string;
+  /**
+   * Video data for multimodal input (Gemma 3 via Ollama)
+   * - Videos are automatically converted to image frames at 1 fps using FFmpeg
+   * - Each video is processed to extract keyframes which are passed to the LLM
+   * - ArrayBuffers for IPC compatibility
+   * - Maximum 30 frames total to stay within context window
+   */
+  videos?: ArrayBuffer[];
 }
 
 export interface ModelDownloadProgress {
@@ -80,6 +88,28 @@ declare global {
       onLLMError: (callback: (error: {message: string; error: string}) => void) => void;
     };
     embeddingAPI: EmbeddingAPI;
+  }
+}
+
+declare global {
+  interface Window {
+    vembedAPI: {
+      isModelReady(): Promise<boolean>;
+      startModelDownload(): Promise<{ success: boolean; error?: string }>;
+      onDownloadProgress(cb: (p: ModelDownloadProgress) => void): void;
+      onDownloadComplete(cb: () => void): void;
+      onDownloadError(cb: (msg: string) => void): void;
+      getModelBytes(): Promise<ArrayBuffer>;
+    };
+  }
+}
+
+declare global {
+  interface Window {
+    embeddingWorkerAPI: {
+      onTask: (callback: (args: { taskId: string, videoBlob: Buffer }) => void) => void;
+      sendResult: (result: { taskId: string, result?: any, error?: string }) => void;
+    };
   }
 }
 

@@ -59,11 +59,12 @@ jobs:
             docker run -d \
               --name swpp-vectordb-chat \
               --restart unless-stopped \
+              -v /home/ubuntu/vectordb/data/chat.db:/app/data/chat.db \
               -p 8000:8000 \
               -e DJANGO_SETTINGS_MODULE="config.settings.production" \
               -e SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}" \
               -e VECTOR_DATABASE_URI="${{ secrets.VECTOR_DATABASE_CHAT_URI }}" \
-              -e AWS_S3_BUCKET_NAME="swpp-vectordb-chat" \
+              -e AWS_S3_BUCKET_NAME="clone-vectordb-chat" \
               -e AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
               -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
               -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
