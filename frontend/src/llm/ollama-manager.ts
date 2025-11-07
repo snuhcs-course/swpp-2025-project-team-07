@@ -12,9 +12,17 @@ export interface ChatOptions {
   topP?: number;
   systemPrompt?: string;
   sessionId?: string;
+   streamId?: string;
   onChunk?: (chunk: string) => void;
   onComplete?: () => void;
   images?: string[]; // Base64 encoded images
+}
+
+export class StreamCancelledError extends Error {
+  constructor(message: string = 'Stream cancelled') {
+    super(message);
+    this.name = 'StreamCancelledError';
+  }
 }
 
 export class OllamaManager {
@@ -22,6 +30,7 @@ export class OllamaManager {
   private options: OllamaManagerOptions;
   private modelName = 'gemma3:4b';
   private systemPrompts: Map<string, string> = new Map();
+  private activeStreams: Map<string, { iterator: AsyncIterator<any>; stopped: boolean }> = new Map();
   private readonly defaultSystemPrompt = `You are a helpful AI assistant with access to the user's conversation history and screen recordings.
 
 When you see a message that starts with <CONTEXT> tags, this contains real information from the user's past conversations with you.
@@ -163,6 +172,7 @@ answer confidently using that information as if you already know it.`;
   async streamChat(message: string, options: ChatOptions = {}): Promise<void> {
     try {
       const messages: Message[] = [];
+      const streamId = options.streamId || 'default';
 
       // Add system prompt (use provided, session-specific, or default)
       const systemPrompt = options.systemPrompt
@@ -201,18 +211,69 @@ answer confidently using that information as if you already know it.`;
         }
       });
 
-      for await (const chunk of stream) {
-        if (chunk.message?.content && options.onChunk) {
-          options.onChunk(chunk.message.content);
-        }
-      }
+      const iterator = stream[Symbol.asyncIterator]();
+      const entry = { iterator, stopped: false };
+      this.activeStreams.set(streamId, entry);
 
-      if (options.onComplete) {
-        options.onComplete();
+      try {
+        while (true) {
+          if (entry.stopped) {
+            throw new StreamCancelledError();
+          }
+
+          const { value, done } = await iterator.next();
+          if (done) {
+            break;
+          }
+
+          if (entry.stopped) {
+            throw new StreamCancelledError();
+          }
+
+          if (value?.message?.content && options.onChunk) {
+            options.onChunk(value.message.content);
+          }
+        }
+
+        if (entry.stopped) {
+          throw new StreamCancelledError();
+        }
+
+        if (options.onComplete) {
+          options.onComplete();
+        }
+      } catch (error) {
+        if (entry.stopped) {
+          throw error instanceof StreamCancelledError ? error : new StreamCancelledError();
+        }
+        throw error;
+      } finally {
+        this.activeStreams.delete(streamId);
       }
     } catch (error) {
       console.error('Stream chat error:', error);
       throw error;
+    }
+  }
+
+  async stopStream(streamId: string): Promise<void> {
+    if (!streamId) {
+      return;
+    }
+
+    const entry = this.activeStreams.get(streamId);
+    if (!entry) {
+      return;
+    }
+
+    entry.stopped = true;
+
+    try {
+      if (typeof entry.iterator.return === 'function') {
+        await entry.iterator.return();
+      }
+    } catch (error) {
+      console.warn('[OllamaManager] Failed to stop stream gracefully:', error);
     }
   }
 

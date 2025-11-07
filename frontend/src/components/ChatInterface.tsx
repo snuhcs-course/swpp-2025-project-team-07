@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
-import { ChatStatusIndicators } from './ChatStatusIndicators';
+import { ChatStatusIndicators, StopIndicator } from './ChatStatusIndicators';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
@@ -77,21 +78,79 @@ const getTimestamp = () =>
 const MIN_SEARCH_DISPLAY_MS = 900;
 const MIN_PROCESSING_DISPLAY_MS = 1200;
 
+const RUN_CANCELLED_ERROR_NAME = 'RunCancelledError';
+
+type CancellationHandle = {
+  signal: Promise<never>;
+  cancel: (reason?: Error) => void;
+};
+
+const createRunCancelledError = (): Error => {
+  const error = new Error(RUN_CANCELLED_ERROR_NAME);
+  error.name = RUN_CANCELLED_ERROR_NAME;
+  return error;
+};
+
+const isRunCancelledError = (error: unknown): error is Error =>
+  error instanceof Error && error.name === RUN_CANCELLED_ERROR_NAME;
+
+const createCancellationHandle = (): CancellationHandle => {
+  let rejectFn: ((reason?: Error) => void) | null = null;
+  let cancelled = false;
+  const signal = new Promise<never>((_, reject) => {
+    rejectFn = (reason?: Error) => {
+      if (cancelled) {
+        return;
+      }
+      cancelled = true;
+      reject(reason ?? createRunCancelledError());
+    };
+  });
+
+  return {
+    signal,
+    cancel: (reason?: Error) => {
+      if (rejectFn) {
+        rejectFn(reason);
+      }
+    },
+  };
+};
+
+export type ChatRunState =
+  | 'idle'
+  | 'awaitingFirstToken'
+  | 'streaming'
+  | 'stoppedBeforeTokens'
+  | 'stoppedAfterTokens'
+  | 'completed';
+
+type ActiveRunContext = {
+  aiMessageId: string;
+  sessionId: string;
+  tokensReceived: boolean;
+  isStopped: boolean;
+  cancel: (reason?: Error) => void;
+  cancellationSignal: Promise<never>;
+};
+
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [runState, setRunState] = useState<ChatRunState>('idle');
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const [isModelReady, setIsModelReady] = useState(false);
   const [isCheckingModels, setIsCheckingModels] = useState(true);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [isStoppingGeneration, setIsStoppingGeneration] = useState(false);
 
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
   // Ref to track if initial model check is complete
   const initialModelCheckCompleteRef = useRef(false);
+  const activeRunRef = useRef<ActiveRunContext | null>(null);
 
   const currentSession = currentSessionId
     ? sessions.find(s => s.id === currentSessionId)
@@ -222,16 +281,63 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     };
   }, []);
 
+  useEffect(() => {
+    setRunState(prev => (prev === 'stoppedBeforeTokens' ? 'idle' : prev));
+  }, [currentSessionId]);
+
   const handleSendMessage = async (content: string) => {
-    if (isLoading || !isModelReady) return;
+    if (!isModelReady) {
+      return;
+    }
+
+    if (runState === 'awaitingFirstToken' || runState === 'streaming') {
+      return;
+    }
 
     // Auto-create session if none exists
     let session = currentSession;
+    const cancellationHandle = createCancellationHandle();
+    let activeRun: ActiveRunContext | null = {
+      aiMessageId: '',
+      sessionId: session?.id ?? '',
+      tokensReceived: false,
+      isStopped: false,
+      cancel: cancellationHandle.cancel,
+      cancellationSignal: cancellationHandle.signal,
+    };
+    activeRunRef.current = activeRun;
+
+    const runWithCancellation = async <T, >(task: () => Promise<T>): Promise<T> => {
+      const promise = task();
+      if (!activeRun) {
+        return promise;
+      }
+      try {
+        return await Promise.race([promise, activeRun.cancellationSignal]);
+      } catch (error) {
+        if (isRunCancelledError(error)) {
+          promise.catch(() => undefined);
+        }
+        throw error;
+      }
+    };
+
+    const ensureNotCancelled = () => {
+      if (!activeRun || activeRun.isStopped) {
+        throw createRunCancelledError();
+      }
+    };
+
+    setIsStoppingGeneration(false);
+    setRunState('awaitingFirstToken');
     if (!session) {
       // Check if session creation is already in progress
       // This prevents duplicate session creation in race conditions (e.g., React 18 Strict Mode double-mounting)
       if (sessionCreationInProgressRef.current) {
         console.log('Session creation already in progress, skipping duplicate call');
+        setRunState('idle');
+        activeRunRef.current = null;
+        activeRun = null;
         return;
       }
 
@@ -240,13 +346,24 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         sessionCreationInProgressRef.current = true;
 
         // Create new session synchronously
-        const backendSession = await chatService.createSession('New Conversation');
+        const backendSession = await runWithCancellation(() =>
+          chatService.createSession('New Conversation')
+        );
         const localSession = toLocalSession(backendSession);
         setSessions(prev => [localSession, ...prev]);
         setCurrentSessionId(localSession.id);
         session = localSession;
+        if (activeRun) {
+          activeRun.sessionId = localSession.id;
+        }
       } catch (error) {
+        if (isRunCancelledError(error)) {
+          return;
+        }
         console.error('Failed to create session:', error);
+        setRunState('idle');
+        activeRunRef.current = null;
+        activeRun = null;
         return;
       } finally {
         // Reset the flag after session creation
@@ -254,8 +371,15 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       }
     }
 
-    const sessionIdNum = parseInt(session.id);
-    setIsLoading(true);
+    if (!session) {
+      setRunState('idle');
+      activeRunRef.current = null;
+      activeRun = null;
+      return;
+    }
+
+    const sessionId = session.id;
+    const sessionIdNum = parseInt(sessionId, 10);
 
     const runStartTime = getTimestamp();
     const phaseDurations: Record<ProcessingPhaseKey, number> = {
@@ -269,17 +393,32 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       screenRecordings: 0,
       embeddingsSearched: 0,
     };
-    processingStatusService.reset();
+    processingStatusService.reset(sessionId);
+
+    if (!activeRun) {
+      activeRun = {
+        aiMessageId: '',
+        sessionId,
+        tokensReceived: false,
+        isStopped: false,
+        cancel: cancellationHandle.cancel,
+        cancellationSignal: cancellationHandle.signal,
+      };
+      activeRunRef.current = activeRun;
+    } else {
+      activeRun.sessionId = sessionId;
+    }
 
     try {
       // Send user message to backend (encrypted automatically)
       const userMsg = await chatService.sendMessage(sessionIdNum, 'user', content);
+      ensureNotCancelled();
       const localUserMsg = toLocalMessage(userMsg);
 
       // Add user message to UI
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session!.id
+          s.id === sessionId
             ? {
                 ...s,
                 messages: [...s.messages, localUserMsg],
@@ -295,7 +434,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         ...userMsg,
         content, // Original plaintext
       };
-      const existingMessages = session!.messages || [];
+      const existingMessages = session.messages || [];
       memoryService.trackMessage(sessionIdNum, [
         ...existingMessages.map(m => ({
           id: parseInt(m.id),
@@ -318,7 +457,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       };
 
       // Add empty AI message to UI
-      const sessionId = session!.id;
       setSessions(prevSessions =>
         prevSessions.map(s =>
           s.id === sessionId
@@ -330,6 +468,20 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         )
       );
 
+      if (activeRun) {
+        activeRun.aiMessageId = aiMessageId;
+      } else {
+        activeRun = {
+          aiMessageId,
+          sessionId,
+          tokensReceived: false,
+          isStopped: false,
+          cancel: cancellationHandle.cancel,
+          cancellationSignal: cancellationHandle.signal,
+        };
+        activeRunRef.current = activeRun;
+      }
+
       // RAG: Retrieve relevant context from past conversations and screen recordings
       let contextPrompt = '';
       const videoBlobs: Blob[] = []; // Store reconstructed video blobs for multimodal input
@@ -339,27 +491,39 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       let relevantDocs: any[] = [];
       let searchErrored = false;
 
-      processingStatusService.startPhase('searching');
+      processingStatusService.startPhase(sessionId, 'searching');
       const searchPhaseStart = getTimestamp();
 
       try {
         // Generate embeddings for the user's query
         // - DRAGON (768-dim) for chat search
         // - CLIP (512-dim) for video/screen search
-        const chatQueryEmbedding = await embeddingService.embedQuery(content);
-        const videoQueryEmbedding = await embeddingService.embedVideoQuery(content);
+        const chatQueryEmbedding = await runWithCancellation(() =>
+          embeddingService.embedQuery(content)
+        );
+        ensureNotCancelled();
+        const videoQueryEmbedding = await runWithCancellation(() =>
+          embeddingService.embedVideoQuery(content)
+        );
+        ensureNotCancelled();
 
         // Search and retrieve top 3 from chat + top 3 from screen (6 total max)
         // Pass separate embeddings to avoid dimension mismatch
-        relevantDocs = await collectionService.searchAndQuery(
-          chatQueryEmbedding,
-          3,
-          videoQueryEmbedding || undefined
+        relevantDocs = await runWithCancellation(() =>
+          collectionService.searchAndQuery(
+            chatQueryEmbedding,
+            3,
+            videoQueryEmbedding || undefined
+          )
         );
+        ensureNotCancelled();
 
         retrievalSummary.memoriesRetrieved = relevantDocs.length;
         retrievalSummary.embeddingsSearched = relevantDocs.length;
       } catch (error) {
+        if (isRunCancelledError(error)) {
+          throw error;
+        }
         searchErrored = true;
         console.error('Failed to retrieve context:', error);
         // Continue without context if retrieval fails
@@ -367,9 +531,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         let searchElapsed = getTimestamp() - searchPhaseStart;
 
         if (searchElapsed < MIN_SEARCH_DISPLAY_MS) {
-          await new Promise(resolve =>
-            setTimeout(resolve, MIN_SEARCH_DISPLAY_MS - searchElapsed)
+          await runWithCancellation(
+            () =>
+              new Promise<void>(resolve =>
+                setTimeout(resolve, MIN_SEARCH_DISPLAY_MS - searchElapsed),
+              ),
           );
+          ensureNotCancelled();
           searchElapsed = MIN_SEARCH_DISPLAY_MS;
         }
 
@@ -381,7 +549,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             ? ['Secure search completed']
             : ['Secure search completed (no matches found)'];
 
-        processingStatusService.completePhase('searching', searchElapsed, {
+        processingStatusService.completePhase(sessionId, 'searching', searchElapsed, {
           retrievalMetrics: {
             memoriesRetrieved: relevantDocs.length,
             embeddingsSearched: relevantDocs.length,
@@ -391,7 +559,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         });
       }
 
-      processingStatusService.startPhase('processing');
+      processingStatusService.startPhase(sessionId, 'processing');
       const secureProcessingStart = getTimestamp();
       let processingErrored = false;
 
@@ -469,15 +637,22 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           }
         }
       } catch (error) {
+        if (isRunCancelledError(error)) {
+          throw error;
+        }
         processingErrored = true;
         console.error('Failed to process retrieved context:', error);
       } finally {
         let secureProcessingElapsed = getTimestamp() - secureProcessingStart;
 
         if (secureProcessingElapsed < MIN_PROCESSING_DISPLAY_MS) {
-          await new Promise(resolve =>
-            window.setTimeout(resolve, MIN_PROCESSING_DISPLAY_MS - secureProcessingElapsed)
+          await runWithCancellation(
+            () =>
+              new Promise<void>(resolve =>
+                window.setTimeout(resolve, MIN_PROCESSING_DISPLAY_MS - secureProcessingElapsed),
+              ),
           );
+          ensureNotCancelled();
           secureProcessingElapsed = MIN_PROCESSING_DISPLAY_MS;
         }
 
@@ -498,7 +673,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           retrievalSummary.encryptedDataProcessed = true;
         }
 
-        processingStatusService.completePhase('processing', secureProcessingElapsed, {
+        processingStatusService.completePhase(sessionId, 'processing', secureProcessingElapsed, {
           retrievalMetrics: {
             memoriesRetrieved: retrievalSummary.memoriesRetrieved,
             screenRecordings: videoCount,
@@ -589,8 +764,11 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
       // Convert video Blobs to ArrayBuffers for IPC transfer
       const videoArrayBuffers = videoBlobs.length > 0
-        ? await Promise.all(videoBlobs.map(blob => blob.arrayBuffer()))
+        ? await runWithCancellation(() =>
+            Promise.all(videoBlobs.map(blob => blob.arrayBuffer())),
+          )
         : undefined;
+      ensureNotCancelled();
 
       if (videoArrayBuffers && videoArrayBuffers.length > 0) {
         console.log(`[RAG] Sending ${videoArrayBuffers.length} video(s) to LLM for frame extraction`);
@@ -599,48 +777,60 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         console.log('[RAG] No videos attached to this query');
       }
 
-      processingStatusService.startPhase('generating');
+      processingStatusService.startPhase(sessionId, 'generating');
       const generationPhaseStart = getTimestamp();
       let generatedChunks = 0;
       let generatedCharacters = 0;
       let streamingErrored = false;
       let tokensAnnounced = false;
 
+      ensureNotCancelled();
       try {
-        await llmService.streamMessage(
-          messageWithContext,
-          (chunk) => {
-            if (!tokensAnnounced) {
-              tokensAnnounced = true;
-              processingStatusService.tokensStarted();
-            }
+        await runWithCancellation(() =>
+          llmService.streamMessage(
+            messageWithContext,
+            (chunk) => {
+              const currentRun = activeRunRef.current;
+              if (!currentRun || currentRun.isStopped) {
+                return;
+              }
 
-            generatedChunks += 1;
-            generatedCharacters += chunk.length;
-            fullResponse += chunk;
-            // Update the AI message content with each chunk
-            setSessions(prevSessions =>
-              prevSessions.map(s =>
-                s.id === sessionId
-                  ? {
-                      ...s,
-                      messages: (s.messages || []).map(msg =>
-                        msg.id === aiMessageId
-                          ? { ...msg, content: fullResponse }
-                          : msg
-                      ),
-                      lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
-                      timestamp: new Date()
-                    }
-                  : s
-              )
-            );
-          },
-          {
-            temperature: 0.7,
-            maxTokens: 2048,
-            videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
-          }
+              if (!currentRun.tokensReceived) {
+                currentRun.tokensReceived = true;
+                if (!tokensAnnounced) {
+                  tokensAnnounced = true;
+                  processingStatusService.tokensStarted(sessionId);
+                }
+                setRunState('streaming');
+              }
+
+              generatedChunks += 1;
+              generatedCharacters += chunk.length;
+              fullResponse += chunk;
+              // Update the AI message content with each chunk
+              setSessions(prevSessions =>
+                prevSessions.map(s =>
+                  s.id === sessionId
+                    ? {
+                        ...s,
+                        messages: (s.messages || []).map(msg =>
+                          msg.id === aiMessageId
+                            ? { ...msg, content: fullResponse }
+                            : msg
+                        ),
+                        lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
+                        timestamp: new Date()
+                      }
+                    : s
+                )
+              );
+            },
+            {
+              temperature: 0.7,
+              maxTokens: 2048,
+              videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
+            }
+          )
         );
       } catch (streamError) {
         streamingErrored = true;
@@ -648,7 +838,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
       } finally {
         const generationElapsed = getTimestamp() - generationPhaseStart;
         phaseDurations.generating = generationElapsed;
-        processingStatusService.completePhase('generating', generationElapsed, {
+        processingStatusService.completePhase(sessionId, 'generating', generationElapsed, {
           generatedChunks,
           generatedCharacters,
           retrievalMetrics: {
@@ -660,7 +850,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         });
 
         if (!streamingErrored) {
-          processingStatusService.completeProcessing({
+          processingStatusService.completeProcessing(sessionId, {
             totalElapsedMs: getTimestamp() - runStartTime,
             phaseBreakdown: phaseDurations,
             retrievalMetrics: {
@@ -675,6 +865,10 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
       // Cleanup initial video object URLs (blobs remain accessible via window.__ragVideoN)
       videoUrls.forEach(url => URL.revokeObjectURL(url));
+
+      if (activeRun?.isStopped) {
+        return;
+      }
 
       // Send assistant message to backend (just for storage, don't update UI)
       const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
@@ -722,45 +916,115 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         }
       }
 
+      setRunState('completed');
+
     } catch (error: any) {
-      console.error('Failed to send message:', error);
-      processingStatusService.fail(
-        error instanceof Error ? error.message : 'Failed to process message'
-      );
+      const rawErrorMessage =
+        typeof error === 'string'
+          ? error
+          : error instanceof Error
+            ? error.message
+            : (error?.message as string | undefined);
+      const isStreamCancelled =
+        (error instanceof Error && error.name === 'StreamCancelledError') ||
+        (typeof rawErrorMessage === 'string' && rawErrorMessage.includes('StreamCancelledError'));
+      const isRunCancelled =
+        (error instanceof Error && isRunCancelledError(error)) ||
+        (typeof rawErrorMessage === 'string' && rawErrorMessage.includes(RUN_CANCELLED_ERROR_NAME));
 
-      // Check if it's a "LLM not initialized" error
-      const isLLMNotInitialized = error?.message?.includes('LLM not initialized');
+      if (isStreamCancelled || isRunCancelled) {
+        // Stop requested - nothing else to do
+      } else {
+        console.error('Failed to send message:', error);
+        const safeMessage = rawErrorMessage ?? 'Failed to process message';
+        processingStatusService.fail(
+          sessionId,
+          safeMessage
+        );
 
-      // Add error message
-      const errorMessage: Message = {
-        id: `error_${Date.now()}`,
-        content: isLLMNotInitialized
-          ? 'The AI model is not initialized yet. Please wait for initialization to complete or restart the download.'
-          : `Sorry, I encountered an error: ${error.message}`,
-        isUser: false,
-        timestamp: new Date()
-      };
+        // Check if it's a "LLM not initialized" error
+        const isLLMNotInitialized = safeMessage.includes('LLM not initialized');
 
-      // If LLM not initialized, show download dialog
-      if (isLLMNotInitialized) {
-        setIsModelReady(false);
-        setShowDownloadDialog(true);
+        // Add error message
+        const errorMessagePayload: Message = {
+          id: `error_${Date.now()}`,
+          content: isLLMNotInitialized
+            ? 'The AI model is not initialized yet. Please wait for initialization to complete or restart the download.'
+            : `Sorry, I encountered an error: ${safeMessage}`,
+          isUser: false,
+          timestamp: new Date()
+        };
+
+        // If LLM not initialized, show download dialog
+        if (isLLMNotInitialized) {
+          setIsModelReady(false);
+          setShowDownloadDialog(true);
+        }
+
+        setSessions(prevSessions =>
+          prevSessions.map(s =>
+            s.id === sessionId
+              ? {
+                  ...s,
+                  messages: [...(s.messages || []), errorMessagePayload],
+                  lastMessage: errorMessagePayload.content,
+                  timestamp: errorMessagePayload.timestamp
+                }
+              : s
+          )
+        );
+
+        setRunState('idle');
       }
+    } finally {
+      activeRun = null;
+      activeRunRef.current = null;
+    }
+  };
 
+  const handleStopGeneration = async () => {
+    const activeRun = activeRunRef.current;
+    if (!activeRun || activeRun.isStopped) {
+      return;
+    }
+
+    activeRun.isStopped = true;
+
+    const stoppingBeforeTokens = !activeRun.tokensReceived;
+    if (stoppingBeforeTokens) {
+      activeRun.cancel();
+    }
+
+    if (!activeRun.tokensReceived && activeRun.aiMessageId) {
       setSessions(prevSessions =>
         prevSessions.map(s =>
-          s.id === session!.id
+          s.id === activeRun.sessionId
             ? {
                 ...s,
-                messages: [...(s.messages || []), errorMessage],
-                lastMessage: errorMessage.content,
-                timestamp: errorMessage.timestamp
+                messages: (s.messages || []).filter(msg => msg.id !== activeRun.aiMessageId),
               }
             : s
         )
       );
+    }
+
+    if (stoppingBeforeTokens) {
+      setIsStoppingGeneration(true);
+    }
+
+    if (activeRun.sessionId) {
+      processingStatusService.reset(activeRun.sessionId);
+    }
+    setRunState(stoppingBeforeTokens ? 'stoppedBeforeTokens' : 'stoppedAfterTokens');
+
+    try {
+      await llmService.stopStreaming();
+    } catch (error) {
+      console.error('Failed to stop streaming:', error);
     } finally {
-      setIsLoading(false);
+      if (stoppingBeforeTokens) {
+        setIsStoppingGeneration(false);
+      }
     }
   };
 
@@ -784,6 +1048,15 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
       console.error('Failed to delete session:', error);
     }
   };
+
+  const indicatorSessionId = currentSession?.id ?? activeRunRef.current?.sessionId ?? null;
+
+  let statusIndicatorNode: ReactNode = null;
+  if (runState === 'awaitingFirstToken') {
+    statusIndicatorNode = <ChatStatusIndicators sessionId={indicatorSessionId} />;
+  } else if (runState === 'stoppedBeforeTokens') {
+    statusIndicatorNode = <StopIndicator isStopping={isStoppingGeneration} />;
+  }
 
   if (isLoadingSessions) {
     return (
@@ -844,11 +1117,13 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
               user={user}
               messages={currentSession?.messages || []}
               isLoading={isLoadingMessages}
-              statusIndicator={<ChatStatusIndicators />}
+              statusIndicator={statusIndicatorNode}
             />
             <ChatInput
               onSendMessage={handleSendMessage}
-              disabled={isLoading || !isModelReady}
+              onStop={handleStopGeneration}
+              runState={runState}
+              inputDisabled={!isModelReady}
             />
           </div>
         </div>

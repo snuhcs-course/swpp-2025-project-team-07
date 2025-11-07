@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld('llmAPI', {
 
   streamChat: (message: string, options?: LLMChatOptions): Promise<void> =>
     ipcRenderer.invoke('llm:stream-start', message, options),
+  
+  stopStream: (streamId: string): Promise<void> =>
+    ipcRenderer.invoke('llm:stream-stop', streamId),
 
   // Session management
   createSession: (systemPrompt?: string): Promise<string> =>

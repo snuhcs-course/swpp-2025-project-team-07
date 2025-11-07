@@ -17,6 +17,7 @@ export interface ChatOptions {
   topP?: number;
   systemPrompt?: string;
   sessionId?: string;
+  streamId?: string;
   onChunk?: (chunk: string) => void;
   onComplete?: () => void;
   videos?: Buffer[]; // Video buffers for multimodal input (Gemma 3n) - converted from Blobs in IPC
@@ -32,12 +33,20 @@ interface SessionData {
   maxMessages: number;
 }
 
+export class StreamCancelledError extends Error {
+  constructor(message: string = 'Stream cancelled') {
+    super(message);
+    this.name = 'StreamCancelledError';
+  }
+}
+
 export class LLMManager {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
   private sessions: Map<string, SessionData> = new Map();
   private options: LLMManagerOptions;
   private defaultSessionId: string = 'default';
+  private activeStreams: Map<string, { sessionId: string; stopped: boolean }> = new Map();
 
   constructor(options: LLMManagerOptions) {
     this.options = options;
@@ -166,10 +175,14 @@ answer confidently using that information as if you already know it.
   async streamChat(message: string, options: ChatOptions = {}): Promise<void> {
     const sessionId = options.sessionId || this.defaultSessionId;
     const sessionData = this.sessions.get(sessionId);
+    const streamId = options.streamId || sessionId;
 
     if (!sessionData) {
       throw new Error(`Session ${sessionId} not found`);
     }
+
+    const entry = { sessionId, stopped: false };
+    this.activeStreams.set(streamId, entry);
 
     try {
       // Prepare prompt options with video support
@@ -178,6 +191,9 @@ answer confidently using that information as if you already know it.
         maxTokens: options.maxTokens ?? 2048,
         topP: options.topP ?? 0.9,
         onTextChunk: (chunk: string) => {
+          if (entry.stopped) {
+            throw new StreamCancelledError();
+          }
           if (options.onChunk) {
             options.onChunk(chunk);
           }
@@ -193,14 +209,45 @@ answer confidently using that information as if you already know it.
 
       await sessionData.session.prompt(message, promptOptions);
 
+      if (entry.stopped) {
+        throw new StreamCancelledError();
+      }
+
       sessionData.messageCount++;
 
       if (options.onComplete) {
         options.onComplete();
       }
     } catch (error) {
+      if (entry.stopped) {
+        throw error instanceof StreamCancelledError ? error : new StreamCancelledError();
+      }
+      if (error instanceof StreamCancelledError) {
+        throw error;
+      }
       console.error('Stream chat error:', error);
       throw error;
+    } finally {
+      this.activeStreams.delete(streamId);
+    }
+  }
+
+  async stopStream(streamId: string): Promise<void> {
+    const entry = this.activeStreams.get(streamId);
+    if (!entry) {
+      return;
+    }
+
+    entry.stopped = true;
+
+    const sessionData = this.sessions.get(entry.sessionId);
+    const sessionInstance = sessionData?.session;
+    if (sessionInstance && typeof sessionInstance.abort === 'function') {
+      try {
+        await sessionInstance.abort();
+      } catch (error) {
+        console.warn('[LLMManager] Failed to abort session stream:', error);
+      }
     }
   }
 
