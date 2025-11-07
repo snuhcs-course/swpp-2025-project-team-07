@@ -472,16 +472,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           // Build context prompt with <CONTEXT> tags matching the chat RAG style
           if (chatContexts.length > 0 || videoCount > 0) {
             contextPrompt = `<CONTEXT>
-The following are relevant excerpts from the user's past conversations with you.
-These are your memories of previous interactions.
-You can use this information to answer the user's question.
-
 ${chatContexts.join('\n\n')}
 ${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}
-${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) provided as image frame sequences. Each recording is split into frames at 1 frame per second, so you'll see multiple images showing the progression of activity over time.` : ''}
+${videoCount > 0 ? `${videoCount} screen recording(s) as image sequences (1 fps).` : ''}
 </CONTEXT>
 
-**Now, using the above context${videoCount > 0 ? ' and screen recording frames' : ''}, answer the following question**:
 `;
           }
         }
@@ -528,12 +523,31 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
       // Stream the LLM response with RAG context + videos
       let fullResponse = '';
-      const messageWithContext = contextPrompt + content;
+
+      // Build conversation history as message array (exclude the empty AI message we just added)
+      const conversationMessages = session.messages
+        .filter(msg => msg.id !== aiMessageId) // Exclude the temporary AI message
+        .map(msg => ({
+          role: msg.isUser ? 'user' as const : 'assistant' as const,
+          content: msg.content
+        }));
+
+      // Construct the current message with RAG context
+      let messageWithContext = '';
+
+      if (contextPrompt) {
+        // If we have RAG context, include it
+        messageWithContext += contextPrompt + '\n\n';
+      }
+
+      // Add the current user message
+      messageWithContext += content;
 
       // Log RAG summary
       console.log('[RAG] Context retrieval complete:', {
         chatMemories: chatContexts.length,
         screenRecordings: videoCount,
+        conversationHistoryMessages: conversationMessages.length,
         contextLength: contextPrompt.length,
         totalPromptLength: messageWithContext.length
       });
@@ -547,6 +561,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         totalLength: messageWithContext.length,
         chatMemories: chatContexts.length,
         videoCount: videoCount,
+        conversationHistory: conversationMessages,
         videos: videoBlobs, // Store video blobs for frame extraction
         view: () => {
           console.log('=== RAG Prompt Debug ===');
@@ -656,7 +671,8 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
           {
             temperature: 0.7,
             maxTokens: 2048,
-            videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
+            videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3
+            messages: conversationMessages, // Pass conversation history for multi-turn format
           }
         );
       } catch (streamError) {
