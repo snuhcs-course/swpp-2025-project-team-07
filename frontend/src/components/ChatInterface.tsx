@@ -307,7 +307,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     };
     activeRunRef.current = activeRun;
 
-    const runWithCancellation = async <T>(task: () => Promise<T>): Promise<T> => {
+    const runWithCancellation = async <T, >(task: () => Promise<T>): Promise<T> => {
       const promise = task();
       if (!activeRun) {
         return promise;
