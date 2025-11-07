@@ -509,11 +509,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
         // Search and retrieve top 3 from chat + top 3 from screen (6 total max)
         // Pass separate embeddings to avoid dimension mismatch
+        // Exclude current session to avoid redundancy with conversation history
         relevantDocs = await runWithCancellation(() =>
           collectionService.searchAndQuery(
             chatQueryEmbedding,
             3,
-            videoQueryEmbedding || undefined
+            videoQueryEmbedding || undefined,
+            sessionIdNum,
           )
         );
         ensureNotCancelled();

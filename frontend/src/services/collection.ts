@@ -164,7 +164,8 @@ async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob
 export async function searchAndQuery(
   chatQueryVector: number[],
   topK: number = 3,
-  videoQueryVector?: number[] // Optional: separate embedding for video search
+  videoQueryVector?: number[], // Optional: separate embedding for video search
+  excludeSessionId?: number // Optional: exclude memories from this session (to avoid redundancy)
 ): Promise<VectorData[]> {
   // Search both collections in parallel with appropriate embeddings
   let searchResult: SearchResponse;
@@ -245,10 +246,15 @@ export async function searchAndQuery(
     ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
   ];
 
+  // Filter out same-session memories
+  const filteredResults = excludeSessionId !== undefined
+    ? allResults.filter(doc => doc.session_id === 0 || doc.session_id !== excludeSessionId)
+    : allResults;
+
   // Decrypt all results and reconstruct videos for screen recordings
   const { decryptText } = await import('@/utils/encryption');
   const decryptedResults = await Promise.all(
-    allResults.map(async (doc) => {
+    filteredResults.map(async (doc) => {
       const decryptedContent = await decryptText(doc.content).catch(() => '[Decryption Error]');
 
       // If this is a screen recording, reconstruct the original video blob
