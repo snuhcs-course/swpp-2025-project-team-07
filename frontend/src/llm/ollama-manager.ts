@@ -6,13 +6,19 @@ export interface OllamaManagerOptions {
   onProgress?: (progress: number) => void;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
   systemPrompt?: string;
   sessionId?: string;
-   streamId?: string;
+  streamId?: string;
+  messages?: ChatMessage[]; // Conversation history for multi-turn conversations
   onChunk?: (chunk: string) => void;
   onComplete?: () => void;
   images?: string[]; // Base64 encoded images
@@ -31,19 +37,7 @@ export class OllamaManager {
   private modelName = 'gemma3:4b';
   private systemPrompts: Map<string, string> = new Map();
   private activeStreams: Map<string, { iterator: AsyncIterator<any>; stopped: boolean }> = new Map();
-  private readonly defaultSystemPrompt = `You are a helpful AI assistant with access to the user's conversation history and screen recordings.
-
-When you see a message that starts with <CONTEXT> tags, this contains real information from the user's past conversations with you.
-You can treat this information as factual and use it to answer questions.
-The context is provided to help you remember previous interactions across different chat sessions.
-
-Additionally, you may receive screen recording frames as images. These are extracted from the user's screen recordings at 1 frame per second.
-Each sequence of images represents a continuous screen recording session showing what the user was doing or seeing.
-When multiple images are provided together, they show the progression of activity over time (1 image = 1 second of recording).
-Analyze these frame sequences to understand what was visible on the user's screen and help answer questions about their activities.
-
-If asked about information that appears in the <CONTEXT> section or in provided images,
-answer confidently using that information as if you already know it.`;
+  private readonly fallbackSystemPrompt = 'You are a helpful AI assistant.';
 
   constructor(options: OllamaManagerOptions = {}) {
     this.options = options;
@@ -114,8 +108,8 @@ answer confidently using that information as if you already know it.`;
   async createSession(systemPrompt?: string): Promise<string> {
     const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
-    // Use provided system prompt, or fall back to default
-    this.systemPrompts.set(sessionId, systemPrompt || this.defaultSystemPrompt);
+    // Use provided system prompt, or fall back to minimal default
+    this.systemPrompts.set(sessionId, systemPrompt || this.fallbackSystemPrompt);
 
     console.log(`Created session: ${sessionId}`);
     return sessionId;
@@ -130,20 +124,41 @@ answer confidently using that information as if you already know it.`;
     try {
       const messages: Message[] = [];
 
-      // Add system prompt (use provided, session-specific, or default)
+      // Add system prompt (use provided, session-specific, or fallback)
       const systemPrompt = options.systemPrompt
         || this.systemPrompts.get(options.sessionId || 'default')
-        || this.defaultSystemPrompt;
+        || this.fallbackSystemPrompt;
 
-      messages.push({
-        role: 'system',
-        content: systemPrompt
-      });
+      // Build conversation with Gemma's turn-based structure
+      let conversationContent = '';
 
-      // Add user message with optional images
+      // Start with system prompt in first user turn
+      conversationContent += `<start_of_turn>user\n${systemPrompt}`;
+
+      // Add conversation history if provided
+      if (options.messages && options.messages.length > 0) {
+        // Add first user message (continuing from system prompt)
+        const firstMsg = options.messages[0];
+        if (firstMsg.role === 'user') {
+          conversationContent += `\n\n${firstMsg.content}<end_of_turn>`;
+        }
+
+        // Add remaining messages with proper turn markers
+        for (let i = 1; i < options.messages.length; i++) {
+          const msg = options.messages[i];
+          conversationContent += `\n<start_of_turn>${msg.role === 'user' ? 'user' : 'model'}\n${msg.content}<end_of_turn>`;
+        }
+      } else {
+        // No history, close the system prompt turn
+        conversationContent += `<end_of_turn>`;
+      }
+
+      // Add current user message
+      conversationContent += `\n<start_of_turn>user\n${message}<end_of_turn>\n<start_of_turn>model`;
+
       const userMessage: Message = {
         role: 'user',
-        content: message
+        content: conversationContent
       };
 
       if (options.images && options.images.length > 0) {
@@ -174,20 +189,41 @@ answer confidently using that information as if you already know it.`;
       const messages: Message[] = [];
       const streamId = options.streamId || 'default';
 
-      // Add system prompt (use provided, session-specific, or default)
+      // Add system prompt (use provided, session-specific, or fallback)
       const systemPrompt = options.systemPrompt
         || this.systemPrompts.get(options.sessionId || 'default')
-        || this.defaultSystemPrompt;
+        || this.fallbackSystemPrompt;
 
-      messages.push({
-        role: 'system',
-        content: systemPrompt
-      });
+      // Build conversation with Gemma's turn-based structure
+      let conversationContent = '';
 
-      // Add user message with optional images
+      // Start with system prompt in first user turn
+      conversationContent += `<start_of_turn>user\n${systemPrompt}`;
+
+      // Add conversation history if provided
+      if (options.messages && options.messages.length > 0) {
+        // Add first user message (continuing from system prompt)
+        const firstMsg = options.messages[0];
+        if (firstMsg.role === 'user') {
+          conversationContent += `\n\n${firstMsg.content}<end_of_turn>`;
+        }
+
+        // Add remaining messages with proper turn markers
+        for (let i = 1; i < options.messages.length; i++) {
+          const msg = options.messages[i];
+          conversationContent += `\n<start_of_turn>${msg.role === 'user' ? 'user' : 'model'}\n${msg.content}<end_of_turn>`;
+        }
+      } else {
+        // No history, close the system prompt turn
+        conversationContent += `<end_of_turn>`;
+      }
+
+      // Add current user message
+      conversationContent += `\n<start_of_turn>user\n${message}<end_of_turn>\n<start_of_turn>model`;
+
       const userMessage: Message = {
         role: 'user',
-        content: message
+        content: conversationContent
       };
 
       if (options.images && options.images.length > 0) {

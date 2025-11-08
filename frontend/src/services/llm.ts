@@ -48,6 +48,9 @@ export class LLMService {
 
   /**
    * Send a message and receive streaming response
+   * @param message - The current message to send
+   * @param onChunk - Callback for streaming chunks
+   * @param options - Optional chat options including message history
    */
   async streamMessage(
     message: string,
@@ -87,7 +90,8 @@ export class LLMService {
     const streamPromise = window.llmAPI.streamChat(message, {
       ...options,
       sessionId: options?.sessionId || this.currentSessionId || undefined,
-      streamId
+      streamId,
+      messages: options?.messages // Pass conversation history if provided
     });
 
     const activeStreamState = {
