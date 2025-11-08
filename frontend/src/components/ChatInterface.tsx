@@ -446,24 +446,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         )
       );
 
-      // Track message for memory bundling (uses plaintext before it was encrypted)
-      const backendUserMsg: BackendChatMessage = {
-        ...userMsg,
-        content, // Original plaintext
-      };
-      const existingMessages = session.messages || [];
-      memoryService.trackMessage(sessionIdNum, [
-        ...existingMessages.map(m => ({
-          id: parseInt(m.id),
-          session: sessionIdNum,
-          role: m.isUser ? 'user' as const : 'assistant' as const,
-          content: m.content,
-          timestamp: m.timestamp.getTime(),
-          created_at: m.timestamp.toISOString(),
-        })),
-        backendUserMsg,
-      ]).catch(err => console.error('Memory tracking failed:', err));
-
       // Create AI response message with empty content (will be filled by streaming)
       const aiMessageId = `temp_${Date.now()}`;
       const tempAiMessage: Message = {
@@ -586,8 +568,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       try {
         if (relevantDocs.length > 0) {
           // Separate chat and video contexts
+          const seenMessages = new Map<string, { role: string; content: string }>();
 
-          relevantDocs.forEach((doc: any, idx: number) => {
+          relevantDocs.forEach((doc: any) => {
             if (doc.source_type === 'screen' && doc.video_blob) {
               // Store reconstructed video blob for multimodal input
               videoBlobs.push(doc.video_blob);
@@ -636,19 +619,53 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
               console.log(`[RAG] Retrieved video ${videoCount}: ${(doc.video_blob.size / 1024).toFixed(1)} KB`);
             } else if (doc.source_type === 'chat') {
-              chatContexts.push(`[Memory ${idx + 1}]:\n${doc.content}`);
+              // Parse bundle to extract individual messages
+              // Bundle format: "user: content\nassistant: content\nuser: content\n..."
+              const lines = doc.content.split('\n');
+
+              for (const line of lines) {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) continue;
+
+                // Match "role: content" pattern
+                const match = trimmedLine.match(/^(user|assistant):\s*(.+)$/);
+                if (match) {
+                  const [, role, content] = match;
+                  const messageKey = `${role}:${content}`;
+
+                  // Only add if not seen before
+                  if (!seenMessages.has(messageKey)) {
+                    seenMessages.set(messageKey, { role, content });
+                  }
+                }
+              }
             }
           });
 
-          // Build context prompt with <CONTEXT> tags matching the chat RAG style
-          if (chatContexts.length > 0 || videoCount > 0) {
-            contextPrompt = `<CONTEXT>
-${chatContexts.join('\n\n')}
-${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}
-${videoCount > 0 ? `${videoCount} screen recording(s) as image sequences (1 fps).` : ''}
-</CONTEXT>
+          // Reconstruct deduplicated chat contexts from individual messages
+          // Group into user-assistant pairs with empty lines between them
+          if (seenMessages.size > 0) {
+            const deduplicatedMessages = Array.from(seenMessages.values());
+            const formattedLines: string[] = [];
 
-`;
+            for (let i = 0; i < deduplicatedMessages.length; i++) {
+              const msg = deduplicatedMessages[i];
+              formattedLines.push(`${msg.role}: ${msg.content}`);
+
+              // Add empty line after assistant messages (end of user-assistant pair)
+              if (msg.role === 'assistant' && i < deduplicatedMessages.length - 1) {
+                formattedLines.push('');
+              }
+            }
+
+            chatContexts.push(formattedLines.join('\n'));
+          }
+
+          // Build context prompt with <memory> tags matching the chat RAG style
+          if (chatContexts.length > 0 || videoCount > 0) {
+            contextPrompt = `<memory>
+${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}${videoCount > 0 ? `${videoCount} screen recording(s) as image sequences (1 fps).` : ''}
+</memory>`;
           }
         }
       } catch (error) {
@@ -910,6 +927,11 @@ ${videoCount > 0 ? `${videoCount} screen recording(s) as image sequences (1 fps)
       const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
 
       // Track assistant message for memory
+      const existingMessages = session.messages || [];
+      const backendUserMsg: BackendChatMessage = {
+        ...userMsg,
+        content: content, // Original plaintext
+      };
       const backendAssistantMsg: BackendChatMessage = {
         ...assistantMsg,
         content: fullResponse, // Original plaintext

@@ -6,7 +6,7 @@ import { encryptText } from '@/utils/encryption';
 import type { ChatMessage } from '@/types/chat';
 
 // Configuration
-const STORE_ASSISTANT_MESSAGES = false; // Set to true to include assistant responses in memory
+const STORE_ASSISTANT_MESSAGES = true; // Set to true to include assistant responses in memory
 const SLIDING_WINDOW_SIZE = 3; // Number of messages to include in each bundle
 
 async function extractEmbedding(content: string): Promise<number[]> {
@@ -34,13 +34,13 @@ async function bundleAndStore(sessionId: number, userMessages: ChatMessage[], as
       // Interleave user and assistant messages in chronological order
       allMessages = [...userMessages, ...assistantMessages].sort((a, b) => a.timestamp - b.timestamp);
       combinedContent = allMessages
-        .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-        .join('\n\n');
+        .map((msg) => `${msg.role === 'user' ? 'user' : 'assistant'}: ${msg.content}`)
+        .join('\n');
     } else {
       // Only user messages
       allMessages = userMessages;
       combinedContent = userMessages
-        .map((msg) => `User: ${msg.content}`)
+        .map((msg) => `user: ${msg.content}`)
         .join('\n\n');
     }
 

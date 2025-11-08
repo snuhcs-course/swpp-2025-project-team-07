@@ -129,36 +129,26 @@ export class OllamaManager {
         || this.systemPrompts.get(options.sessionId || 'default')
         || this.fallbackSystemPrompt;
 
-      // Build conversation with Gemma's turn-based structure
-      let conversationContent = '';
-
-      // Start with system prompt in first user turn
-      conversationContent += `<start_of_turn>user\n${systemPrompt}`;
+      // Add system message at the beginning
+      messages.push({
+        role: 'system',
+        content: systemPrompt
+      });
 
       // Add conversation history if provided
       if (options.messages && options.messages.length > 0) {
-        // Add first user message (continuing from system prompt)
-        const firstMsg = options.messages[0];
-        if (firstMsg.role === 'user') {
-          conversationContent += `\n\n${firstMsg.content}<end_of_turn>`;
+        for (const msg of options.messages) {
+          messages.push({
+            role: msg.role,
+            content: msg.content
+          });
         }
-
-        // Add remaining messages with proper turn markers
-        for (let i = 1; i < options.messages.length; i++) {
-          const msg = options.messages[i];
-          conversationContent += `\n<start_of_turn>${msg.role === 'user' ? 'user' : 'model'}\n${msg.content}<end_of_turn>`;
-        }
-      } else {
-        // No history, close the system prompt turn
-        conversationContent += `<end_of_turn>`;
       }
 
       // Add current user message
-      conversationContent += `\n<start_of_turn>user\n${message}<end_of_turn>\n<start_of_turn>model`;
-
       const userMessage: Message = {
         role: 'user',
-        content: conversationContent
+        content: message
       };
 
       if (options.images && options.images.length > 0) {
@@ -194,36 +184,26 @@ export class OllamaManager {
         || this.systemPrompts.get(options.sessionId || 'default')
         || this.fallbackSystemPrompt;
 
-      // Build conversation with Gemma's turn-based structure
-      let conversationContent = '';
-
-      // Start with system prompt in first user turn
-      conversationContent += `<start_of_turn>user\n${systemPrompt}`;
+      // Add system message at the beginning
+      messages.push({
+        role: 'system',
+        content: systemPrompt
+      });
 
       // Add conversation history if provided
       if (options.messages && options.messages.length > 0) {
-        // Add first user message (continuing from system prompt)
-        const firstMsg = options.messages[0];
-        if (firstMsg.role === 'user') {
-          conversationContent += `\n\n${firstMsg.content}<end_of_turn>`;
+        for (const msg of options.messages) {
+          messages.push({
+            role: msg.role,
+            content: msg.content
+          });
         }
-
-        // Add remaining messages with proper turn markers
-        for (let i = 1; i < options.messages.length; i++) {
-          const msg = options.messages[i];
-          conversationContent += `\n<start_of_turn>${msg.role === 'user' ? 'user' : 'model'}\n${msg.content}<end_of_turn>`;
-        }
-      } else {
-        // No history, close the system prompt turn
-        conversationContent += `<end_of_turn>`;
       }
 
       // Add current user message
-      conversationContent += `\n<start_of_turn>user\n${message}<end_of_turn>\n<start_of_turn>model`;
-
       const userMessage: Message = {
         role: 'user',
-        content: conversationContent
+        content: message
       };
 
       if (options.images && options.images.length > 0) {
