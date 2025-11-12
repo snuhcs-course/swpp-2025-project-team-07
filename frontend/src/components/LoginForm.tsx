@@ -79,6 +79,16 @@ export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword, onAuthSu
       
       <CardContent className="space-y-6">
         <form onSubmit={handleSubmit} className="space-y-4">
+          {errors.form && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className="rounded-md border border-destructive/60 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive"
+            >
+              {errors.form}
+            </motion.div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="email">Email address</Label>
             <div className="relative">
