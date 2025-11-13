@@ -71,12 +71,17 @@ export function ChatInput({
   const canInteract = canStop || canSend;
 
   return (
-    <div className="p-6">
+    <motion.div
+      className="px-6 pb-6"
+      layout
+      transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+    >
       <div className="max-w-4xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
+          layout
+          transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
           className="relative bg-background border border-border rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl"
         >
           {/* Input area */}
@@ -156,6 +161,6 @@ export function ChatInput({
           {showStopButton ? 'Stop the AI response' : 'Press Enter to send, Shift + Enter for new line'}
         </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }

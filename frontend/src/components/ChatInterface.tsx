@@ -1192,13 +1192,25 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
             onSignOut={onSignOut}
           />
 
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <ChatMessages
-              user={user}
-              messages={currentSession?.messages || []}
-              isLoading={isLoadingMessages}
-              statusIndicator={statusIndicatorNode}
-            />
+          <motion.div
+            className="flex-1 flex flex-col overflow-hidden"
+            layout
+            transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <div
+              className={
+                (!currentSession?.messages || currentSession.messages.length === 0)
+                  ? 'pt-[calc(50vh-13rem)]'
+                  : 'flex-1 flex flex-col'
+              }
+            >
+              <ChatMessages
+                user={user}
+                messages={currentSession?.messages || []}
+                isLoading={isLoadingMessages}
+                statusIndicator={statusIndicatorNode}
+              />
+            </div>
             <ChatInput
               onSendMessage={handleSendMessage}
               onStop={handleStopGeneration}
@@ -1207,7 +1219,7 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
               videoRagEnabled={videoRagEnabled}
               onToggleVideoRag={handleToggleVideoRag}
             />
-          </div>
+          </motion.div>
         </div>
       </div>
     </>
