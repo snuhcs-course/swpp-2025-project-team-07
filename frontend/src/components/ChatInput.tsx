@@ -10,6 +10,7 @@ interface ChatInputProps {
   onStop?: () => void;
   runState: ChatRunState;
   inputDisabled?: boolean;
+  isStopping?: boolean;
 }
 
 export function ChatInput({
@@ -17,6 +18,7 @@ export function ChatInput({
   onStop,
   runState,
   inputDisabled = false,
+  isStopping = false,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -61,7 +63,7 @@ export function ChatInput({
     return () => clearTimeout(timer);
   }, [textareaDisabled]);
 
-  const isSendDisabled = !message.trim() || textareaDisabled;
+  const isSendDisabled = !message.trim() || textareaDisabled || isStopping;
   const canStop = showStopButton && !!onStop;
   const canSend = !showStopButton && !isSendDisabled;
   const canInteract = canStop || canSend;
