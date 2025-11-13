@@ -6,6 +6,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .vectordb_client import vectordb_client
+from .models import VideoSetMetadata
 
 # -----------------------------------------------------------------------------
 # OpenAPI Schemas (drf-yasg)
@@ -387,6 +388,16 @@ def clear_collections(request):
         return Response(
             {"detail": f"Failed to drop collections: {drop_error}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    # Delete VideoSetMetadata entries when clearing screen collection
+    if clear_screen:
+        query = VideoSetMetadata.objects.filter(user_id=user_id)
+        if collection_version is not None:
+            query = query.filter(collection_version=collection_version)
+        deleted_count, _ = query.delete()
+        print(
+            f"[clear_collections] Deleted {deleted_count} VideoSetMetadata entries for user {user_id}"
         )
 
     # Re-create the collections that were dropped

@@ -519,6 +519,124 @@ class TestClearCollections:
             # (validation would be in the VectorDB client)
             assert response.status_code == status.HTTP_200_OK
 
+    @responses.activate
+    def test_clear_screen_deletes_video_metadata(self, api_client, user):
+        """Test that clearing screen collection also deletes VideoSetMetadata entries."""
+        from collection.models import VideoSetMetadata
+
+        # Create some VideoSetMetadata entries
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-1",
+            user=user,
+            timestamp=1000,
+            collection_version=None,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-1",
+            user=user,
+            timestamp=2000,
+            collection_version=None,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_200",
+            video_set_id="set-2",
+            user=user,
+            timestamp=3000,
+            collection_version="v2",
+        )
+
+        # Verify metadata exists
+        assert VideoSetMetadata.objects.filter(user=user).count() == 3
+
+        # Mock drop and create operations
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+
+        # Clear screen collection without collection_version
+        url = reverse("clear_collections")
+        data = {"user_id": user.id, "clear_chat": False, "clear_screen": True}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify all VideoSetMetadata entries for this user are deleted
+        assert VideoSetMetadata.objects.filter(user=user).count() == 0
+
+    @responses.activate
+    def test_clear_screen_deletes_only_matching_version(self, api_client, user):
+        """Test that clearing with collection_version only deletes matching metadata."""
+        from collection.models import VideoSetMetadata
+
+        # Create metadata with different collection_versions
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-1",
+            user=user,
+            timestamp=1000,
+            collection_version="v1",
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_200",
+            video_set_id="set-2",
+            user=user,
+            timestamp=2000,
+            collection_version="v2",
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_300",
+            video_set_id="set-3",
+            user=user,
+            timestamp=3000,
+            collection_version=None,
+        )
+
+        # Verify 3 entries exist
+        assert VideoSetMetadata.objects.filter(user=user).count() == 3
+
+        # Mock drop and create operations
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+
+        # Clear screen collection with collection_version="v2"
+        url = reverse("clear_collections")
+        data = {
+            "user_id": user.id,
+            "clear_chat": False,
+            "clear_screen": True,
+            "collection_version": "v2",
+        }
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify only v2 metadata was deleted
+        assert VideoSetMetadata.objects.filter(user=user).count() == 2
+        assert VideoSetMetadata.objects.filter(user=user, collection_version="v1").exists()
+        assert VideoSetMetadata.objects.filter(user=user, collection_version=None).exists()
+        assert not VideoSetMetadata.objects.filter(user=user, collection_version="v2").exists()
+
 
 @pytest.mark.django_db
 class TestVideoSetMetadata:
