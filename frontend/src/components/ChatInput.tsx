@@ -71,7 +71,7 @@ export function ChatInput({
   const canInteract = canStop || canSend;
 
   return (
-    <div className="border-t border-border bg-card/70 backdrop-blur-xl p-6">
+    <div className="p-6">
       <div className="max-w-4xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
