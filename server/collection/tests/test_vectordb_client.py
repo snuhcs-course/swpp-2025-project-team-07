@@ -254,3 +254,181 @@ class TestVectorDBClientQuery:
 
         assert success is False
         assert "failed" in error.lower() or "json" in error.lower()
+
+
+@pytest.mark.django_db
+class TestVectorDBClientDropCollection:
+    """Tests for dropping VectorDB collections."""
+
+    @responses.activate
+    def test_drop_collection_parallel_both_success(self, vectordb_client):
+        """Test successfully dropping both chat and screen collections."""
+        # Mock chat VectorDB
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock screen VectorDB
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(
+            user_id=123, drop_chat=True, drop_screen=True
+        )
+
+        assert success is True
+        assert error is None
+        assert len(responses.calls) == 2
+        # Verify correct collection names were sent
+        assert "chat_123" in responses.calls[0].request.body.decode()
+        assert "screen_123" in responses.calls[1].request.body.decode()
+
+    @responses.activate
+    def test_drop_collection_parallel_chat_only(self, vectordb_client):
+        """Test dropping only chat collection."""
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(user_id=456, drop_chat=True)
+
+        assert success is True
+        assert error is None
+        assert len(responses.calls) == 1
+        assert "chat_456" in responses.calls[0].request.body.decode()
+
+    @responses.activate
+    def test_drop_collection_parallel_screen_only(self, vectordb_client):
+        """Test dropping only screen collection."""
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(user_id=789, drop_screen=True)
+
+        assert success is True
+        assert error is None
+        assert len(responses.calls) == 1
+        assert "screen_789" in responses.calls[0].request.body.decode()
+
+    def test_drop_collection_parallel_nothing_to_drop(self, vectordb_client):
+        """Test when both drop_chat and drop_screen are False."""
+        success, error = vectordb_client.drop_collection_parallel(
+            user_id=123, drop_chat=False, drop_screen=False
+        )
+
+        assert success is True
+        assert error is None
+
+    @responses.activate
+    def test_drop_collection_parallel_with_version(self, vectordb_client):
+        """Test dropping collections with collection_version."""
+        # Mock chat VectorDB
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock screen VectorDB
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(
+            user_id=123, drop_chat=True, drop_screen=True, collection_version="v2"
+        )
+
+        assert success is True
+        assert error is None
+        assert len(responses.calls) == 2
+        # Verify collection names include version
+        assert "chat_123_v2" in responses.calls[0].request.body.decode()
+        assert "screen_123_v2" in responses.calls[1].request.body.decode()
+
+    @responses.activate
+    def test_drop_collection_parallel_chat_failure(self, vectordb_client):
+        """Test failure when dropping chat collection fails."""
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": False, "error": "Collection not found"},
+            status=500,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(user_id=123, drop_chat=True)
+
+        assert success is False
+        assert "chat collection drop failed" in error
+
+    @responses.activate
+    def test_drop_collection_parallel_screen_failure(self, vectordb_client):
+        """Test failure when dropping screen collection fails."""
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": False, "error": "Database error"},
+            status=500,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(user_id=123, drop_screen=True)
+
+        assert success is False
+        assert "screen collection drop failed" in error
+
+    @responses.activate
+    def test_drop_collection_parallel_timeout(self, vectordb_client):
+        """Test drop operation with timeout."""
+        import requests
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            body=requests.exceptions.Timeout(),
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(user_id=123, drop_chat=True)
+
+        assert success is False
+        assert "timed out" in error
+
+    @responses.activate
+    def test_drop_collection_parallel_mixed_failure(self, vectordb_client):
+        """Test when one collection drops successfully but the other fails."""
+        # Mock chat VectorDB success
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock screen VectorDB failure
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": False, "error": "Permission denied"},
+            status=403,
+        )
+
+        success, error = vectordb_client.drop_collection_parallel(
+            user_id=123, drop_chat=True, drop_screen=True
+        )
+
+        assert success is False
+        assert "screen collection drop failed" in error
+        assert len(responses.calls) == 2  # Both should have been attempted
