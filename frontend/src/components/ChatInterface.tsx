@@ -1181,7 +1181,8 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
               onSendMessage={handleSendMessage}
               onStop={handleStopGeneration}
               runState={runState}
-              inputDisabled={!isModelReady}
+              modelNotReady={!isModelReady}
+              isStopping={isStoppingGeneration}
             />
           </div>
         </div>

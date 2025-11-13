@@ -9,19 +9,21 @@ interface ChatInputProps {
   onSendMessage: (message: string) => void;
   onStop?: () => void;
   runState: ChatRunState;
-  inputDisabled?: boolean;
+  modelNotReady?: boolean;
+  isStopping?: boolean;
 }
 
 export function ChatInput({
   onSendMessage,
   onStop,
   runState,
-  inputDisabled = false,
+  modelNotReady = false,
+  isStopping = false,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = runState === 'awaitingFirstToken' || runState === 'streaming';
-  const textareaDisabled = inputDisabled || isStreaming;
+  const textareaNotReady = modelNotReady || isStreaming;
   const showStopButton = isStreaming;
 
   const handleSend = () => {
@@ -45,23 +47,23 @@ export function ChatInput({
 
   // Auto-resize textarea
   useEffect(() => {
-    if (textareaRef.current && !textareaDisabled) {
+    if (textareaRef.current && !textareaNotReady) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [message, textareaDisabled]);
+  }, [message, textareaNotReady]);
 
   // Auto-focus on mount (with small delay for animation)
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (textareaRef.current && !textareaDisabled) {
+      if (textareaRef.current && !textareaNotReady) {
         textareaRef.current.focus();
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [textareaDisabled]);
+  }, [textareaNotReady]);
 
-  const isSendDisabled = !message.trim() || textareaDisabled;
+  const isSendDisabled = !message.trim() || textareaNotReady || isStopping;
   const canStop = showStopButton && !!onStop;
   const canSend = !showStopButton && !isSendDisabled;
   const canInteract = canStop || canSend;
@@ -85,8 +87,7 @@ export function ChatInput({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={textareaDisabled ? "AI is thinking..." : "Type your message..."}
-                disabled={textareaDisabled}
+                placeholder={isStreaming ? "AI is thinking..." : "Type your message..."}
                 className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
