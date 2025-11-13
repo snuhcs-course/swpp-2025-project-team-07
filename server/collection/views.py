@@ -1,5 +1,6 @@
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -48,6 +49,10 @@ _strings_2d_array = openapi.Schema(
         properties={
             "chat_data": _array_of_objects,
             "screen_data": _array_of_objects,
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=[],
     ),
@@ -72,6 +77,7 @@ def insert_to_collection(request):
     """Store encrypted vectors and values to chat and/or screen vectordb."""
     chat_data = request.data.get("chat_data")
     screen_data = request.data.get("screen_data")
+    collection_version = request.data.get("collection_version")
 
     # Validate at least one has data
     if not chat_data and not screen_data:
@@ -85,6 +91,7 @@ def insert_to_collection(request):
         user_id=request.user.id,
         chat_data=chat_data if chat_data else None,
         screen_data=screen_data if screen_data else None,
+        collection_version=collection_version,
     )
 
     if not success:
@@ -95,12 +102,16 @@ def insert_to_collection(request):
 
 @swagger_auto_schema(
     method="post",
-    operation_description="(Plaintext Mock) Perform homomorphic search across collections. Returns HE-encrypted similarity scores.",
+    operation_description="Perform homomorphic search across collections. Returns HE-encrypted similarity scores.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
             "chat_data": _array_of_objects,
             "screen_data": _array_of_objects,
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=[],
     ),
@@ -138,6 +149,7 @@ def search_collections(request):
     """Search for similar vectors in chat and/or screen vectordb."""
     chat_data = request.data.get("chat_data")
     screen_data = request.data.get("screen_data")
+    collection_version = request.data.get("collection_version")
 
     # Validate at least one has data
     if not chat_data and not screen_data:
@@ -151,6 +163,7 @@ def search_collections(request):
         user_id=request.user.id,
         chat_data=chat_data if chat_data else None,
         screen_data=screen_data if screen_data else None,
+        collection_version=collection_version,
     )
 
     if not success:
@@ -170,7 +183,7 @@ def search_collections(request):
 
 @swagger_auto_schema(
     method="post",
-    operation_description="(Plaintext Mock) Query documents by ID and return selected fields.",
+    operation_description="Query documents by ID and return selected fields.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -186,6 +199,10 @@ def search_collections(request):
                 description="List of screen document IDs to fetch",
             ),
             "screen_output_fields": _array_of_strings,
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
         },
         required=[],
     ),
@@ -221,6 +238,7 @@ def query_collection(request):
     chat_output_fields = request.data.get("chat_output_fields")
     screen_ids = request.data.get("screen_ids")
     screen_output_fields = request.data.get("screen_output_fields")
+    collection_version = request.data.get("collection_version")
 
     # Validate at least one query is provided
     has_chat_query = chat_ids and chat_output_fields
@@ -241,6 +259,7 @@ def query_collection(request):
         chat_output_fields=chat_output_fields if has_chat_query else None,
         screen_ids=screen_ids if has_screen_query else None,
         screen_output_fields=screen_output_fields if has_screen_query else None,
+        collection_version=collection_version,
     )
 
     if not success:
@@ -251,6 +270,100 @@ def query_collection(request):
             "ok": True,
             "chat_results": results.get("chat_results", []),
             "screen_results": results.get("screen_results", []),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_description="[DEBUG ONLY] Clear (drop and re-create) chat and/or screen collections for specified user. Collection will be created if it doesn't exist.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            "user_id": openapi.Schema(
+                type=openapi.TYPE_INTEGER,
+                description="User ID",
+            ),
+            "clear_chat": openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description="Whether to clear the chat collection",
+            ),
+            "clear_screen": openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description="Whether to clear the screen collection",
+            ),
+            "collection_version": openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="Optional version string to append to collection name for testing different client versions",
+            ),
+        },
+        required=["user_id", "clear_chat", "clear_screen"],
+    ),
+    responses={
+        200: openapi.Response(
+            description="Collections cleared successfully",
+            examples={
+                "application/json": {
+                    "ok": True,
+                    "message": "Collections cleared and recreated successfully",
+                }
+            },
+        ),
+        400: "Bad Request - Invalid parameters",
+        500: "Server Error - VectorDB operation failed",
+    },
+)
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def clear_collections(request):
+    """Clear (drop and re-create) chat and/or screen collections."""
+    user_id = request.data.get("user_id")
+    clear_chat = request.data.get("clear_chat", False)
+    clear_screen = request.data.get("clear_screen", False)
+    collection_version = request.data.get("collection_version")
+
+    # Validate at least one collection is being cleared
+    if not clear_chat and not clear_screen:
+        return Response(
+            {"detail": "At least one of clear_chat or clear_screen must be true"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Drop the collections
+    drop_success, drop_error = vectordb_client.drop_collection_parallel(
+        user_id=user_id,
+        drop_chat=clear_chat,
+        drop_screen=clear_screen,
+        collection_version=collection_version,
+    )
+
+    if not drop_success:
+        return Response(
+            {"detail": f"Failed to drop collections: {drop_error}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    # Re-create the collections that were dropped
+    if clear_chat or clear_screen:
+        create_success, create_error = vectordb_client.create_collections_parallel(
+            user_id=user_id,
+            create_chat=clear_chat,
+            create_screen=clear_screen,
+            collection_version=collection_version,
+        )
+
+        if not create_success:
+            return Response(
+                {"detail": f"Failed to re-create collections: {create_error}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    return Response(
+        {
+            "ok": True,
+            "message": "Collections cleared and recreated successfully",
         },
         status=status.HTTP_200_OK,
     )

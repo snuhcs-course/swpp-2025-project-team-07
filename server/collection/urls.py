@@ -6,4 +6,5 @@ urlpatterns = [
     path("insert/", views.insert_to_collection, name="store_keys"),
     path("search/", views.search_collections, name="search_collections"),
     path("query/", views.query_collection, name="query_collection"),
+    path("clear/", views.clear_collections, name="clear_collections"),
 ]
