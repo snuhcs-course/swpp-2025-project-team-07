@@ -547,7 +547,7 @@ function setupLLMHandlers() {
           modelName: 'Ollama Server',
           percent: 0,
           transferred: 0,
-          total: 25_000_000 // ~25MB actual size
+          total: 1_879_954_938
         });
 
         let versionToDownload: `v${number}.${number}.${number}` | null = null;
@@ -580,6 +580,7 @@ function setupLLMHandlers() {
 
         // Check if binary is downloaded
         const isDownloaded = await electronOllama.isDownloaded(versionToDownload);
+        const totalBytes = (await electronOllama.getMetadata(versionToDownload)).size;
 
         if (!isDownloaded) {
           console.log(`Downloading Ollama ${versionToDownload}...`);
@@ -589,8 +590,8 @@ function setupLLMHandlers() {
               mainWindow?.webContents.send('model:download-progress', {
                 modelName: 'Ollama Server',
                 percent: percent / 100,
-                transferred: Math.floor((percent / 100) * 25_000_000),
-                total: 25_000_000
+                transferred: Math.floor((percent / 100) * totalBytes),
+                total: totalBytes
               });
             }
           });
