@@ -70,7 +70,7 @@ describe('ChatInput', () => {
   it('should disable input when disabled prop is true', () => {
     const mockOnSendMessage = vi.fn();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" inputDisabled />);
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" modelNotReady />);
 
     const textarea = screen.getByPlaceholderText('AI is thinking...');
     expect(textarea).toBeDisabled();
