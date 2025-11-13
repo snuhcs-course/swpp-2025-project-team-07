@@ -138,7 +138,6 @@ function getEmbeddingModelPath(modelInfo: { directory: string, files: { relative
 function isOllamaDownloaded(): boolean {
   try {
     const ollamaBasePath = path.join(app.getPath('userData'), 'electron-ollama');
-    console.log('Ollama base path:', ollamaBasePath);
 
     if (!existsSync(ollamaBasePath)) {
       return false;
