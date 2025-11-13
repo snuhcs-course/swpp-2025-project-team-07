@@ -10,6 +10,7 @@ import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
 import * as fs from 'node:fs';
 import { extractFramesFromVideos } from './utils/video-frame-extractor';
+import { DEFAULT_SYSTEM_PROMPT } from './config/system-prompt';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -508,7 +509,9 @@ function setupLLMHandlers() {
   // Session management
   ipcMain.handle('llm:create-session', async (_event, systemPrompt?: string) => {
     if (!ollamaManager) throw new Error('LLM not initialized');
-    return await ollamaManager.createSession(systemPrompt);
+    // Use the secure backend system prompt by default
+    const promptToUse = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    return await ollamaManager.createSession(promptToUse);
   });
 
   ipcMain.handle('llm:clear-session', async (_event, sessionId: string) => {

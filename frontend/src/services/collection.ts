@@ -163,8 +163,10 @@ async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob
 // Complete RAG flow: Search + Query top-K + Decrypt (unified chat + video)
 export async function searchAndQuery(
   chatQueryVector: number[],
-  topK: number = 3,
-  videoQueryVector?: number[] // Optional: separate embedding for video search
+  chatTopK: number = 7,
+  videoQueryVector?: number[], // Optional: separate embedding for video search
+  videoTopK: number = 3, // Optional: top-K for video (defaults to 3)
+  excludeSessionId?: number, // Optional: exclude memories from this session (to avoid redundancy)
 ): Promise<VectorData[]> {
   // Search both collections in parallel with appropriate embeddings
   let searchResult: SearchResponse;
@@ -197,7 +199,7 @@ export async function searchAndQuery(
     chatIds = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
+      .slice(0, chatTopK)
       .map(item => item.id);
   }
 
@@ -211,7 +213,7 @@ export async function searchAndQuery(
     screenIds = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
+      .slice(0, videoTopK)
       .map(item => item.id);
   }
 
@@ -245,10 +247,15 @@ export async function searchAndQuery(
     ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
   ];
 
+  // Filter out same-session memories
+  const filteredResults = excludeSessionId !== undefined
+    ? allResults.filter(doc => doc.session_id === 0 || doc.session_id !== excludeSessionId)
+    : allResults;
+
   // Decrypt all results and reconstruct videos for screen recordings
   const { decryptText } = await import('@/utils/encryption');
   const decryptedResults = await Promise.all(
-    allResults.map(async (doc) => {
+    filteredResults.map(async (doc) => {
       const decryptedContent = await decryptText(doc.content).catch(() => '[Decryption Error]');
 
       // If this is a screen recording, reconstruct the original video blob

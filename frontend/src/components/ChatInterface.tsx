@@ -156,6 +156,23 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     ? sessions.find(s => s.id === currentSessionId)
     : undefined;
 
+  // Initialize LLM session with system prompt once model is ready
+  useEffect(() => {
+    if (!isModelReady) return;
+
+    const initializeLLMSession = async () => {
+      try {
+        // Create LLM session with system prompt from backend
+        await llmService.createSession();
+        console.log('[ChatInterface] LLM session initialized with Clone system prompt');
+      } catch (error) {
+        console.error('[ChatInterface] Failed to initialize LLM session:', error);
+      }
+    };
+
+    initializeLLMSession();
+  }, [isModelReady]);
+
   // Load sessions from backend on mount
   useEffect(() => {
     const loadSessions = async () => {
@@ -345,7 +362,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         // Mark session creation as in progress
         sessionCreationInProgressRef.current = true;
 
-        // Create new session synchronously
+        // Create new backend session for database storage
         const backendSession = await runWithCancellation(() =>
           chatService.createSession('New Conversation')
         );
@@ -429,24 +446,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         )
       );
 
-      // Track message for memory bundling (uses plaintext before it was encrypted)
-      const backendUserMsg: BackendChatMessage = {
-        ...userMsg,
-        content, // Original plaintext
-      };
-      const existingMessages = session.messages || [];
-      memoryService.trackMessage(sessionIdNum, [
-        ...existingMessages.map(m => ({
-          id: parseInt(m.id),
-          session: sessionIdNum,
-          role: m.isUser ? 'user' as const : 'assistant' as const,
-          content: m.content,
-          timestamp: m.timestamp.getTime(),
-          created_at: m.timestamp.toISOString(),
-        })),
-        backendUserMsg,
-      ]).catch(err => console.error('Memory tracking failed:', err));
-
       // Create AI response message with empty content (will be filled by streaming)
       const aiMessageId = `temp_${Date.now()}`;
       const tempAiMessage: Message = {
@@ -507,13 +506,16 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         );
         ensureNotCancelled();
 
-        // Search and retrieve top 3 from chat + top 3 from screen (6 total max)
+        // Search and retrieve top 7 from chat + top 3 from screen (10 total max)
         // Pass separate embeddings to avoid dimension mismatch
+        // Exclude current session to avoid redundancy with conversation history
         relevantDocs = await runWithCancellation(() =>
           collectionService.searchAndQuery(
             chatQueryEmbedding,
+            7,
+            videoQueryEmbedding || undefined,
             3,
-            videoQueryEmbedding || undefined
+            sessionIdNum,
           )
         );
         ensureNotCancelled();
@@ -566,8 +568,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       try {
         if (relevantDocs.length > 0) {
           // Separate chat and video contexts
+          const seenMessages = new Map<string, { role: string; content: string }>();
 
-          relevantDocs.forEach((doc: any, idx: number) => {
+          relevantDocs.forEach((doc: any) => {
             if (doc.source_type === 'screen' && doc.video_blob) {
               // Store reconstructed video blob for multimodal input
               videoBlobs.push(doc.video_blob);
@@ -616,24 +619,53 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
               console.log(`[RAG] Retrieved video ${videoCount}: ${(doc.video_blob.size / 1024).toFixed(1)} KB`);
             } else if (doc.source_type === 'chat') {
-              chatContexts.push(`[Memory ${idx + 1}]:\n${doc.content}`);
+              // Parse bundle to extract individual messages
+              // Bundle format: "user: content\nassistant: content\nuser: content\n..."
+              const lines = doc.content.split('\n');
+
+              for (const line of lines) {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) continue;
+
+                // Match "role: content" pattern
+                const match = trimmedLine.match(/^(user|assistant):\s*(.+)$/);
+                if (match) {
+                  const [, role, content] = match;
+                  const messageKey = `${role}:${content}`;
+
+                  // Only add if not seen before
+                  if (!seenMessages.has(messageKey)) {
+                    seenMessages.set(messageKey, { role, content });
+                  }
+                }
+              }
             }
           });
 
-          // Build context prompt with <CONTEXT> tags matching the chat RAG style
+          // Reconstruct deduplicated chat contexts from individual messages
+          // Group into user-assistant pairs with empty lines between them
+          if (seenMessages.size > 0) {
+            const deduplicatedMessages = Array.from(seenMessages.values());
+            const formattedLines: string[] = [];
+
+            for (let i = 0; i < deduplicatedMessages.length; i++) {
+              const msg = deduplicatedMessages[i];
+              formattedLines.push(`${msg.role}: ${msg.content}`);
+
+              // Add empty line after assistant messages (end of user-assistant pair)
+              if (msg.role === 'assistant' && i < deduplicatedMessages.length - 1) {
+                formattedLines.push('');
+              }
+            }
+
+            chatContexts.push(formattedLines.join('\n'));
+          }
+
+          // Build context prompt with <memory> tags matching the chat RAG style
           if (chatContexts.length > 0 || videoCount > 0) {
-            contextPrompt = `<CONTEXT>
-The following are relevant excerpts from the user's past conversations with you.
-These are your memories of previous interactions.
-You can use this information to answer the user's question.
-${chatContexts.join('\n')}
-${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}
-${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) provided as image frame sequences. Each recording is split into frames at 1 frame per second, so you'll see multiple images showing the progression of activity over time.` : ''}
-
-</CONTEXT>
-
-**Now, using the above context${videoCount > 0 ? ' and screen recording frames' : ''}, answer the following question**:
-`;
+            contextPrompt = `<memory>
+${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}${videoCount > 0 ? `${videoCount} screen recording(s) as image sequences (1 fps).` : ''}
+</memory>`;
           }
         }
       } catch (error) {
@@ -686,12 +718,31 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
 
       // Stream the LLM response with RAG context + videos
       let fullResponse = '';
-      const messageWithContext = contextPrompt + content;
+
+      // Build conversation history as message array (exclude the empty AI message we just added)
+      const conversationMessages = session.messages
+        .filter(msg => msg.id !== aiMessageId) // Exclude the temporary AI message
+        .map(msg => ({
+          role: msg.isUser ? 'user' as const : 'assistant' as const,
+          content: msg.content
+        }));
+
+      // Construct the current message with RAG context
+      let messageWithContext = '';
+
+      if (contextPrompt) {
+        // If we have RAG context, include it
+        messageWithContext += contextPrompt + '\n\n';
+      }
+
+      // Add the current user message
+      messageWithContext += content;
 
       // Log RAG summary
       console.log('[RAG] Context retrieval complete:', {
         chatMemories: chatContexts.length,
         screenRecordings: videoCount,
+        conversationHistoryMessages: conversationMessages.length,
         contextLength: contextPrompt.length,
         totalPromptLength: messageWithContext.length
       });
@@ -705,6 +756,7 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
         totalLength: messageWithContext.length,
         chatMemories: chatContexts.length,
         videoCount: videoCount,
+        conversationHistory: conversationMessages,
         videos: videoBlobs, // Store video blobs for frame extraction
         view: () => {
           console.log('=== RAG Prompt Debug ===');
@@ -828,7 +880,8 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
             {
               temperature: 0.7,
               maxTokens: 2048,
-              videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3n
+              videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3
+              messages: conversationMessages, // Pass conversation history for multi-turn format
             }
           )
         );
@@ -874,6 +927,11 @@ ${videoCount > 0 ? `You also have ${videoCount} relevant screen recording(s) pro
       const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
 
       // Track assistant message for memory
+      const existingMessages = session.messages || [];
+      const backendUserMsg: BackendChatMessage = {
+        ...userMsg,
+        content: content, // Original plaintext
+      };
       const backendAssistantMsg: BackendChatMessage = {
         ...assistantMsg,
         content: fullResponse, // Original plaintext
