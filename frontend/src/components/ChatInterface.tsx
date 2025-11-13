@@ -562,12 +562,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
         phaseDurations.searching = searchElapsed;
 
-        const videoStatus = videoRagEnabled ? 'enabled' : 'disabled';
         const searchMessages = searchErrored
-          ? [`Secure search encountered an issue (video: ${videoStatus})`]
+          ? [`Secure search encountered an issue`]
           : relevantDocs.length > 0
-            ? [`Secure search completed (video: ${videoStatus})`]
-            : [`Secure search completed (no matches found, video: ${videoStatus})`];
+            ? [`Secure search completed`]
+            : [`Secure search completed (no matches found)`];
 
         processingStatusService.completePhase(sessionId, 'searching', searchElapsed, {
           retrievalMetrics: {
