@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, Video } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import type { ChatRunState } from './ChatInterface';
@@ -10,6 +10,8 @@ interface ChatInputProps {
   onStop?: () => void;
   runState: ChatRunState;
   inputDisabled?: boolean;
+  videoRagEnabled?: boolean;
+  onToggleVideoRag?: () => void;
 }
 
 export function ChatInput({
@@ -17,6 +19,8 @@ export function ChatInput({
   onStop,
   runState,
   inputDisabled = false,
+  videoRagEnabled = false,
+  onToggleVideoRag,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,11 +89,38 @@ export function ChatInput({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={textareaDisabled ? "AI is thinking..." : "Type your message..."}
+                placeholder={textareaDisabled ? "AI is thinking..." : videoRagEnabled ? "Describe the video..." : "Type your message..."}
                 disabled={textareaDisabled}
-                className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 pb-14 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
+
+              {/* Video RAG toggle button - positioned at bottom left */}
+              {onToggleVideoRag && (
+                <div className="absolute bottom-0 left-1">
+                  <Button
+                    onClick={onToggleVideoRag}
+                    disabled={textareaDisabled}
+                    variant="ghost"
+                    className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full ${
+                      videoRagEnabled
+                        ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                        : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50'
+                    } ${textareaDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
+                  >
+                    <motion.div
+                      className="flex items-center gap-1.5"
+                      whileHover={{ scale: textareaDisabled ? 1 : 1.02 }}
+                      whileTap={{ scale: textareaDisabled ? 1 : 0.98 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Video className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Video search</span>
+                    </motion.div>
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Send button */}

@@ -146,6 +146,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isStoppingGeneration, setIsStoppingGeneration] = useState(false);
 
+  // Video RAG toggle state - disabled by default, persisted in localStorage
+  const [videoRagEnabled, setVideoRagEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('videoRagEnabled');
+    return stored ? JSON.parse(stored) : false;
+  });
+
+  // Save videoRagEnabled to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('videoRagEnabled', JSON.stringify(videoRagEnabled));
+  }, [videoRagEnabled]);
+
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
   // Ref to track if initial model check is complete
@@ -501,12 +512,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           embeddingService.embedQuery(content)
         );
         ensureNotCancelled();
-        const videoQueryEmbedding = await runWithCancellation(() =>
-          embeddingService.embedVideoQuery(content)
-        );
-        ensureNotCancelled();
 
-        // Search and retrieve top 7 from chat + top 3 from screen (10 total max)
+        const videoQueryEmbedding = videoRagEnabled
+          ? await runWithCancellation(() =>
+              embeddingService.embedVideoQuery(content)
+            )
+          : undefined;
+
+        if (videoRagEnabled) {
+          ensureNotCancelled();
+        }
+
+        // Search and retrieve top 7 from chat + top 3 from screen
         // Pass separate embeddings to avoid dimension mismatch
         // Exclude current session to avoid redundancy with conversation history
         relevantDocs = await runWithCancellation(() =>
@@ -514,7 +531,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             chatQueryEmbedding,
             7,
             videoQueryEmbedding || undefined,
-            3,
+            videoRagEnabled ? 3 : 0,
             sessionIdNum,
           )
         );
@@ -545,11 +562,12 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
         phaseDurations.searching = searchElapsed;
 
+        const videoStatus = videoRagEnabled ? 'enabled' : 'disabled';
         const searchMessages = searchErrored
-          ? ['Secure search encountered an issue']
+          ? [`Secure search encountered an issue (video: ${videoStatus})`]
           : relevantDocs.length > 0
-            ? ['Secure search completed']
-            : ['Secure search completed (no matches found)'];
+            ? [`Secure search completed (video: ${videoStatus})`]
+            : [`Secure search completed (no matches found, video: ${videoStatus})`];
 
         processingStatusService.completePhase(sessionId, 'searching', searchElapsed, {
           retrievalMetrics: {
@@ -1086,6 +1104,10 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
     }
   };
 
+  const handleToggleVideoRag = () => {
+    setVideoRagEnabled(prev => !prev);
+  };
+
   const createNewChat = () => {
     setCurrentSessionId(null);
   };
@@ -1182,6 +1204,8 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
               onStop={handleStopGeneration}
               runState={runState}
               inputDisabled={!isModelReady}
+              videoRagEnabled={videoRagEnabled}
+              onToggleVideoRag={handleToggleVideoRag}
             />
           </div>
         </div>
