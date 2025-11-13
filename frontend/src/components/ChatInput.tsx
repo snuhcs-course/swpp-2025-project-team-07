@@ -9,7 +9,8 @@ interface ChatInputProps {
   onSendMessage: (message: string) => void;
   onStop?: () => void;
   runState: ChatRunState;
-  inputDisabled?: boolean;
+  modelNotReady?: boolean;
+  isStopping?: boolean;
   videoRagEnabled?: boolean;
   onToggleVideoRag?: () => void;
 }
@@ -18,14 +19,15 @@ export function ChatInput({
   onSendMessage,
   onStop,
   runState,
-  inputDisabled = false,
+  modelNotReady = false,
+  isStopping = false,
   videoRagEnabled = false,
   onToggleVideoRag,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = runState === 'awaitingFirstToken' || runState === 'streaming';
-  const textareaDisabled = inputDisabled || isStreaming;
+  const textareaNotReady = modelNotReady || isStreaming;
   const showStopButton = isStreaming;
 
   const handleSend = () => {
@@ -49,23 +51,23 @@ export function ChatInput({
 
   // Auto-resize textarea
   useEffect(() => {
-    if (textareaRef.current && !textareaDisabled) {
+    if (textareaRef.current && !textareaNotReady) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [message, textareaDisabled]);
+  }, [message, textareaNotReady]);
 
   // Auto-focus on mount (with small delay for animation)
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (textareaRef.current && !textareaDisabled) {
+      if (textareaRef.current && !textareaNotReady) {
         textareaRef.current.focus();
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [textareaDisabled]);
+  }, [textareaNotReady]);
 
-  const isSendDisabled = !message.trim() || textareaDisabled;
+  const isSendDisabled = !message.trim() || textareaNotReady || isStopping;
   const canStop = showStopButton && !!onStop;
   const canSend = !showStopButton && !isSendDisabled;
   const canInteract = canStop || canSend;
@@ -94,8 +96,7 @@ export function ChatInput({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={textareaDisabled ? "AI is thinking..." : videoRagEnabled ? "Describe the video..." : "Type your message..."}
-                disabled={textareaDisabled}
+                placeholder={isStreaming ? "AI is thinking..." : videoRagEnabled ? "Describe the video..." : "Type your message..."}
                 className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 pb-14 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
@@ -105,19 +106,19 @@ export function ChatInput({
                 <div className="absolute bottom-0 left-1">
                   <Button
                     onClick={onToggleVideoRag}
-                    disabled={textareaDisabled}
+                    disabled={isStreaming}
                     variant="ghost"
                     className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full ${
                       videoRagEnabled
                         ? 'bg-primary/10 text-primary hover:bg-primary/20'
                         : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50'
-                    } ${textareaDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
                     title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
                   >
                     <motion.div
                       className="flex items-center gap-1.5"
-                      whileHover={{ scale: textareaDisabled ? 1 : 1.02 }}
-                      whileTap={{ scale: textareaDisabled ? 1 : 0.98 }}
+                      whileHover={{ scale: isStreaming ? 1 : 1.02 }}
+                      whileTap={{ scale: isStreaming ? 1 : 0.98 }}
                       transition={{ duration: 0.15 }}
                     >
                       <Video className="w-3.5 h-3.5" />
