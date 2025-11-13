@@ -65,6 +65,7 @@ export function ChatHeader({
             duration: chunk.durationMs,
             width: chunk.width,
             height: chunk.height,
+            video_set_id: chunk.recordingId, // Group chunks by recording session
           }
         );
       } catch (error) {
