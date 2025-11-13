@@ -86,7 +86,7 @@ export function ChatInput({
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={textareaDisabled ? "AI is thinking..." : "Type your message..."}
-                disabled={textareaDisabled}
+                disabled={false} // textareaDisabled
                 className="break-all min-h-[48px] max-h-32 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none p-1 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 rows={1}
               />
