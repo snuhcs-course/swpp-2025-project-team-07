@@ -253,3 +253,268 @@ class TestQueryCollection:
         response = jwt_authenticated_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+class TestClearCollections:
+    """Tests for the clear_collections endpoint."""
+
+    @responses.activate
+    def test_clear_both_collections_success(self, api_client):
+        """Test successfully clearing both chat and screen collections."""
+        # Mock drop operations
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock create operations
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+
+        url = reverse("clear_collections")
+        data = {"user_id": 123, "clear_chat": True, "clear_screen": True}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["ok"] is True
+        assert "cleared and recreated successfully" in response.data["message"].lower()
+        # Verify all 4 operations were called (2 drops + 2 creates)
+        assert len(responses.calls) == 4
+
+    @responses.activate
+    def test_clear_chat_collection_only(self, api_client):
+        """Test clearing only the chat collection."""
+        # Mock drop operation
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock create operation
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+
+        url = reverse("clear_collections")
+        data = {"user_id": 456, "clear_chat": True, "clear_screen": False}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["ok"] is True
+        # Verify only 2 operations were called (1 drop + 1 create)
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_clear_screen_collection_only(self, api_client):
+        """Test clearing only the screen collection."""
+        # Mock drop operation
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock create operation
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+
+        url = reverse("clear_collections")
+        data = {"user_id": 789, "clear_chat": False, "clear_screen": True}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["ok"] is True
+        # Verify only 2 operations were called (1 drop + 1 create)
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_clear_with_collection_version(self, api_client):
+        """Test clearing collections with collection_version parameter."""
+        # Mock drop operations
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock create operations
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+            json={"ok": True, "result": {"status": "created"}},
+            status=200,
+        )
+
+        url = reverse("clear_collections")
+        data = {
+            "user_id": 123,
+            "clear_chat": True,
+            "clear_screen": False,
+            "collection_version": "v3",
+        }
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["ok"] is True
+        # Verify collection names include version
+        assert "chat_123_v3" in responses.calls[0].request.body.decode()
+        assert "chat_123_v3" in responses.calls[1].request.body.decode()
+
+    def test_clear_with_both_false(self, api_client):
+        """Test validation error when both clear_chat and clear_screen are false."""
+        url = reverse("clear_collections")
+        data = {"user_id": 123, "clear_chat": False, "clear_screen": False}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "at least one" in response.data["detail"].lower()
+
+    def test_clear_no_authentication_required(self, api_client):
+        """Test that clear_collections doesn't require authentication (AllowAny)."""
+        # Mock drop and create operations
+        with responses.RequestsMock() as rsps:
+            rsps.add(
+                responses.POST,
+                "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+                json={"ok": True, "result": {"status": "dropped"}},
+                status=200,
+            )
+            rsps.add(
+                responses.POST,
+                "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+                json={"ok": True, "result": {"status": "created"}},
+                status=200,
+            )
+
+            url = reverse("clear_collections")
+            data = {"user_id": 999, "clear_chat": True, "clear_screen": False}
+            response = api_client.post(url, data, format="json")
+
+            # Should succeed without authentication
+            assert response.status_code == status.HTTP_200_OK
+
+    @responses.activate
+    def test_clear_drop_failure(self, api_client):
+        """Test failure when drop operation fails."""
+        # Mock drop operation failure
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": False, "error": "Collection not found"},
+            status=404,
+        )
+
+        url = reverse("clear_collections")
+        data = {"user_id": 123, "clear_chat": True, "clear_screen": False}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "failed to drop collections" in response.data["detail"].lower()
+        # Create should not be called if drop fails
+        assert len(responses.calls) == 1
+
+    @responses.activate
+    def test_clear_create_failure(self, api_client):
+        """Test failure when create operation fails after successful drop."""
+        # Mock successful drop
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock failed create
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+            json={"ok": False, "error": "Insufficient permissions"},
+            status=403,
+        )
+
+        url = reverse("clear_collections")
+        data = {"user_id": 123, "clear_chat": True, "clear_screen": False}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "failed to re-create collections" in response.data["detail"].lower()
+        # Both drop and create should be called
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_clear_partial_drop_failure(self, api_client):
+        """Test when one collection drops successfully but the other fails."""
+        # Mock chat drop success
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            json={"ok": True, "result": {"status": "dropped"}},
+            status=200,
+        )
+        # Mock screen drop failure
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
+            json={"ok": False, "error": "Database error"},
+            status=500,
+        )
+
+        url = reverse("clear_collections")
+        data = {"user_id": 123, "clear_chat": True, "clear_screen": True}
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "failed to drop collections" in response.data["detail"].lower()
+        # Should have attempted both drops
+        assert len(responses.calls) == 2
+
+    def test_clear_missing_user_id(self, api_client):
+        """Test clear_collections handles missing user_id gracefully."""
+        # Mock operations - will be called with None user_id
+        with responses.RequestsMock() as rsps:
+            rsps.add(
+                responses.POST,
+                "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+                json={"ok": True, "result": {"status": "dropped"}},
+                status=200,
+            )
+            rsps.add(
+                responses.POST,
+                "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+                json={"ok": True, "result": {"status": "created"}},
+                status=200,
+            )
+
+            url = reverse("clear_collections")
+            # Missing user_id
+            data = {"clear_chat": True, "clear_screen": False}
+            response = api_client.post(url, data, format="json")
+
+            # Should succeed - API doesn't validate user_id presence
+            # (validation would be in the VectorDB client)
+            assert response.status_code == status.HTTP_200_OK
