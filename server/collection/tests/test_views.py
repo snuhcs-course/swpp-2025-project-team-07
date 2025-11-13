@@ -518,3 +518,463 @@ class TestClearCollections:
             # Should succeed - API doesn't validate user_id presence
             # (validation would be in the VectorDB client)
             assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestVideoSetMetadata:
+    """Tests for video set metadata functionality."""
+
+    @responses.activate
+    def test_insert_with_video_set_id_stores_metadata(self, jwt_authenticated_client, user):
+        """Test that inserting screen data with video_set_id stores metadata."""
+        from collection.models import VideoSetMetadata
+
+        # Mock screen VectorDB
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/insert/",
+            json={"ok": True, "result": {"insert_count": 3}},
+            status=200,
+        )
+
+        url = reverse("store_keys")
+        data = {
+            "screen_data": [
+                {
+                    "id": "screen_100",
+                    "vector": [0.1] * 512,
+                    "timestamp": 1000,
+                    "video_set_id": "set-abc-123",
+                },
+                {
+                    "id": "screen_101",
+                    "vector": [0.2] * 512,
+                    "timestamp": 2000,
+                    "video_set_id": "set-abc-123",
+                },
+                {
+                    "id": "screen_102",
+                    "vector": [0.3] * 512,
+                    "timestamp": 3000,
+                    "video_set_id": "set-abc-123",
+                },
+            ]
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify metadata was stored
+        metadata = VideoSetMetadata.objects.filter(user=user)
+        assert metadata.count() == 3
+        assert metadata.filter(video_set_id="set-abc-123").count() == 3
+
+        # Verify timestamps are stored correctly (with user_id prefix)
+        video_100 = VideoSetMetadata.objects.get(video_id=f"user_{user.id}_screen_100")
+        assert video_100.timestamp == 1000
+        assert video_100.video_set_id == "set-abc-123"
+
+    @responses.activate
+    def test_insert_without_video_set_id_no_metadata(self, jwt_authenticated_client, user):
+        """Test that inserting without video_set_id doesn't create metadata (backward compatible)."""
+        from collection.models import VideoSetMetadata
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/insert/",
+            json={"ok": True, "result": {"insert_count": 1}},
+            status=200,
+        )
+
+        url = reverse("store_keys")
+        data = {
+            "screen_data": [
+                {"id": "screen_200", "vector": [0.1] * 512, "timestamp": 1000}
+                # No video_set_id
+            ]
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify no metadata was created
+        assert VideoSetMetadata.objects.count() == 0
+
+    @responses.activate
+    def test_insert_with_collection_version_stores_version(self, jwt_authenticated_client, user):
+        """Test that collection_version is stored in metadata."""
+        from collection.models import VideoSetMetadata
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/insert/",
+            json={"ok": True, "result": {"insert_count": 1}},
+            status=200,
+        )
+
+        url = reverse("store_keys")
+        data = {
+            "screen_data": [
+                {
+                    "id": "screen_300",
+                    "vector": [0.1] * 512,
+                    "timestamp": 1000,
+                    "video_set_id": "set-xyz",
+                }
+            ],
+            "collection_version": "v2",
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        metadata = VideoSetMetadata.objects.get(video_id=f"user_{user.id}_screen_300")
+        assert metadata.collection_version == "v2"
+
+    @responses.activate
+    def test_query_with_query_video_sets_expands_to_full_set(self, jwt_authenticated_client, user):
+        """Test that query_video_sets=true returns video sets grouped and sorted by timestamp."""
+        from collection.models import VideoSetMetadata
+
+        # Create metadata for a video set (with user_id prefix)
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=1000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=2000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_102",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=3000,
+        )
+
+        # Mock VectorDB response - should be called with ALL 3 IDs
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={
+                "ok": True,
+                "result": [
+                    {"id": "screen_100", "content": "Video 1"},
+                    {"id": "screen_101", "content": "Video 2"},
+                    {"id": "screen_102", "content": "Video 3"},
+                ],
+            },
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            "screen_ids": ["screen_101"],  # Query only one video
+            "screen_output_fields": ["id", "timestamp", "content"],
+            "query_video_sets": True,  # But expand to full set
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["ok"] is True
+
+        # Should return list of video sets
+        assert len(response.data["screen_results"]) == 1  # One video set
+        video_set = response.data["screen_results"][0]
+        assert video_set["video_set_id"] == "set-abc"
+        assert len(video_set["videos"]) == 3  # All 3 videos in the set
+
+        # Videos should be sorted by timestamp
+        assert video_set["videos"][0]["id"] == "screen_100"
+        assert video_set["videos"][1]["id"] == "screen_101"
+        assert video_set["videos"][2]["id"] == "screen_102"
+
+        # Verify VectorDB was called with all 3 IDs
+        vectordb_request = responses.calls[0].request.body.decode()
+        assert "screen_100" in vectordb_request
+        assert "screen_101" in vectordb_request
+        assert "screen_102" in vectordb_request
+
+    @responses.activate
+    def test_query_without_query_video_sets_no_expansion(self, jwt_authenticated_client, user):
+        """Test that query_video_sets=false doesn't expand video sets."""
+        from collection.models import VideoSetMetadata
+
+        # Create metadata (with user_id prefix)
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=1000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=2000,
+        )
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={
+                "ok": True,
+                "result": [{"id": "screen_100", "content": "Video 1"}],
+            },
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            "screen_ids": ["screen_100"],
+            "screen_output_fields": ["id", "content"],
+            "query_video_sets": False,  # Don't expand
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should only return the requested video
+        assert len(response.data["screen_results"]) == 1
+
+        # Verify VectorDB was called with only requested ID
+        vectordb_request = responses.calls[0].request.body.decode()
+        assert "screen_100" in vectordb_request
+        assert "screen_101" not in vectordb_request
+
+    @responses.activate
+    def test_query_expansion_with_multiple_sets(self, jwt_authenticated_client, user):
+        """Test that querying videos from multiple sets returns both sets grouped separately."""
+        from collection.models import VideoSetMetadata
+
+        # Create two separate video sets (with user_id prefix)
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-A",
+            user=user,
+            timestamp=1000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-A",
+            user=user,
+            timestamp=2000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_200",
+            video_set_id="set-B",
+            user=user,
+            timestamp=5000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_201",
+            video_set_id="set-B",
+            user=user,
+            timestamp=6000,
+        )
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={
+                "ok": True,
+                "result": [
+                    {"id": "screen_100"},
+                    {"id": "screen_101"},
+                    {"id": "screen_200"},
+                    {"id": "screen_201"},
+                ],
+            },
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            "screen_ids": ["screen_100", "screen_200"],  # One from each set
+            "screen_output_fields": ["id", "timestamp"],
+            "query_video_sets": True,
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should return 2 video sets
+        assert len(response.data["screen_results"]) == 2
+
+        # First set should be set-A (earliest timestamp)
+        set_a = response.data["screen_results"][0]
+        assert set_a["video_set_id"] == "set-A"
+        assert len(set_a["videos"]) == 2
+        assert set_a["videos"][0]["id"] == "screen_100"
+        assert set_a["videos"][1]["id"] == "screen_101"
+
+        # Second set should be set-B
+        set_b = response.data["screen_results"][1]
+        assert set_b["video_set_id"] == "set-B"
+        assert len(set_b["videos"]) == 2
+        assert set_b["videos"][0]["id"] == "screen_200"
+        assert set_b["videos"][1]["id"] == "screen_201"
+
+    @responses.activate
+    def test_query_expansion_user_isolation(
+        self, jwt_authenticated_client, user, django_user_model
+    ):
+        """Test that users can only expand their own video sets."""
+        from collection.models import VideoSetMetadata
+
+        # Create another user
+        other_user = django_user_model.objects.create_user(
+            email="other@test.com", username="other", password="pass123"
+        )
+
+        # Create metadata for current user (with user_id prefix)
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=1000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=2000,
+        )
+
+        # Create metadata for other user with SAME video_set_id (with other_user_id prefix)
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{other_user.id}_screen_200",
+            video_set_id="set-abc",  # Same set ID!
+            user=other_user,
+            timestamp=3000,
+        )
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={
+                "ok": True,
+                "result": [
+                    {"id": "screen_100"},
+                    {"id": "screen_101"},
+                ],
+            },
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            "screen_ids": ["screen_100"],
+            "screen_output_fields": ["id", "timestamp"],
+            "query_video_sets": True,
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should only return current user's videos in one video set (not other_user's screen_200)
+        assert len(response.data["screen_results"]) == 1  # One video set
+        video_set = response.data["screen_results"][0]
+        assert video_set["video_set_id"] == "set-abc"
+        assert len(video_set["videos"]) == 2
+
+        result_ids = [v["id"] for v in video_set["videos"]]
+        assert "screen_100" in result_ids
+        assert "screen_101" in result_ids
+        assert "screen_200" not in result_ids
+
+    @responses.activate
+    def test_query_expansion_with_no_metadata_returns_original(
+        self, jwt_authenticated_client, user
+    ):
+        """Test that querying videos with no metadata returns original list (backward compatible)."""
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={"ok": True, "result": [{"id": "screen_999", "content": "Video"}]},
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            "screen_ids": ["screen_999"],  # No metadata exists
+            "screen_output_fields": ["id", "content"],
+            "query_video_sets": True,
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should return only the requested video
+        assert len(response.data["screen_results"]) == 1
+
+        # Verify VectorDB was called with original ID only
+        vectordb_request = responses.calls[0].request.body.decode()
+        assert "screen_999" in vectordb_request
+
+    @responses.activate
+    def test_query_expansion_respects_collection_version(self, jwt_authenticated_client, user):
+        """Test that expansion respects collection_version filtering."""
+        from collection.models import VideoSetMetadata
+
+        # Create metadata with different collection versions (with user_id prefix)
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=1000,
+            collection_version="v1",
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=2000,
+            collection_version="v1",
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_102",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=3000,
+            collection_version="v2",  # Different version
+        )
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={
+                "ok": True,
+                "result": [
+                    {"id": "screen_100"},
+                    {"id": "screen_101"},
+                ],
+            },
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            "screen_ids": ["screen_100"],
+            "screen_output_fields": ["id", "timestamp"],
+            "query_video_sets": True,
+            "collection_version": "v1",
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should only return v1 videos in one video set (not screen_102 with v2)
+        assert len(response.data["screen_results"]) == 1  # One video set
+        video_set = response.data["screen_results"][0]
+        assert video_set["video_set_id"] == "set-abc"
+        assert len(video_set["videos"]) == 2
+
+        result_ids = [v["id"] for v in video_set["videos"]]
+        assert "screen_100" in result_ids
+        assert "screen_101" in result_ids
+        assert "screen_102" not in result_ids
