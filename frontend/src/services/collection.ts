@@ -11,6 +11,7 @@ export interface VectorData {
   session_id: number;
   role: string; // 'user' | 'assistant' | 'conversation' | 'screen_recording'
   message_ids?: number[];
+  video_set_id?: string; // Groups multiple video chunks together
   source_type?: 'chat' | 'screen'; // Added during retrieval
   video_blob?: Blob; // Reconstructed video blob for screen recordings
   duration?: number; // Video duration in ms
@@ -35,10 +36,16 @@ export interface SearchResponse {
   screen_ids?: string[][];
 }
 
+// Video set grouping for query responses
+export interface VideoSet {
+  video_set_id: string;
+  videos: VectorData[]; // Sorted by timestamp
+}
+
 export interface QueryResponse {
   ok: boolean;
   chat_results?: VectorData[];
-  screen_results?: VectorData[];
+  screen_results?: VectorData[] | VideoSet[]; // Can be flat list or grouped sets
 }
 
 // Insert - vectorDB requires array format
@@ -82,13 +89,15 @@ export async function queryChatData(
 
 export async function queryScreenData(
   indices: string[],
-  outputFields: string[]
+  outputFields: string[],
+  queryVideoSets: boolean = false
 ): Promise<QueryResponse> {
   return apiRequestWithAuth<QueryResponse>('/api/collections/query/', {
     method: 'POST',
     body: JSON.stringify({
       screen_ids: indices,
       screen_output_fields: outputFields,
+      query_video_sets: queryVideoSets,
     }),
   });
 }
@@ -160,6 +169,45 @@ async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob
   }
 }
 
+// Helper: Merge multiple video blobs into one large video
+// This concatenates videos that are part of the same recording session
+export async function mergeVideoBlobs(videos: VectorData[]): Promise<Blob> {
+  if (videos.length === 0) {
+    throw new Error('No videos to merge');
+  }
+
+  // If only one video, return it directly
+  if (videos.length === 1 && videos[0].video_blob) {
+    return videos[0].video_blob;
+  }
+
+  // Sort videos by timestamp to ensure correct order
+  const sortedVideos = [...videos].sort((a, b) => a.timestamp - b.timestamp);
+
+  // Get blobs and mime type
+  const blobs = sortedVideos
+    .map(v => v.video_blob)
+    .filter((blob): blob is Blob => blob !== undefined);
+
+  if (blobs.length === 0) {
+    throw new Error('No video blobs found to merge');
+  }
+
+  // Use the mime type from the first video
+  const mimeType = sortedVideos[0].video_blob?.type || 'video/webm';
+
+  // Simple concatenation - works for WebM container format
+  // Note: This creates a simple concatenated file. For seamless playback,
+  // you might need more sophisticated merging using ffmpeg.wasm or similar
+  const mergedBlob = new Blob(blobs, { type: mimeType });
+
+  console.log(
+    `[VideoMerge] Merged ${blobs.length} videos into ${(mergedBlob.size / 1024).toFixed(1)} KB`
+  );
+
+  return mergedBlob;
+}
+
 // Complete RAG flow: Search + Query top-K + Decrypt (unified chat + video)
 export async function searchAndQuery(
   chatQueryVector: number[],
@@ -225,9 +273,10 @@ export async function searchAndQuery(
 
   if (chatIds.length > 0 && screenIds.length > 0) {
     // Query both collections in parallel with their respective IDs
+    // Use query_video_sets=true to get full video sets
     const [chatResult, screenResult] = await Promise.all([
       queryChatData(chatIds, outputFields),
-      queryScreenData(screenIds, outputFields)
+      queryScreenData(screenIds, outputFields, true) // Enable video set grouping
     ]);
     // Combine results
     queryResult = {
@@ -238,13 +287,31 @@ export async function searchAndQuery(
   } else if (chatIds.length > 0) {
     queryResult = await queryChatData(chatIds, outputFields);
   } else {
-    queryResult = await queryScreenData(screenIds, outputFields);
+    queryResult = await queryScreenData(screenIds, outputFields, true); // Enable video set grouping
   }
 
   // Combine results and tag with source type
+  // Handle both flat list and grouped video sets
+  let screenResults: VectorData[] = [];
+  if (queryResult.screen_results && queryResult.screen_results.length > 0) {
+    const firstResult = queryResult.screen_results[0];
+    // Check if it's a VideoSet (has video_set_id and videos properties)
+    if ('video_set_id' in firstResult && 'videos' in firstResult) {
+      // It's grouped - flatten and tag
+      screenResults = (queryResult.screen_results as VideoSet[]).flatMap(set =>
+        set.videos.map(doc => ({ ...doc, source_type: 'screen' as const }))
+      );
+    } else {
+      // It's a flat list - tag directly
+      screenResults = (queryResult.screen_results as VectorData[]).map(doc =>
+        ({ ...doc, source_type: 'screen' as const })
+      );
+    }
+  }
+
   const allResults: VectorData[] = [
     ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
-    ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
+    ...screenResults
   ];
 
   // Filter out same-session memories
@@ -290,6 +357,11 @@ export async function searchAndQuery(
     })
   );
 
+  // Optional: If video sets were queried, merge videos from the same set
+  // This can be done by grouping results by video_set_id and merging blobs
+  // For now, we return individual videos - the caller can merge them if needed
+  // using the mergeVideoBlobs() function
+
   return decryptedResults;
 }
 
@@ -301,4 +373,5 @@ export const collectionService = {
   queryScreenData,
   searchAndQuery,
   getTopKIndices,
+  mergeVideoBlobs,
 };

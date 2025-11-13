@@ -133,7 +133,7 @@ async function videoBlobToBase64(blob: Blob): Promise<string> {
 export async function storeVideoEmbedding(
   embedding: Float32Array | number[],
   videoBlob: Blob,
-  metadata: { duration: number; width?: number; height?: number }
+  metadata: { duration: number; width?: number; height?: number; video_set_id?: string }
 ): Promise<void> {
   try {
     console.log(`[Memory] Storing video embedding, size: ${(videoBlob.size / 1024).toFixed(1)} KB`);
@@ -162,6 +162,7 @@ export async function storeVideoEmbedding(
       timestamp,
       session_id: 0, // Global storage, available to all sessions
       role: 'screen_recording',
+      video_set_id: metadata.video_set_id, // Group videos into sets
     };
 
     await collectionService.insertScreenData([vectorData]);
