@@ -39,6 +39,7 @@ export type VideoChunk = {
   fps?: number;
   recordingId?: string;
   chunkIndex: number;
+  wasFocused: boolean;
 };
 
 export type EmbeddedChunk = {
@@ -84,6 +85,35 @@ export function useChunkedEmbeddingQueue(opts?: {
 
   const embedderRef = useRef<ClipVideoEmbedder | null>(null);
 
+  // Ref to track the *current* focus state of the app
+  // We default to true (focused) as a safe starting point.
+  const isAppFocusedRef = useRef(true);
+
+  // Ref to track if the *current chunk* has been focused at *any point*
+  // This is the "chunk's state variable" from the requirements.
+  const wasFocusedDuringChunkRef = useRef(true);
+
+  // Listen for focus/blur events from the preload script
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('[FocusTracker] App FOCUS');
+      isAppFocusedRef.current = true;
+      wasFocusedDuringChunkRef.current = true;
+    };
+    const handleBlur = () => {
+      console.log('[FocusTracker] App BLUR');
+      isAppFocusedRef.current = false;
+    };
+
+    window.addEventListener('clone:app-focus', handleFocus);
+    window.addEventListener('clone:app-blur', handleBlur);
+    
+    return () => {
+      window.removeEventListener('clone:app-focus', handleFocus);
+      window.removeEventListener('clone:app-blur', handleBlur);
+    };
+  }, []);
+
   const enqueue = (chunk: VideoChunk) => {
     queueRef.current.push(chunk);
     setPending(queueRef.current.length);
@@ -104,10 +134,14 @@ export function useChunkedEmbeddingQueue(opts?: {
         const { pooled, frames } = await embedder.embedVideo(chunk.blob, frameCount);
         setProcessed(v => v + 1);
 
-        const method = 'mean_pooling' // Define current method
-
         try {
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method});
+          // Method 1: Always send 'mean_pooling'
+          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling'});
+
+          // Method2: Only send 'mean_pooling_hidden' if chunk was NOT focused
+          if (!chunk.wasFocused) {
+            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden'});
+          }
         } catch (e) {
           console.error('[upload:onEmbeddedChunk] failed:', e);
           // TODO: Implement retry policy when faided to upload 
@@ -130,6 +164,7 @@ export function useChunkedEmbeddingQueue(opts?: {
         console.warn('[rotateSegment] missing recording id; dropping chunk');
         return;
       }
+      const wasFocused = wasFocusedDuringChunkRef.current;
       const currentIndex = chunkIndexRef.current++;
       enqueue({
         blob: stopped.blob,
@@ -143,7 +178,10 @@ export function useChunkedEmbeddingQueue(opts?: {
         fps: stopped.fps,
         recordingId: recordingIdRef.current,
         chunkIndex: currentIndex,
+        wasFocused: wasFocused,
       });
+
+      wasFocusedDuringChunkRef.current = isAppFocusedRef.current;
 
       if (!stoppingRef.current) {
         await recorder.start();
@@ -161,6 +199,7 @@ export function useChunkedEmbeddingQueue(opts?: {
     recordingIdRef.current = id;
     chunkIndexRef.current = 0;
     try {
+      wasFocusedDuringChunkRef.current = isAppFocusedRef.current;
       await recorder.start();
       segmentStartRef.current = Date.now();
       setIsRecording(true);
@@ -170,6 +209,7 @@ export function useChunkedEmbeddingQueue(opts?: {
       recordingIdRef.current = null;
       chunkIndexRef.current = 0;
       stoppingRef.current = true;
+      wasFocusedDuringChunkRef.current = true;
       throw error;
     }
   };
@@ -187,6 +227,7 @@ export function useChunkedEmbeddingQueue(opts?: {
         if (!recordingIdRef.current) {
           console.warn('[stopChunked] missing recording id; dropping final chunk');
         } else {
+          const wasFocused = wasFocusedDuringChunkRef.current;
           const currentIndex = chunkIndexRef.current++;
           enqueue({
             blob: stopped.blob,
@@ -200,6 +241,7 @@ export function useChunkedEmbeddingQueue(opts?: {
             fps: stopped.fps,
             recordingId: recordingIdRef.current,
             chunkIndex: currentIndex,
+            wasFocused: wasFocused,
           });
         }
       }
@@ -209,6 +251,7 @@ export function useChunkedEmbeddingQueue(opts?: {
       segmentStartRef.current = null;
       recordingIdRef.current = null;
       setIsRecording(false);
+      wasFocusedDuringChunkRef.current = true;
       // process remaining chunks in queue
       await processQueue();
       chunkIndexRef.current = 0;

@@ -208,6 +208,14 @@ const createWindow = () => {
     mainWindow?.show();
   });
 
+  mainWindow.on('focus', () => {
+    mainWindow?.webContents.send('app:focus');
+  });
+
+  mainWindow.on('blur', () => {
+    mainWindow?.webContents.send('app:blur');
+  });
+
   return mainWindow;
 };
 
