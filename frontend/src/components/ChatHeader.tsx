@@ -168,7 +168,7 @@ export function ChatHeader({
             title="Embedding chunks..."
             disabled
           >
-            Embedding...
+            Processing...
           </Button>
         ) : (
           <Button
