@@ -40,6 +40,7 @@ export type VideoChunk = {
   recordingId?: string;
   chunkIndex: number;
   wasFocused: boolean;
+  video_set_id: string | null;
 };
 
 export type EmbeddedChunk = {
@@ -52,6 +53,7 @@ export type EmbeddedChunk = {
 export function useChunkedEmbeddingQueue(opts?: {
   chunkMs?: number;
   frameCount?: number;
+  setSize?: number;
   onEmbeddedChunk?: (r: EmbeddedChunk) => void | Promise<void>;
 }) {
   const recorder = useRecorder();
@@ -66,6 +68,11 @@ export function useChunkedEmbeddingQueue(opts?: {
       ? Number((import.meta as any).env.VITE_VIDEO_SAMPLING_FRAMES)
       : 10
   );
+  const setSize = opts?.setSize ?? (
+    (import.meta as any).env?.VITE_VIDEO_SET_SIZE
+      ? Number((import.meta as any).env.VITE_VIDEO_SET_SIZE)
+      : 15
+  );
 
   const onEmbeddedChunk = opts?.onEmbeddedChunk;
 
@@ -79,6 +86,7 @@ export function useChunkedEmbeddingQueue(opts?: {
   const stoppingRef = useRef(false);
   const recordingIdRef = useRef<string | null>(null);
   const chunkIndexRef = useRef(0);
+  const videoSetIdRef = useRef<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const segmentStartRef = useRef<number | null>(null);
@@ -136,11 +144,19 @@ export function useChunkedEmbeddingQueue(opts?: {
 
         try {
           // Method 1: Always send 'mean_pooling'
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling'});
+          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling' });
 
           // Method2: Only send 'mean_pooling_hidden' if chunk was NOT focused
           if (!chunk.wasFocused) {
-            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden'});
+            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden' });
+          }
+
+          // Method3: Always send 'video_set'
+          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' })
+
+          // Method2: Only send 'video_set_hidden' if chunk was NOT focused
+          if (!chunk.wasFocused) {
+            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set_hidden' });
           }
         } catch (e) {
           console.error('[upload:onEmbeddedChunk] failed:', e);
@@ -166,6 +182,11 @@ export function useChunkedEmbeddingQueue(opts?: {
       }
       const wasFocused = wasFocusedDuringChunkRef.current;
       const currentIndex = chunkIndexRef.current++;
+
+      // Check if we need a new set ID
+      if (currentIndex > 0 && currentIndex % setSize == 0) {
+        videoSetIdRef.current = `set-${Date.now()}`;
+      }
       enqueue({
         blob: stopped.blob,
         objectUrl: stopped.objectUrl,
@@ -179,6 +200,7 @@ export function useChunkedEmbeddingQueue(opts?: {
         recordingId: recordingIdRef.current,
         chunkIndex: currentIndex,
         wasFocused: wasFocused,
+        video_set_id: videoSetIdRef.current,
       });
 
       wasFocusedDuringChunkRef.current = isAppFocusedRef.current;
@@ -198,6 +220,7 @@ export function useChunkedEmbeddingQueue(opts?: {
     const id = recordingId ?? generateRecordingId();
     recordingIdRef.current = id;
     chunkIndexRef.current = 0;
+    videoSetIdRef.current = `set-${Date.now()}`;
     try {
       wasFocusedDuringChunkRef.current = isAppFocusedRef.current;
       await recorder.start();
@@ -209,6 +232,7 @@ export function useChunkedEmbeddingQueue(opts?: {
       recordingIdRef.current = null;
       chunkIndexRef.current = 0;
       stoppingRef.current = true;
+      videoSetIdRef.current = null;
       wasFocusedDuringChunkRef.current = true;
       throw error;
     }
@@ -229,6 +253,12 @@ export function useChunkedEmbeddingQueue(opts?: {
         } else {
           const wasFocused = wasFocusedDuringChunkRef.current;
           const currentIndex = chunkIndexRef.current++;
+
+          // Check if we need a new set ID
+          if (currentIndex > 0 && currentIndex % setSize == 0) {
+            videoSetIdRef.current = `set-${Date.now()}`;
+          }
+
           enqueue({
             blob: stopped.blob,
             objectUrl: stopped.objectUrl,
@@ -242,6 +272,7 @@ export function useChunkedEmbeddingQueue(opts?: {
             recordingId: recordingIdRef.current,
             chunkIndex: currentIndex,
             wasFocused: wasFocused,
+            video_set_id: videoSetIdRef.current,
           });
         }
       }
@@ -251,6 +282,7 @@ export function useChunkedEmbeddingQueue(opts?: {
       segmentStartRef.current = null;
       recordingIdRef.current = null;
       setIsRecording(false);
+      videoSetIdRef.current = null;
       wasFocusedDuringChunkRef.current = true;
       // process remaining chunks in queue
       await processQueue();

@@ -58,6 +58,8 @@ export function ChatHeader({
   } = useChunkedEmbeddingQueue({
     onEmbeddedChunk: async ({ chunk, pooled, method }) => {
       try {
+        const shouldSendVideoSetID = method == 'video_set' || method == 'video_set_hidden';
+        const videoSetIdToSend = shouldSendVideoSetID ? chunk.video_set_id : null;
         await memoryService.storeVideoEmbedding(
           pooled,
           chunk.blob,
@@ -66,7 +68,8 @@ export function ChatHeader({
             width: chunk.width,
             height: chunk.height,
           },
-          method
+          method,
+          videoSetIdToSend
         );
       } catch (error) {
         console.error('[video upload] failed:', error);
