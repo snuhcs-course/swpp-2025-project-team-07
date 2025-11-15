@@ -174,7 +174,7 @@ export function useChunkedEmbeddingQueue(opts?: {
   const rotateSegment = async () => {
     try {
       const startedAt = segmentStartRef.current!;
-      const stopped = await recorder.stop();
+      const stopped = await recorder.stop({ releaseStream: false });
       const now = Date.now();
       if (!recordingIdRef.current) {
         console.warn('[rotateSegment] missing recording id; dropping chunk');
@@ -246,7 +246,7 @@ export function useChunkedEmbeddingQueue(opts?: {
     try {
       const startedAt = segmentStartRef.current;
       if (startedAt) {
-        const stopped = await recorder.stop();
+        const stopped = await recorder.stop({ releaseStream: true });
         const end = Date.now();
         if (!recordingIdRef.current) {
           console.warn('[stopChunked] missing recording id; dropping final chunk');

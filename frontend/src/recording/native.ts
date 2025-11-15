@@ -25,15 +25,19 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
     this.isStopping = false;
     const withAudio = opts?.withAudio ?? false;
 
-    const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
-      video: { frameRate: 30 },  // control the frame rate
-      audio: withAudio,
-    });
-
-    this.stream = displayStream;
+    if (!this.stream || !this.stream.active) {
+      console.log('[NativeRecorder] Acquiring new display media stream...');
+      const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: { frameRate: 30 },  // control the frame rate
+        audio: withAudio,
+      });
+      this.stream = displayStream;
+    } else {
+      console.log('[NativeRecorder] Reusing existing display media stream.');
+    }
 
     const mimeType = pickBestMime();
-    const mr = new MediaRecorder(displayStream, {
+    const mr = new MediaRecorder(this.stream!, {
       mimeType,
       videoBitsPerSecond: 5_000_000, // control the quality of the video
     });
@@ -51,14 +55,13 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
     this.startedAt = Date.now();
   }
 
-  async stop(): Promise<RecordingResult> {
+  async stop(options?: { releaseStream?: boolean }): Promise<RecordingResult> {
     if (!this.mediaRecorder) throw new Error('Not recording');
     if (this.isStopping) {
       throw new Error('Stop is already in progress');
     }
     this.isStopping = true;
     const mr = this.mediaRecorder;
-    const stream = this.stream;
 
     try {
       const done = new Promise<void>((resolve, reject) => {
@@ -71,9 +74,13 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
       const endedAt = Date.now();
       const blob = new Blob(this.chunks, { type: mr.mimeType });
 
-      this.stream?.getTracks().forEach((t) => t.stop());
+      if (options?.releaseStream) {
+        console.log('[NativeRecorder] Releasing display media stream.');
+        this.stream?.getTracks().forEach((t) => t.stop());
+        this.stream = undefined;
+      }
 
-      const [v] = this.stream?.getVideoTracks() ?? [];
+      const [v] = (this.stream ?? mr.stream)?.getVideoTracks() ?? [];
       const s = v?.getSettings?.() ?? {};
       const width = Number(s.width ?? 0);
       const height = Number(s.height ?? 0);
@@ -93,7 +100,6 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
     } finally {
       this.isStopping = false;
       this.mediaRecorder = undefined; 
-      this.stream = undefined;
       this.chunks = [];
     }
   }

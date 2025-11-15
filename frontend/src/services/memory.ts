@@ -138,7 +138,7 @@ export async function storeVideoEmbedding(
   video_set_id: string | null = null
 ): Promise<void> {
   try {
-    console.log(`[Memory] Storing video embedding (version: ${collection_version}), size: ${(videoBlob.size / 1024).toFixed(1)} KB`);
+    console.log(`[Memory] Storing video embedding (version: ${collection_version}), size: ${(videoBlob.size / 1024).toFixed(1)} KB, duration: ${metadata.duration}ms`);
 
     // Convert original video blob to base64
     const videoBase64 = await videoBlobToBase64(videoBlob);
