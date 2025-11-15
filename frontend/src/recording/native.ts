@@ -14,6 +14,7 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
   private chunks: BlobPart[] = [];
   private stream?: MediaStream;
   private startedAt = 0;
+  private isStopping = false;
 
   init() {
     // no-op
@@ -21,6 +22,7 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
 
   async start(opts?: { sourceId?: string; withAudio?: boolean }) {
     this.chunks = [];
+    this.isStopping = false;
     const withAudio = opts?.withAudio ?? false;
 
     const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
@@ -51,36 +53,49 @@ class NativeDesktopRecorder implements BaseDesktopRecorder {
 
   async stop(): Promise<RecordingResult> {
     if (!this.mediaRecorder) throw new Error('Not recording');
+    if (this.isStopping) {
+      throw new Error('Stop is already in progress');
+    }
+    this.isStopping = true;
     const mr = this.mediaRecorder;
+    const stream = this.stream;
 
-    const done = new Promise<void>((resolve) => {
-      mr.onstop = () => resolve();
-    });
-    mr.stop();
-    await done;
+    try {
+      const done = new Promise<void>((resolve, reject) => {
+        mr.onstop = () => resolve();
+        mr.onerror = (e) => reject(new Error('MediaRecorder stop error'));
+      });
+      mr.stop();
+      await done;
 
-    const endedAt = Date.now();
-    const blob = new Blob(this.chunks, { type: mr.mimeType });
+      const endedAt = Date.now();
+      const blob = new Blob(this.chunks, { type: mr.mimeType });
 
-    this.stream?.getTracks().forEach((t) => t.stop());
+      this.stream?.getTracks().forEach((t) => t.stop());
 
-    const [v] = this.stream?.getVideoTracks() ?? [];
-    const s = v?.getSettings?.() ?? {};
-    const width = Number(s.width ?? 0);
-    const height = Number(s.height ?? 0);
-    const fps = Number(s.frameRate ?? 0);
+      const [v] = this.stream?.getVideoTracks() ?? [];
+      const s = v?.getSettings?.() ?? {};
+      const width = Number(s.width ?? 0);
+      const height = Number(s.height ?? 0);
+      const fps = Number(s.frameRate ?? 0);
 
-    return {
-      blob,
-      mimeType: mr.mimeType,
-      durationMs: endedAt - this.startedAt,
-      width,
-      height,
-      fps,
-      startedAt: this.startedAt,
-      endedAt,
-      objectUrl: URL.createObjectURL(blob), // for preview
-    };
+      return {
+        blob,
+        mimeType: mr.mimeType,
+        durationMs: endedAt - this.startedAt,
+        width,
+        height,
+        fps,
+        startedAt: this.startedAt,
+        endedAt,
+        objectUrl: URL.createObjectURL(blob), // for preview
+      };
+    } finally {
+      this.isStopping = false;
+      this.mediaRecorder = undefined; 
+      this.stream = undefined;
+      this.chunks = [];
+    }
   }
 }
 
