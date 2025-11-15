@@ -13,9 +13,8 @@ export type RecordingResult = {
 export interface BaseDesktopRecorder {
   init(): Promise<void> | void;
   start(opts?: { sourceId?: string; withAudio?: boolean }): Promise<void>;
-  stop(): Promise<RecordingResult>;
+  stop(options?: { releaseStream?: boolean }): Promise<RecordingResult>;
 
   getSources?: () => Promise<Array<{ id: string; name: string; thumbnailURL?: string }>>;
   chooseSource?: (sourceId: string) => Promise<void>;
-
 }
