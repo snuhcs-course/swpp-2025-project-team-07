@@ -81,7 +81,7 @@ class VectorDBClient:
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if chat_data:
-                chat_collection = self._get_collection_name(user_id, "chat", collection_version)
+                chat_collection = self._get_collection_name(user_id, "chat", None)
                 chat_payload = {
                     "collection_name": chat_collection,
                     "data": chat_data,
@@ -145,7 +145,7 @@ class VectorDBClient:
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if chat_data:
-                chat_collection = self._get_collection_name(user_id, "chat", collection_version)
+                chat_collection = self._get_collection_name(user_id, "chat", None)
                 chat_payload = {
                     "collection_name": chat_collection,
                     "data": chat_data,
@@ -215,7 +215,7 @@ class VectorDBClient:
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if chat_ids and chat_output_fields:
-                chat_collection = self._get_collection_name(user_id, "chat", collection_version)
+                chat_collection = self._get_collection_name(user_id, "chat", None)
                 chat_payload = {
                     "collection_name": chat_collection,
                     "ids": chat_ids,
@@ -280,7 +280,7 @@ class VectorDBClient:
         with ThreadPoolExecutor(max_workers=2) as executor:
             if create_chat:
                 # Create chat collection (768-dim, IP metric)
-                chat_collection = self._get_collection_name(user_id, "chat", collection_version)
+                chat_collection = self._get_collection_name(user_id, "chat", None)
                 chat_payload = {
                     "collection_name": chat_collection,
                     "dimension": 768,
@@ -344,7 +344,7 @@ class VectorDBClient:
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             if drop_chat:
-                chat_collection = self._get_collection_name(user_id, "chat", collection_version)
+                chat_collection = self._get_collection_name(user_id, "chat", None)
                 chat_payload = {
                     "collection_name": chat_collection,
                 }
