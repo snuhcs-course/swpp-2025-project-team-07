@@ -1,7 +1,6 @@
 // VectorDB API service - stores chat embeddings for memory
 
 import { apiRequestWithAuth } from '@/utils/apiRequest';
-import { type AuthUser } from '.@/services/auth';
 
 // Vector data for insertion (combined messages → 1 vector entry)
 export interface VectorData {
@@ -50,45 +49,10 @@ export async function insertChatData(chatData: VectorData[]): Promise<InsertResp
   });
 }
 
-export async function insertScreenData(
-  screenData: VectorData[],
-  collection_version?: string
-): Promise<InsertResponse> {
+export async function insertScreenData(screenData: VectorData[]): Promise<InsertResponse> {
   return apiRequestWithAuth<InsertResponse>('/api/collections/insert/', {
     method: 'POST',
-    body: JSON.stringify({ 
-      screen_data: screenData,
-      collection_version: collection_version,
-    }),
-  });
-}
-
-export interface ClearCollectionsRequest {
-  user_id: number;
-  clear_chat: boolean;
-  clear_screen: boolean;
-  collection_version?: string;
-}
-
-export interface ClearCollectionsResponse {
-  ok: boolean;
-  message: string;
-}
-
-export async function clearCollections(
-  user: AuthUser,
-  collection_version: string,
-  clear_chat: boolean = false,
-  clear_screen: boolean = true
-): Promise<ClearCollectionsResponse> {
-  return apiRequestWithAuth<ClearCollectionsResponse>('/api/collections/clear/', {
-    method: 'POST',
-    body: JSON.stringify({
-      user_id: user.id,
-      clear_chat: clear_chat,
-      clear_screen: clear_screen,
-      collection_version: collection_version,
-    }),
+    body: JSON.stringify({ screen_data: screenData }),
   });
 }
 
@@ -332,7 +296,6 @@ export async function searchAndQuery(
 export const collectionService = {
   insertChatData,
   insertScreenData,
-  clearCollections,
   searchChatData,
   queryChatData,
   queryScreenData,

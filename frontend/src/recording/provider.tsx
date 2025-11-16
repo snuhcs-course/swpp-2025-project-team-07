@@ -45,7 +45,6 @@ export type EmbeddedChunk = {
   chunk: VideoChunk;
   pooled: Float32Array;
   frames: ClipVideoEmbedding['frames'];
-  method: string;
 };
 
 export function useChunkedEmbeddingQueue(opts?: {
@@ -104,10 +103,8 @@ export function useChunkedEmbeddingQueue(opts?: {
         const { pooled, frames } = await embedder.embedVideo(chunk.blob, frameCount);
         setProcessed(v => v + 1);
 
-        const method = 'mean_pooling' // Define current method
-
         try {
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method});
+          await onEmbeddedChunk?.({ chunk, pooled, frames });
         } catch (e) {
           console.error('[upload:onEmbeddedChunk] failed:', e);
           // TODO: Implement retry policy when faided to upload 

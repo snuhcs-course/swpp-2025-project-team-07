@@ -56,7 +56,7 @@ export function ChatHeader({
     isRecording,
     isProcessing,
   } = useChunkedEmbeddingQueue({
-    onEmbeddedChunk: async ({ chunk, pooled, method }) => {
+    onEmbeddedChunk: async ({ chunk, pooled }) => {
       try {
         await memoryService.storeVideoEmbedding(
           pooled,
@@ -65,8 +65,7 @@ export function ChatHeader({
             duration: chunk.durationMs,
             width: chunk.width,
             height: chunk.height,
-          },
-          method
+          }
         );
       } catch (error) {
         console.error('[video upload] failed:', error);
