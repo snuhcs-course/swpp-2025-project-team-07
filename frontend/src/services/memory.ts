@@ -134,10 +134,10 @@ export async function storeVideoEmbedding(
   embedding: Float32Array | number[],
   videoBlob: Blob,
   metadata: { duration: number; width?: number; height?: number },
-  collection_version: string = 'mean_pooling'
+  suffix: number = 1
 ): Promise<void> {
   try {
-    console.log(`[Memory] Storing video embedding (version: ${collection_version}), size: ${(videoBlob.size / 1024).toFixed(1)} KB`);
+    console.log(`[Memory] Storing video embedding, size: ${(videoBlob.size / 1024).toFixed(1)} KB`);
 
     // Convert original video blob to base64
     const videoBase64 = await videoBlobToBase64(videoBlob);
@@ -157,18 +157,19 @@ export async function storeVideoEmbedding(
     const timestamp = Date.now();
 
     const vectorData: VectorData = {
-      id: `screen_${timestamp}`,
+      id: `screen_${timestamp}_${suffix}`,
       vector: Array.from(embedding),
       content: encryptedPayload,
       timestamp,
       session_id: 0, // Global storage, available to all sessions
       role: 'screen_recording',
+      suffix: suffix,
     };
 
-    await collectionService.insertScreenData([vectorData], collection_version);
-    console.log(`[Memory] Successfully stored video embedding for version "${collection_version}" (${(videoBlob.size / 1024).toFixed(1)} KB)`);
+    await collectionService.insertScreenData([vectorData]);
+    console.log(`[Memory] Successfully stored video embedding with method "${suffix}" (${(videoBlob.size / 1024).toFixed(1)} KB)`);
   } catch (error) {
-    console.error(`[Memory] Failed to store video embedding (version: ${collection_version}):`, error);
+    console.error(`[Memory] Failed to store video embedding with method "${suffix}:`, error);
     throw error;
   }
 }
