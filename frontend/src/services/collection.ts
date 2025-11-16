@@ -15,7 +15,6 @@ export interface VectorData {
   video_blob?: Blob; // Reconstructed video blob for screen recordings
   duration?: number; // Video duration in ms
   frame_count?: number; // Number of frames
-  suffix?: number;  // To identify the embedding method
   [key: string]: any;
 }
 
