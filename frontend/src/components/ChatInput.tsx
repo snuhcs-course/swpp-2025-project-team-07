@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, Square, Video } from 'lucide-react';
+import { Send, Square, Video, Sparkles } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import type { ChatRunState } from './ChatInterface';
@@ -13,6 +13,8 @@ interface ChatInputProps {
   isStopping?: boolean;
   videoRagEnabled?: boolean;
   onToggleVideoRag?: () => void;
+  queryTransformEnabled?: boolean;
+  onToggleQueryTransform?: () => void;
 }
 
 export function ChatInput({
@@ -23,6 +25,8 @@ export function ChatInput({
   isStopping = false,
   videoRagEnabled = false,
   onToggleVideoRag,
+  queryTransformEnabled = true,
+  onToggleQueryTransform,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -101,9 +105,10 @@ export function ChatInput({
                 rows={1}
               />
 
-              {/* Video RAG toggle button - positioned at bottom left */}
-              {onToggleVideoRag && (
-                <div className="absolute bottom-0 left-1">
+              {/* Toggle buttons - positioned at bottom */}
+              <div className="absolute bottom-0 left-1 flex items-center gap-1">
+                {/* Video RAG toggle */}
+                {onToggleVideoRag && (
                   <Button
                     onClick={onToggleVideoRag}
                     disabled={isStreaming}
@@ -122,11 +127,36 @@ export function ChatInput({
                       transition={{ duration: 0.15 }}
                     >
                       <Video className="w-3.5 h-3.5" />
-                      <span className="text-xs font-medium">Video search</span>
+                      <span className="text-xs font-medium">Video</span>
                     </motion.div>
                   </Button>
-                </div>
-              )}
+                )}
+
+                {/* Query Transform toggle */}
+                {onToggleQueryTransform && videoRagEnabled && (
+                  <Button
+                    onClick={onToggleQueryTransform}
+                    disabled={isStreaming}
+                    variant="ghost"
+                    className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full ${
+                      queryTransformEnabled
+                        ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                        : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50'
+                    } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={queryTransformEnabled ? 'Disable smart query enhancement' : 'Enable smart query enhancement'}
+                  >
+                    <motion.div
+                      className="flex items-center gap-1.5"
+                      whileHover={{ scale: isStreaming ? 1 : 1.02 }}
+                      whileTap={{ scale: isStreaming ? 1 : 0.98 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Smart</span>
+                    </motion.div>
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Send button */}
