@@ -1199,8 +1199,8 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
             <div
               className={
                 (!currentSession?.messages || currentSession.messages.length === 0)
-                  ? 'pt-[calc(50vh-13rem)]'
-                  : 'flex-1 flex flex-col'
+                  ? 'pt-[calc(50vh-13rem)] overflow-auto min-h-0'
+                  : 'flex-1 flex flex-col overflow-auto min-h-0'
               }
             >
               <ChatMessages
@@ -1210,15 +1210,17 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
                 statusIndicator={statusIndicatorNode}
               />
             </div>
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              onStop={handleStopGeneration}
-              runState={runState}
-              modelNotReady={!isModelReady}
-              isStopping={isStoppingGeneration}
-              videoRagEnabled={videoRagEnabled}
-              onToggleVideoRag={handleToggleVideoRag}
-            />
+            <div className="flex-shrink-0">
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                onStop={handleStopGeneration}
+                runState={runState}
+                modelNotReady={!isModelReady}
+                isStopping={isStoppingGeneration}
+                videoRagEnabled={videoRagEnabled}
+                onToggleVideoRag={handleToggleVideoRag}
+              />
+            </div>
           </motion.div>
         </div>
       </div>
