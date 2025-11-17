@@ -97,7 +97,7 @@ export function ChatInput({
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={isStreaming ? "AI is thinking..." : videoRagEnabled ? "Describe the video..." : "Type your message..."}
-                className="break-all min-h-0 max-h-35 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none pl-2 pr-7 py-0 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                className="break-words min-h-0 max-h-35 border-0 dark:bg-background bg-background focus:ring-0 focus:outline-none pl-2 pr-7 py-0 placeholder:text-muted-foreground/60 text-primary focus-visible:ring-0 disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 rows={1}
               />
             </div>

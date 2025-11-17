@@ -101,12 +101,12 @@ export function ChatMessages({ user, messages, isLoading = false, statusIndicato
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
-            className={`flex items-start space-x-4 ${
+            className={`flex min-w-0 items-start space-x-4 ${
               message.isUser ? 'flex-row-reverse space-x-reverse' : ''
             }`}
           >
             {/* Message content */}
-            <div className={`flex-1 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
+            <div className={`flex-1 min-w-0 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
               {message.isUser ? (
                 <motion.div
                   initial={{ scale: 1, opacity: 0.8 }}
