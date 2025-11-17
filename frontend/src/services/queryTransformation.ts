@@ -28,12 +28,12 @@ export interface TransformedQuery {
   search_keywords: string;
   /** Descriptive visual attributes to look for */
   visual_cues: string;
-  /** Inferred user interaction (e.g., "Hover", "Click", "Focused viewing") */
-  user_action: string | null;
   /** Confidence score from 0.0 to 1.0 */
   confidence_score: number;
   /** Original vague query */
   original_query: string;
+  /** Guidance for how to craft the final response */
+  response_guidance: string;
 }
 
 /**
@@ -132,25 +132,26 @@ Analyze the query and provide a structured JSON output with the following fields
 
 1. **search_keywords**: Highly specific terms for RAG retrieval (e.g., "Nike, Air Jordan 1, basketball shoe")
 2. **visual_cues**: Descriptive image attributes (e.g., "blue and white color scheme, high-top shoe")
-3. **user_action**: Inferred user interaction (e.g., "Hover", "Click", "Focused viewing", or null if unknown)
-4. **confidence_score**: A float from 0.0 to 1.0 indicating your certainty that the transformed query will lead to successful retrieval
+3. **confidence_score**: A float from 0.0 to 1.0 indicating your certainty that the transformed query will lead to successful retrieval
    - 0.0-0.3: Very uncertain, major information missing
    - 0.3-0.65: Low confidence, clarification needed
    - 0.65-0.85: Moderate confidence, likely to succeed
    - 0.85-1.0: High confidence, very specific query
+4. **response_guidance**: Instructions for how to craft the final response after retrieval (e.g., "User wants to recall a red Nike shoe they viewed. Reference the specific product from screen recordings.")
 
 **Important Guidelines:**
 - If the query is already specific, confidence should be high (>0.8)
 - If the query is vague and critical information is missing, confidence should be low (<0.65)
 - Use conversation history to infer context
 - Be conservative with confidence scores - it's better to ask for clarification than to return poor results
+- response_guidance should be 1-2 sentences explaining what the user wants and how to respond with retrieved data
 
 **Output Format (JSON only, no explanation):**
 {
   "search_keywords": "...",
   "visual_cues": "...",
-  "user_action": "..." or null,
-  "confidence_score": 0.0
+  "confidence_score": 0.0,
+  "response_guidance": "..."
 }`;
 
   try {
@@ -167,11 +168,11 @@ Analyze the query and provide a structured JSON output with the following fields
     const transformed: TransformedQuery = {
       search_keywords: parsed.search_keywords || '',
       visual_cues: parsed.visual_cues || '',
-      user_action: parsed.user_action || null,
       confidence_score: typeof parsed.confidence_score === 'number'
         ? Math.max(0, Math.min(1, parsed.confidence_score))
         : 0.5,
       original_query: current_query,
+      response_guidance: parsed.response_guidance || `Help the user with their query about ${parsed.search_keywords || current_query}. Be specific and cite sources from the retrieved data.`,
     };
 
     console.log('[QueryTransform] Transformed query:', transformed);
@@ -182,9 +183,9 @@ Analyze the query and provide a structured JSON output with the following fields
     return {
       search_keywords: current_query,
       visual_cues: '',
-      user_action: null,
       confidence_score: 0.4,
       original_query: current_query,
+      response_guidance: `Help the user with their query: "${current_query}". Be specific and cite sources from the retrieved data.`,
     };
   }
 }
@@ -214,7 +215,6 @@ export async function generateClarification(
 **Current Transformation:**
 - Search Keywords: ${transformedQuery.search_keywords}
 - Visual Cues: ${transformedQuery.visual_cues}
-- User Action: ${transformedQuery.user_action || 'Unknown'}
 
 **Conversation History:**
 ${conversationHistoryStr}
@@ -293,14 +293,14 @@ export async function refineQuery(
 ${conversationHistoryStr}
 
 **Your Task:**
-Combine all this information to generate a final, highly specific structured search object.
+Combine all this information to generate a final, highly specific structured search object. The confidence_score should be near 1.0 (0.85-1.0) due to the added information. Also generate response_guidance explaining what the user wants and how to respond.
 
 **Output Format (JSON only, no explanation):**
 {
   "search_keywords": "...",
   "visual_cues": "...",
-  "user_action": "..." or null,
-  "confidence_score": 0.9
+  "confidence_score": 0.9,
+  "response_guidance": "..."
 }`;
 
   try {
@@ -314,11 +314,11 @@ Combine all this information to generate a final, highly specific structured sea
     const refined: TransformedQuery = {
       search_keywords: parsed.search_keywords || userResponse,
       visual_cues: parsed.visual_cues || '',
-      user_action: parsed.user_action || null,
       confidence_score: typeof parsed.confidence_score === 'number'
         ? Math.max(0.85, Math.min(1, parsed.confidence_score)) // Ensure high confidence after clarification
         : 0.9,
       original_query: `${originalQuery} [clarified: ${userResponse}]`,
+      response_guidance: parsed.response_guidance || `User clarified they want: ${userResponse}. Reference the specific item from screen recordings and be detailed.`,
     };
 
     console.log('[QueryTransform] Refined query:', refined);
@@ -329,9 +329,9 @@ Combine all this information to generate a final, highly specific structured sea
     return {
       search_keywords: `${originalQuery} ${userResponse}`,
       visual_cues: userResponse,
-      user_action: null,
       confidence_score: 0.85,
       original_query: `${originalQuery} [clarified: ${userResponse}]`,
+      response_guidance: `User clarified they want: ${userResponse}. Reference the specific item from screen recordings and be detailed.`,
     };
   }
 }
@@ -352,17 +352,7 @@ export function needsClarification(transformedQuery: TransformedQuery): boolean 
  * Focuses on keywords with action context
  */
 export function getChatSearchQuery(transformedQuery: TransformedQuery): string {
-  const parts: string[] = [];
-
-  // Primary search terms (most important)
-  parts.push(transformedQuery.search_keywords);
-
-  // Add action context if available (helps with temporal/behavioral context)
-  if (transformedQuery.user_action) {
-    parts.push(`action: ${transformedQuery.user_action.toLowerCase()}`);
-  }
-
-  return parts.join('. ');
+    return transformedQuery.search_keywords
 }
 
 /**

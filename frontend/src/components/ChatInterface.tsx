@@ -876,13 +876,35 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
       // Construct the current message with RAG context
       let messageWithContext = '';
 
-      if (contextPrompt) {
-        // If we have RAG context, include it
-        messageWithContext += contextPrompt + '\n\n';
-      }
+      if (transformedQuery && queryTransformEnabled) {
+        messageWithContext = `<search_context>
+User Intent: ${transformedQuery.response_guidance}
+Search Focus: ${transformedQuery.search_keywords}
+Visual Details: ${transformedQuery.visual_cues || 'Not specified'}
+</search_context>
 
-      // Add the current user message
-      messageWithContext += content;
+<retrieved_data>
+${contextPrompt || 'No additional context retrieved'}
+</retrieved_data>
+
+<synthesis_task>
+${transformedQuery.response_guidance}
+
+Requirements:
+- Be specific to what the user is looking for
+- Cite sources naturally in your response (mention which screen recording or conversation)
+- Focus on the following keywords: ${transformedQuery.search_keywords}
+</synthesis_task>
+
+User Query: ${content}`;
+      } else {
+        // Fallback to current behavior when query transformation is disabled
+        if (contextPrompt) {
+          messageWithContext += contextPrompt + '\n\n';
+        }
+
+        messageWithContext += content;
+      }
 
       // Log RAG summary
       console.log('[RAG] Context retrieval complete:', {
