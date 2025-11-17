@@ -39,6 +39,16 @@ contextBridge.exposeInMainWorld("recorder", {
   stop: () => stopRecording(),
 });
 
+if (typeof window !== 'undefined') {
+  ipcRenderer.on('app:focus', () => {
+    window.dispatchEvent(new Event('clone:app-focus'));
+  });
+
+  ipcRenderer.on('app:blur', () => {
+    window.dispatchEvent(new Event('clone:app-blur'));
+  });
+}
+
 // Expose LLM API to renderer process
 contextBridge.exposeInMainWorld('llmAPI', {
   // Chat methods
