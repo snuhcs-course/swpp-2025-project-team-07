@@ -288,6 +288,7 @@ def query_collection(request):
     # Expand screen_ids to include full video sets if requested
     video_set_mapping = None
     if query_video_sets and screen_ids:
+        original_screen_ids = screen_ids.copy()  # Preserve original for representative_id
         screen_ids, video_set_mapping = _expand_to_video_sets_with_mapping(
             request.user.id, screen_ids, collection_version
         )
@@ -308,7 +309,7 @@ def query_collection(request):
     # Group screen results by video_set_id if requested
     screen_results = results.get("screen_results", [])
     if query_video_sets and video_set_mapping:
-        screen_results = _group_by_video_sets(screen_results, video_set_mapping)
+        screen_results = _group_by_video_sets(screen_results, video_set_mapping, original_screen_ids)
 
     return Response(
         {
@@ -546,18 +547,20 @@ def _expand_to_video_sets_with_mapping(
     return original_video_ids, mapping
 
 
-def _group_by_video_sets(videos: list, video_set_mapping: dict) -> list:
+def _group_by_video_sets(videos: list, video_set_mapping: dict, original_screen_ids: list) -> list:
     """
     Group a list of videos by their video_set_id.
 
     Args:
         videos: List of video objects from vectordb
         video_set_mapping: Dict from _expand_to_video_sets_with_mapping
+        original_screen_ids: List of screen IDs from the original request (before expansion)
 
     Returns:
         List of video sets, each containing:
         {
             "video_set_id": str,
+            "representative_id": str,
             "videos": [list of video objects sorted by timestamp]
         }
 
@@ -570,6 +573,7 @@ def _group_by_video_sets(videos: list, video_set_mapping: dict) -> list:
         Output: [
             {
                 "video_set_id": "set-A",
+                "representative_id": "screen_100",
                 "videos": [
                     {"id": "screen_100", "content": "..."},
                     {"id": "screen_101", "content": "..."}
@@ -577,6 +581,7 @@ def _group_by_video_sets(videos: list, video_set_mapping: dict) -> list:
             },
             {
                 "video_set_id": "set-B",
+                "representative_id": "screen_200",
                 "videos": [{"id": "screen_200", "content": "..."}]
             }
         ]
@@ -605,7 +610,20 @@ def _group_by_video_sets(videos: list, video_set_mapping: dict) -> list:
     for video_set_id, video_list in sets.items():
         # Sort videos within set by timestamp
         sorted_videos = sorted(video_list, key=lambda v: v.get("timestamp", 0))
-        result.append({"video_set_id": video_set_id, "videos": sorted_videos})
+
+        # Find representative_id: the video from original request that appears first
+        representative_id = None
+        for original_id in original_screen_ids:
+            # Check if this original_id is in the current video set
+            if any(v.get("id") == original_id for v in video_list):
+                representative_id = original_id
+                break
+
+        result.append({
+            "video_set_id": video_set_id,
+            "representative_id": representative_id,
+            "videos": sorted_videos
+        })
 
     # Sort sets by the earliest timestamp in each set
     result.sort(key=lambda s: s["videos"][0].get("timestamp", 0) if s["videos"] else 0)
