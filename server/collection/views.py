@@ -309,7 +309,9 @@ def query_collection(request):
     # Group screen results by video_set_id if requested
     screen_results = results.get("screen_results", [])
     if query_video_sets and video_set_mapping:
-        screen_results = _group_by_video_sets(screen_results, video_set_mapping, original_screen_ids)
+        screen_results = _group_by_video_sets(
+            screen_results, video_set_mapping, original_screen_ids
+        )
 
     return Response(
         {
@@ -619,11 +621,13 @@ def _group_by_video_sets(videos: list, video_set_mapping: dict, original_screen_
                 representative_id = original_id
                 break
 
-        result.append({
-            "video_set_id": video_set_id,
-            "representative_id": representative_id,
-            "videos": sorted_videos
-        })
+        result.append(
+            {
+                "video_set_id": video_set_id,
+                "representative_id": representative_id,
+                "videos": sorted_videos,
+            }
+        )
 
     # Sort sets by the earliest timestamp in each set
     result.sort(key=lambda s: s["videos"][0].get("timestamp", 0) if s["videos"] else 0)
