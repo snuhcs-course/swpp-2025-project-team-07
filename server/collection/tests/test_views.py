@@ -359,14 +359,14 @@ class TestClearCollections:
         # Mock drop operations
         responses.add(
             responses.POST,
-            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/drop_collection/",
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/drop_collection/",
             json={"ok": True, "result": {"status": "dropped"}},
             status=200,
         )
         # Mock create operations
         responses.add(
             responses.POST,
-            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8000/api/vectordb/create_collection/",
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/create_collection/",
             json={"ok": True, "result": {"status": "created"}},
             status=200,
         )
@@ -374,8 +374,8 @@ class TestClearCollections:
         url = reverse("clear_collections")
         data = {
             "user_id": 123,
-            "clear_chat": True,
-            "clear_screen": False,
+            "clear_chat": False,
+            "clear_screen": True,
             "collection_version": "v3",
         }
         response = api_client.post(url, data, format="json")
@@ -383,8 +383,8 @@ class TestClearCollections:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["ok"] is True
         # Verify collection names include version
-        assert "chat_123_v3" in responses.calls[0].request.body.decode()
-        assert "chat_123_v3" in responses.calls[1].request.body.decode()
+        assert "screen_123_v3" in responses.calls[0].request.body.decode()
+        assert "screen_123_v3" in responses.calls[1].request.body.decode()
 
     def test_clear_with_both_false(self, api_client):
         """Test validation error when both clear_chat and clear_screen are false."""
@@ -804,6 +804,7 @@ class TestVideoSetMetadata:
         assert len(response.data["screen_results"]) == 1  # One video set
         video_set = response.data["screen_results"][0]
         assert video_set["video_set_id"] == "set-abc"
+        assert video_set["representative_id"] == "screen_101"  # The ID from original request
         assert len(video_set["videos"]) == 3  # All 3 videos in the set
 
         # Videos should be sorted by timestamp
@@ -926,6 +927,7 @@ class TestVideoSetMetadata:
         # First set should be set-A (earliest timestamp)
         set_a = response.data["screen_results"][0]
         assert set_a["video_set_id"] == "set-A"
+        assert set_a["representative_id"] == "screen_100"  # The ID from original request
         assert len(set_a["videos"]) == 2
         assert set_a["videos"][0]["id"] == "screen_100"
         assert set_a["videos"][1]["id"] == "screen_101"
@@ -933,9 +935,68 @@ class TestVideoSetMetadata:
         # Second set should be set-B
         set_b = response.data["screen_results"][1]
         assert set_b["video_set_id"] == "set-B"
+        assert set_b["representative_id"] == "screen_200"  # The ID from original request
         assert len(set_b["videos"]) == 2
         assert set_b["videos"][0]["id"] == "screen_200"
         assert set_b["videos"][1]["id"] == "screen_201"
+
+    @responses.activate
+    def test_query_representative_id_picks_first_from_request(self, jwt_authenticated_client, user):
+        """Test that representative_id is the first ID from original request when multiple qualify."""
+        from collection.models import VideoSetMetadata
+
+        # Create a video set with 3 videos
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_100",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=1000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_101",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=2000,
+        )
+        VideoSetMetadata.objects.create(
+            video_id=f"user_{user.id}_screen_102",
+            video_set_id="set-abc",
+            user=user,
+            timestamp=3000,
+        )
+
+        responses.add(
+            responses.POST,
+            "http://ec2-3-38-207-251.ap-northeast-2.compute.amazonaws.com:8001/api/vectordb/query/",
+            json={
+                "ok": True,
+                "result": [
+                    {"id": "screen_100"},
+                    {"id": "screen_101"},
+                    {"id": "screen_102"},
+                ],
+            },
+            status=200,
+        )
+
+        url = reverse("query_collection")
+        data = {
+            # Request multiple videos from the same set, with screen_102 first
+            "screen_ids": ["screen_102", "screen_100"],
+            "screen_output_fields": ["id", "timestamp"],
+            "query_video_sets": True,
+        }
+        response = jwt_authenticated_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should return 1 video set
+        assert len(response.data["screen_results"]) == 1
+        video_set = response.data["screen_results"][0]
+        assert video_set["video_set_id"] == "set-abc"
+        # Representative should be screen_102 (appears first in request, not screen_100)
+        assert video_set["representative_id"] == "screen_102"
+        assert len(video_set["videos"]) == 3
 
     @responses.activate
     def test_query_expansion_user_isolation(
@@ -998,6 +1059,7 @@ class TestVideoSetMetadata:
         assert len(response.data["screen_results"]) == 1  # One video set
         video_set = response.data["screen_results"][0]
         assert video_set["video_set_id"] == "set-abc"
+        assert video_set["representative_id"] == "screen_100"  # The ID from original request
         assert len(video_set["videos"]) == 2
 
         result_ids = [v["id"] for v in video_set["videos"]]
@@ -1090,6 +1152,7 @@ class TestVideoSetMetadata:
         assert len(response.data["screen_results"]) == 1  # One video set
         video_set = response.data["screen_results"][0]
         assert video_set["video_set_id"] == "set-abc"
+        assert video_set["representative_id"] == "screen_100"  # The ID from original request
         assert len(video_set["videos"]) == 2
 
         result_ids = [v["id"] for v in video_set["videos"]]
