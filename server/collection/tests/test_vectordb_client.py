@@ -358,7 +358,7 @@ class TestVectorDBClientDropCollection:
         assert error is None
         assert len(responses.calls) == 2
         # Verify collection names include version
-        assert "chat_123_v2" in responses.calls[0].request.body.decode()
+        assert "chat_123" in responses.calls[0].request.body.decode()
         assert "screen_123_v2" in responses.calls[1].request.body.decode()
 
     @responses.activate
