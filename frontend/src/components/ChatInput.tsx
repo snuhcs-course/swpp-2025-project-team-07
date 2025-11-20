@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, Square, Video, Sparkles } from 'lucide-react';
+import { Send, Square, Video } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import type { ChatRunState } from './ChatInterface';
