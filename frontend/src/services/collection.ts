@@ -2,6 +2,8 @@
 
 import { apiRequestWithAuth } from '@/utils/apiRequest';
 
+const SCREEN_QUERY_BATCH_SIZE = 3;
+
 // Vector data for insertion (combined messages → 1 vector entry)
 export interface VectorData {
   id: string; // REQUIRED primary key
@@ -219,33 +221,43 @@ export async function searchAndQuery(
 
   if (chatIds.length === 0 && screenIds.length === 0) return [];
 
-  // Query collections based on what we have (use correct IDs for each collection)
-  let queryResult: QueryResponse;
   const outputFields = ['content', 'timestamp', 'session_id', 'role'];
 
-  if (chatIds.length > 0 && screenIds.length > 0) {
-    // Query both collections in parallel with their respective IDs
-    const [chatResult, screenResult] = await Promise.all([
-      queryChatData(chatIds, outputFields),
-      queryScreenData(screenIds, outputFields)
-    ]);
-    // Combine results
-    queryResult = {
-      ok: chatResult.ok && screenResult.ok,
-      chat_results: chatResult.chat_results,
-      screen_results: screenResult.screen_results,
-    };
-  } else if (chatIds.length > 0) {
-    queryResult = await queryChatData(chatIds, outputFields);
-  } else {
-    queryResult = await queryScreenData(screenIds, outputFields);
-  }
+  const fetchChatResults = async (): Promise<VectorData[]> => {
+    if (chatIds.length === 0) {
+      return [];
+    }
+    const chatResult = await queryChatData(chatIds, outputFields);
+    if (!chatResult.ok) {
+      throw new Error('Failed to query chat data');
+    }
+    return (chatResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const }));
+  };
 
-  // Combine results and tag with source type
-  const allResults: VectorData[] = [
-    ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
-    ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
-  ];
+  const fetchScreenResults = async (): Promise<VectorData[]> => {
+    if (screenIds.length === 0) {
+      return [];
+    }
+
+    const aggregated: VectorData[] = [];
+    for (let i = 0; i < screenIds.length; i += SCREEN_QUERY_BATCH_SIZE) {
+      const chunkIds = screenIds.slice(i, i + SCREEN_QUERY_BATCH_SIZE);
+      const screenResult = await queryScreenData(chunkIds, outputFields);
+      if (!screenResult.ok) {
+        throw new Error('Failed to query screen data');
+      }
+      const docs = (screenResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }));
+      aggregated.push(...docs);
+    }
+    return aggregated;
+  };
+
+  const [chatResults, screenResults] = await Promise.all([
+    fetchChatResults(),
+    fetchScreenResults(),
+  ]);
+
+  const allResults: VectorData[] = [...chatResults, ...screenResults];
 
   // Filter out same-session memories
   const filteredResults = excludeSessionId !== undefined

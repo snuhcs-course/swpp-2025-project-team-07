@@ -5,6 +5,9 @@ import {
   type ProcessingErrorEvent,
   type ProcessingPhaseKey,
 } from '@/services/processing-status';
+import { VideoCandidateGrid } from './VideoCandidateGrid';
+import { Button } from './ui/button';
+import type { VideoCandidate } from '@/types/video';
 
 const PHASE_CONFIG: Record<
   ProcessingPhaseKey,
@@ -48,13 +51,40 @@ const createInitialState = (): SessionIndicatorState => ({
 
 interface ChatStatusIndicatorsProps {
   sessionId: string | null;
+  videoCandidates?: VideoCandidate[];
+  selectedVideoIds?: string[];
+  onToggleVideoSelection?: (id: string) => void;
+  onOpenVideo?: (id: string) => void;
+  onGenerateWithSelectedVideos?: () => void;
+  showVideoGrid?: boolean;
+  isRetrievalComplete?: boolean;
+  videoSearchActive?: boolean;
+  isGenerationInProgress?: boolean;
 }
 
-export function ChatStatusIndicators({ sessionId }: ChatStatusIndicatorsProps) {
+export function ChatStatusIndicators({
+  sessionId,
+  videoCandidates = [],
+  selectedVideoIds = [],
+  onToggleVideoSelection,
+  onOpenVideo,
+  onGenerateWithSelectedVideos,
+  showVideoGrid = false,
+  isRetrievalComplete = false,
+  videoSearchActive = false,
+  isGenerationInProgress = false,
+}: ChatStatusIndicatorsProps) {
   const [displayState, setDisplayState] = useState<SessionIndicatorState>(createInitialState);
   const sessionStatesRef = useRef<Map<string, SessionIndicatorState>>(new Map());
   const hideTimeoutsRef = useRef<Map<string, number>>(new Map());
   const activeSessionIdRef = useRef<string | null>(sessionId ?? null);
+  const hasVideoCandidates = videoCandidates.length > 0;
+  const showEmptyVideoState = isRetrievalComplete && videoSearchActive && !hasVideoCandidates;
+  const canGenerate =
+    Boolean(onGenerateWithSelectedVideos) &&
+    selectedVideoIds.length >= 1 &&
+    selectedVideoIds.length <= 3 &&
+    !isGenerationInProgress;
 
   useEffect(() => {
     activeSessionIdRef.current = sessionId ?? null;
@@ -186,7 +216,7 @@ export function ChatStatusIndicators({ sessionId }: ChatStatusIndicatorsProps) {
 
   const { currentPhase, isRendered, isFadingOut, errorState } = displayState;
 
-  if (!sessionId || (!isRendered && !errorState)) {
+  if (!sessionId || (!isRendered && !errorState && !showEmptyVideoState && !showVideoGrid)) {
     return null;
   }
 
@@ -237,6 +267,49 @@ export function ChatStatusIndicators({ sessionId }: ChatStatusIndicatorsProps) {
             <span className="h-5 w-5 animate-spin rounded-full border-[2px] border-current border-t-transparent" />
           </span>
         </motion.div>
+      ) : null}
+
+      {showVideoGrid && hasVideoCandidates && onToggleVideoSelection && onOpenVideo ? (
+        <div className="mt-4 space-y-3 rounded-2xl border border-dashed border-primary/40 bg-background/80 p-4 shadow-sm">
+          <div className="space-y-1.5">
+            <p className="text-sm font-semibold text-foreground">Related video candidates</p>
+            <p className="text-xs text-muted-foreground">
+              Select 1–3 videos to use for this answer. If none of these videos match what you intended,
+              stop and please try describing the video again using more specific words.
+            </p>
+          </div>
+
+          <VideoCandidateGrid
+            videos={videoCandidates}
+            selectedIds={selectedVideoIds}
+            onToggleSelect={onToggleVideoSelection}
+            onOpenVideo={onOpenVideo}
+          />
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              {selectedVideoIds.length === 0
+                ? 'You must select at least one video.'
+                : `${selectedVideoIds.length} of 3 videos selected.`}
+            </p>
+            <Button
+              disabled={!canGenerate}
+              onClick={onGenerateWithSelectedVideos}
+              className="w-full sm:w-auto"
+            >
+              Generate with selected videos
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {showEmptyVideoState ? (
+        <div className="mt-3 rounded-xl border border-dashed border-muted-foreground/40 bg-background/60 px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            No related videos were found. If you have a specific video in mind, please describe it in more
+            detail (for example, key scenes, actions, or timing).
+          </p>
+        </div>
       ) : null}
     </motion.section>
   );
