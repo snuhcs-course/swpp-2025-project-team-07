@@ -1354,8 +1354,8 @@ User Query: ${content}`;
             <div
               className={
                 (!currentSession?.messages || currentSession.messages.length === 0)
-                  ? 'pt-[calc(50vh-13rem)]'
-                  : 'flex-1 flex flex-col'
+                  ? 'pt-[calc(50vh-13rem)] overflow-auto min-h-0'
+                  : 'flex-1 flex flex-col overflow-auto min-h-0'
               }
             >
               <ChatMessages
@@ -1365,17 +1365,18 @@ User Query: ${content}`;
                 statusIndicator={statusIndicatorNode}
               />
             </div>
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              onStop={handleStopGeneration}
-              runState={runState}
-              modelNotReady={!isModelReady}
-              isStopping={isStoppingGeneration}
-              videoRagEnabled={videoRagEnabled}
-              onToggleVideoRag={handleToggleVideoRag}
-              queryTransformEnabled={queryTransformEnabled}
-              onToggleQueryTransform={handleToggleQueryTransform}
-            />
+            <div className="flex-shrink-0">
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                onStop={handleStopGeneration}
+                runState={runState}
+                modelNotReady={!isModelReady}
+                isStopping={isStoppingGeneration}
+                videoRagEnabled={videoRagEnabled}
+                onToggleVideoRag={handleToggleVideoRag}
+                queryTransformEnabled={queryTransformEnabled}
+              />
+            </div>
           </motion.div>
         </div>
       </div>
