@@ -203,13 +203,19 @@ describe('Auth Service', () => {
 
     it('getProfile supplies bearer token header', async () => {
       const user = { id: 3, email: 'who@test.com', username: 'who', date_joined: '2024-04-01' };
+      const tokens = { access: 'access-token', refresh: 'refresh-token' };
+      
+      // Setup auth state in localStorage
+      localStorage.setItem('auth_tokens', JSON.stringify(tokens));
+      localStorage.setItem('auth_user', JSON.stringify(user));
+
       fetchMock.mockResolvedValue({
         ok: true,
         headers: { get: vi.fn().mockReturnValue('application/json') },
         json: async () => user,
       });
 
-      const result = await getProfile('access-token');
+      const result = await getProfile();
 
       expect(fetchMock).toHaveBeenCalledWith(
         'http://localhost:8000/api/user/profile/',
@@ -239,6 +245,124 @@ describe('Auth Service', () => {
       });
 
       await expect(logout('refresh-token')).rejects.toThrow('Request failed');
+    });
+
+    it('extracts error message from string payload', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => 'String error message',
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('String error message');
+    });
+
+    it('extracts error message from message field', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({ message: 'Error from message field' }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Error from message field');
+    });
+
+    it('extracts error message from error field', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({ error: 'Error from error field' }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Error from error field');
+    });
+
+    it('collects messages from array values', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({ errors: ['Error 1', 'Error 2', 'Error 3'] }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Error 1 Error 2 Error 3');
+    });
+
+    it('collects messages from nested object values', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({
+          field_errors: {
+            email: 'Invalid email',
+            password: 'Too short',
+          },
+        }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Invalid email Too short');
+    });
+
+    it('collects messages from deeply nested structures', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({
+          errors: {
+            form: {
+              fields: ['Field error 1', 'Field error 2'],
+            },
+          },
+        }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Field error 1 Field error 2');
+    });
+
+    it('handles null and undefined in nested structures', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({
+          errors: {
+            field1: null,
+            field2: undefined,
+            field3: 'Valid error',
+          },
+        }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Valid error');
+    });
+
+    it('handles mixed array with strings and objects', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => ({
+          errors: ['String error', { nested: 'Object error' }],
+        }),
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('String error Object error');
+    });
+
+    it('falls back to generic error when payload is null', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('application/json') },
+        json: async () => null,
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Request failed');
+    });
+
+    it('handles non-JSON responses', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        headers: { get: vi.fn().mockReturnValue('text/html') },
+      });
+
+      await expect(login('test@test.com', 'pass')).rejects.toThrow('Request failed');
     });
   });
 });

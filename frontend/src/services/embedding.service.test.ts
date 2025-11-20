@@ -73,4 +73,96 @@ describe('EmbeddingService', () => {
     window.embeddingAPI = undefined as any;
     expect(instance.isAvailable()).toBe(false);
   });
+
+  it('throws error when embedContext called with unavailable API', async () => {
+    window.embeddingAPI = undefined as any;
+    const instance = EmbeddingService.getInstance();
+
+    await expect(instance.embedContext('test')).rejects.toThrow('Embedding API not available');
+  });
+
+  it('wraps embedContext errors with a user-friendly message', async () => {
+    const error = new Error('network timeout');
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    (window.embeddingAPI.embedContext as any).mockRejectedValue(error);
+    const instance = EmbeddingService.getInstance();
+
+    await expect(instance.embedContext('some context')).rejects.toThrow('Failed to generate context embedding');
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to embed context:', error);
+    consoleSpy.mockRestore();
+  });
+
+  it('returns false from isReady when API is unavailable', async () => {
+    window.embeddingAPI = undefined as any;
+    const instance = EmbeddingService.getInstance();
+
+    await expect(instance.isReady()).resolves.toBe(false);
+  });
+
+  it('returns true from isReady when API is ready', async () => {
+    const instance = EmbeddingService.getInstance();
+    await expect(instance.isReady()).resolves.toBe(true);
+    expect(window.embeddingAPI.isReady).toHaveBeenCalled();
+  });
+
+  describe('embedVideoQuery', () => {
+    it('returns CLIP text embedding as array', async () => {
+      const mockEmbedding = new Float32Array([0.5, 0.6, 0.7]);
+
+      vi.doMock('@/embedding/ClipVideoEmbedder', () => ({
+        ClipVideoEmbedder: {
+          get: vi.fn().mockResolvedValue({
+            embedText: vi.fn().mockResolvedValue(mockEmbedding),
+          }),
+        },
+      }));
+
+      const instance = EmbeddingService.getInstance();
+      const result = await instance.embedVideoQuery('video query');
+
+      expect(result).toHaveLength(3);
+      expect(result![0]).toBeCloseTo(0.5);
+      expect(result![1]).toBeCloseTo(0.6);
+      expect(result![2]).toBeCloseTo(0.7);
+    });
+
+    it('returns null when CLIP text embedding fails', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      vi.doMock('@/embedding/ClipVideoEmbedder', () => ({
+        ClipVideoEmbedder: {
+          get: vi.fn().mockRejectedValue(new Error('CLIP not available')),
+        },
+      }));
+
+      const instance = EmbeddingService.getInstance();
+      const result = await instance.embedVideoQuery('video query');
+
+      expect(result).toBeNull();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '[embedding] CLIP text embedding not available (vision-only model):',
+        expect.any(Error)
+      );
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('returns null when embedText throws error', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      vi.doMock('@/embedding/ClipVideoEmbedder', () => ({
+        ClipVideoEmbedder: {
+          get: vi.fn().mockResolvedValue({
+            embedText: vi.fn().mockRejectedValue(new Error('Text encoder not loaded')),
+          }),
+        },
+      }));
+
+      const instance = EmbeddingService.getInstance();
+      const result = await instance.embedVideoQuery('video query');
+
+      expect(result).toBeNull();
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
+    });
+  });
 });

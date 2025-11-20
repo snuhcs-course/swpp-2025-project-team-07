@@ -95,25 +95,6 @@ export async function trackMessage(
   });
 }
 
-// Helper: Convert ImageData to base64
-async function imageDataToBase64(imageData: ImageData): Promise<string> {
-  const canvas = new OffscreenCanvas(imageData.width, imageData.height);
-  const ctx = canvas.getContext('2d')!;
-  ctx.putImageData(imageData, 0, 0);
-  const blob = await canvas.convertToBlob({ type: 'image/png' });
-
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      const base64Data = base64.split(',')[1] || base64;
-      resolve(base64Data);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
 // Helper: Convert video Blob to base64
 async function videoBlobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

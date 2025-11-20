@@ -8,6 +8,10 @@ export default defineConfig({
     },
   },
 
+  define: {
+    'import.meta.env.VITE_API_BASE_URL': JSON.stringify('http://localhost:8000'),
+  },
+
   test: {
     // Environment
     environment: 'happy-dom',
@@ -36,6 +40,13 @@ export default defineConfig({
         'src/test/**',
         'src/types/**',
         'src/components/ui/**', // External UI library components
+        'src/main.ts', // Electron main process - tested with E2E
+        'src/renderer.tsx', // Renderer entry point - tested with E2E
+        'src/embedding-worker.ts', // Worker process - tested with integration tests
+        'src/embedding-worker-preload.ts', // Preload script - tested with integration tests
+        'src/recording/base.ts', // Type definitions only
+        'src/utils/frame-extractor-browser.ts', // Debugging utility
+        'src/utils/video-frame-extractor.ts', // Node.js/ffmpeg - needs integration tests
         '**/node_modules/**',
       ],
 

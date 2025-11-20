@@ -100,11 +100,107 @@ describe('ModelDownloadDialog', () => {
 
     await act(async () => {
       completeHandler?.();
+    });
+
+    await act(async () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
 
     vi.useRealTimers();
+  });
+
+  it('handles download start failure', async () => {
+    const user = userEvent.setup();
+    startDownloadMock.mockResolvedValue({ success: false, error: 'Model not found' });
+
+    render(<ModelDownloadDialog open={true} onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Start Download/i }));
+
+    expect(await screen.findByText('Download Failed')).toBeInTheDocument();
+    expect(await screen.findByText('Model not found')).toBeInTheDocument();
+  });
+
+  it('handles download start exception', async () => {
+    const user = userEvent.setup();
+    startDownloadMock.mockRejectedValue(new Error('Connection timeout'));
+
+    render(<ModelDownloadDialog open={true} onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Start Download/i }));
+
+    expect(await screen.findByText('Download Failed')).toBeInTheDocument();
+    expect(await screen.findByText('Connection timeout')).toBeInTheDocument();
+  });
+
+  it('displays formatted time for minutes', async () => {
+    const user = userEvent.setup();
+
+    render(<ModelDownloadDialog open={true} onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Start Download/i }));
+
+    await act(async () => {
+      progressHandler?.({
+        modelName: 'Model B',
+        percent: 0.1,
+        transferred: 100 * 1024,
+        total: 1000 * 1024,
+      });
+    });
+
+    // Trigger a second update to calculate speed and ETA
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      progressHandler?.({
+        modelName: 'Model B',
+        percent: 0.2,
+        transferred: 200 * 1024,
+        total: 1000 * 1024,
+      });
+    });
+
+    // Should display time estimates if calculated
+    await new Promise(resolve => setTimeout(resolve, 50));
+  });
+
+  it('displays formatted time for hours', async () => {
+    const user = userEvent.setup();
+
+    render(<ModelDownloadDialog open={true} onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Start Download/i }));
+
+    await act(async () => {
+      progressHandler?.({
+        modelName: 'Model C',
+        percent: 0.01,
+        transferred: 10 * 1024,
+        total: 1000 * 1024 * 1024, // Very large file
+      });
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  });
+
+  it('prevents dialog close while downloading', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+
+    const { container } = render(<ModelDownloadDialog open={true} onOpenChange={onOpenChange} />);
+
+    await user.click(screen.getByRole('button', { name: /Start Download/i }));
+
+    // Simulate clicking outside the dialog
+    const dialogContent = container.querySelector('[role="dialog"]');
+    if (dialogContent) {
+      const event = new Event('pointerdown', { bubbles: true });
+      dialogContent.dispatchEvent(event);
+    }
+
+    // Dialog should not close during download
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });

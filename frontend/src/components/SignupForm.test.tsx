@@ -34,7 +34,7 @@ describe('SignupForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Create account' }));
 
-    expect(await screen.findByText('Full name is required')).toBeInTheDocument();
+    expect(await screen.findByText('Username is required')).toBeInTheDocument();
     expect(screen.getByText('Email is required')).toBeInTheDocument();
     expect(screen.getByText('Password is required')).toBeInTheDocument();
     expect(screen.getByText('You must accept the terms and conditions')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('SignupForm', () => {
       <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
     );
 
-    await user.type(screen.getByLabelText('Full name'), 'Mismatch User');
+    await user.type(screen.getByLabelText('Username'), 'Mismatch User');
     await user.type(screen.getByLabelText('Email address'), 'mismatch@example.com');
     await user.type(screen.getByLabelText('Password'), 'Password1');
     await user.type(screen.getByLabelText('Confirm password'), 'Password2');
@@ -73,7 +73,7 @@ describe('SignupForm', () => {
       <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={onAuthSuccess} />
     );
 
-    await user.type(screen.getByLabelText('Full name'), 'New User');
+    await user.type(screen.getByLabelText('Username'), 'New User');
     await user.type(screen.getByLabelText('Email address'), 'new@example.com');
     await user.type(screen.getByLabelText('Password'), 'Password1');
     await user.type(screen.getByLabelText('Confirm password'), 'Password1');
@@ -110,5 +110,115 @@ describe('SignupForm', () => {
 
     expect(password.type).toBe('text');
     expect(confirm.type).toBe('text');
+  });
+
+  it('shows error for name shorter than 2 characters', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
+    );
+
+    await user.type(screen.getByLabelText('Username'), 'A');
+    await user.type(screen.getByLabelText('Email address'), 'test@example.com');
+    await user.type(screen.getByLabelText('Password'), 'Password123');
+    await user.type(screen.getByLabelText('Confirm password'), 'Password123');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByText('Name must be at least 2 characters')).toBeInTheDocument();
+  });
+
+  it('shows error for invalid email format', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
+    );
+
+    await user.type(screen.getByLabelText('Username'), 'ValidUser');
+    await user.type(screen.getByLabelText('Email address'), 'invalid-email');
+    await user.type(screen.getByLabelText('Password'), 'Password123');
+    await user.type(screen.getByLabelText('Confirm password'), 'Password123');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByText('Please enter a valid email')).toBeInTheDocument();
+  });
+
+  it('shows error for password shorter than 8 characters', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
+    );
+
+    await user.type(screen.getByLabelText('Username'), 'ValidUser');
+    await user.type(screen.getByLabelText('Email address'), 'test@example.com');
+    await user.type(screen.getByLabelText('Password'), 'Pass1');
+    await user.type(screen.getByLabelText('Confirm password'), 'Pass1');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument();
+  });
+
+  it('shows error for password without required complexity', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
+    );
+
+    await user.type(screen.getByLabelText('Username'), 'ValidUser');
+    await user.type(screen.getByLabelText('Email address'), 'test@example.com');
+    await user.type(screen.getByLabelText('Password'), 'password'); // no uppercase or number
+    await user.type(screen.getByLabelText('Confirm password'), 'password');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByText('Password must contain uppercase, lowercase, and number')).toBeInTheDocument();
+  });
+
+  it('handles signup failure and displays error message', async () => {
+    const user = userEvent.setup();
+
+    signupMock.mockRejectedValue(new Error('Email already exists'));
+
+    render(
+      <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
+    );
+
+    await user.type(screen.getByLabelText('Username'), 'Existing User');
+    await user.type(screen.getByLabelText('Email address'), 'existing@example.com');
+    await user.type(screen.getByLabelText('Password'), 'Password123');
+    await user.type(screen.getByLabelText('Confirm password'), 'Password123');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByText('Email already exists')).toBeInTheDocument();
+  });
+
+  it('clears field error when user types in field with error', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SignupForm onSwitchToLogin={vi.fn()} onAuthSuccess={vi.fn()} />
+    );
+
+    // First trigger validation error
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(await screen.findByText('Username is required')).toBeInTheDocument();
+
+    // Now type in the field with error
+    await user.type(screen.getByLabelText('Username'), 'NewUser');
+
+    // Error should be cleared
+    expect(screen.queryByText('Username is required')).not.toBeInTheDocument();
   });
 });
