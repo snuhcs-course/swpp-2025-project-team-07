@@ -569,6 +569,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
               );
 
               // Update AI message with clarification question
+              // TODO: Split into tokens then update to simulate streaming behavior.
               const clarificationMessage = `I need a bit more detail to help you better. ${clarificationPrompt.question}`;
               setSessions(prevSessions =>
                 prevSessions.map(s =>
@@ -891,12 +892,14 @@ ${contextPrompt || 'No additional context retrieved'}
 ${transformedQuery.response_guidance}
 
 Requirements:
-- Be specific to what the user is looking for
+- Be ultra-personalized and specific to what the user is looking for
+- Reference exact timestamps from screen recordings when available
+- Describe visual characteristics if relevant: ${transformedQuery.visual_cues || 'general appearance'}
 - Cite sources naturally in your response (mention which screen recording or conversation)
-- Focus on the following keywords: ${transformedQuery.search_keywords}
+- Focus on answering: ${transformedQuery.search_keywords}
 </synthesis_task>
 
-User Query: ${content}`;
+User Query: ${transformedQuery.original_query}`;
       } else {
         // Fallback to current behavior when query transformation is disabled
         if (contextPrompt) {

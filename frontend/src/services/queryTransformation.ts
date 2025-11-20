@@ -7,14 +7,13 @@
  *
  * Flow:
  * 1. TransformQuery: Convert vague query to structured search object with confidence score
- * 2. Confidence Check: If score > threshold (0.65), proceed to RAG. Otherwise, ask for clarification
+ * 2. Confidence Check: If score > threshold (0.6), proceed to RAG. Otherwise, ask for clarification
  * 3. GenerateClarification: Create targeted question to gather missing information
  * 4. RefineQuery: After user responds, create final high-confidence query
  * 5. Proceed to RAG/VLM execution with optimized query
  */
 
 import { llmService } from './llm';
-import type { ChatMessage } from '@/types/chat';
 
 // ============================================================================
 // Type Definitions
@@ -24,13 +23,13 @@ import type { ChatMessage } from '@/types/chat';
  * Structured query output from transformation
  */
 export interface TransformedQuery {
-  /** Highly specific search terms for RAG retrieval */
+  /** Specific search terms for RAG retrieval */
   search_keywords: string;
   /** Descriptive visual attributes to look for */
   visual_cues: string;
   /** Confidence score from 0.0 to 1.0 */
   confidence_score: number;
-  /** Original vague query */
+  /** Original query */
   original_query: string;
   /** Guidance for how to craft the final response */
   response_guidance: string;
@@ -60,7 +59,7 @@ export interface QueryContext {
 // Constants
 // ============================================================================
 
-const LOW_CONFIDENCE_THRESHOLD = 0.65;
+const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
 // ============================================================================
 // Helper Functions
@@ -134,17 +133,17 @@ Analyze the query and provide a structured JSON output with the following fields
 2. **visual_cues**: Descriptive image attributes (e.g., "blue and white color scheme, high-top shoe")
 3. **confidence_score**: A float from 0.0 to 1.0 indicating your certainty that the transformed query will lead to successful retrieval
    - 0.0-0.3: Very uncertain, major information missing
-   - 0.3-0.65: Low confidence, clarification needed
-   - 0.65-0.85: Moderate confidence, likely to succeed
-   - 0.85-1.0: High confidence, very specific query
-4. **response_guidance**: Instructions for how to craft the final response after retrieval (e.g., "User wants to recall a red Nike shoe they viewed. Reference the specific product from screen recordings.")
+   - 0.3-0.6: Low confidence, clarification needed
+   - 0.6-0.8: Moderate confidence, likely to succeed
+   - 0.8-1.0: High confidence, very specific query
+4. **response_guidance**: Instructions for how to craft the final response after retrieval (e.g., "User wants to recall a red Nike shoe they viewed. Answer to the user query by referencing the retrieved data.")
 
 **Important Guidelines:**
 - If the query is already specific, confidence should be high (>0.8)
-- If the query is vague and critical information is missing, confidence should be low (<0.65)
+- If the query is vague and critical information is missing, confidence should be low (<0.6)
 - Use conversation history to infer context
 - Be conservative with confidence scores - it's better to ask for clarification than to return poor results
-- response_guidance should be 1-2 sentences explaining what the user wants and how to respond with retrieved data
+- response_guidance should be 1-2 sentences instructing the LLM what the user needs from the response
 
 **Output Format (JSON only, no explanation):**
 {
@@ -185,7 +184,7 @@ Analyze the query and provide a structured JSON output with the following fields
       visual_cues: '',
       confidence_score: 0.4,
       original_query: current_query,
-      response_guidance: `Help the user with their query: "${current_query}". Be specific and cite sources from the retrieved data.`,
+      response_guidance: `Help the user with their query: "${current_query}". Be specific and reference the retrieved data.`,
     };
   }
 }
@@ -293,7 +292,7 @@ export async function refineQuery(
 ${conversationHistoryStr}
 
 **Your Task:**
-Combine all this information to generate a final, highly specific structured search object. The confidence_score should be near 1.0 (0.85-1.0) due to the added information. Also generate response_guidance explaining what the user wants and how to respond.
+Combine all this information to generate a final, highly specific structured search object. The confidence_score should be near 1.0 (0.8-1.0) due to the added information. Also generate response_guidance explaining what the user wants and how to respond.
 
 **Output Format (JSON only, no explanation):**
 {
@@ -315,7 +314,7 @@ Combine all this information to generate a final, highly specific structured sea
       search_keywords: parsed.search_keywords || userResponse,
       visual_cues: parsed.visual_cues || '',
       confidence_score: typeof parsed.confidence_score === 'number'
-        ? Math.max(0.85, Math.min(1, parsed.confidence_score)) // Ensure high confidence after clarification
+        ? Math.max(0.8, Math.min(1, parsed.confidence_score)) // Ensure high confidence after clarification
         : 0.9,
       original_query: `${originalQuery} [clarified: ${userResponse}]`,
       response_guidance: parsed.response_guidance || `User clarified they want: ${userResponse}. Reference the specific item from screen recordings and be detailed.`,
@@ -329,7 +328,7 @@ Combine all this information to generate a final, highly specific structured sea
     return {
       search_keywords: `${originalQuery} ${userResponse}`,
       visual_cues: userResponse,
-      confidence_score: 0.85,
+      confidence_score: 0.8,
       original_query: `${originalQuery} [clarified: ${userResponse}]`,
       response_guidance: `User clarified they want: ${userResponse}. Reference the specific item from screen recordings and be detailed.`,
     };
