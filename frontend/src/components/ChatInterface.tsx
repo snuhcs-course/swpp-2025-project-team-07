@@ -14,6 +14,7 @@ import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
+import { queryTransformationService, type TransformedQuery, type ClarificationPrompt } from '@/services/queryTransformation';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 
@@ -156,6 +157,31 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   useEffect(() => {
     localStorage.setItem('videoRagEnabled', JSON.stringify(videoRagEnabled));
   }, [videoRagEnabled]);
+
+  // Query transformation and clarification state
+  const [awaitingClarification, setAwaitingClarification] = useState(false);
+  const [currentClarification, setCurrentClarification] = useState<ClarificationPrompt | null>(null);
+  const [originalQuery, setOriginalQuery] = useState<string>('');
+  const [queryTransformEnabled, setQueryTransformEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('queryTransformEnabled');
+    return stored ? JSON.parse(stored) : true; // Enabled by default
+  });
+
+  // Save queryTransformEnabled to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('queryTransformEnabled', JSON.stringify(queryTransformEnabled));
+  }, [queryTransformEnabled]);
+
+  // Expose query transformation controls to console for debugging
+  useEffect(() => {
+    (window as any).__queryTransform = {
+      enabled: queryTransformEnabled,
+      toggle: () => {
+        setQueryTransformEnabled(prev => !prev);
+        console.log(`Query transformation ${!queryTransformEnabled ? 'enabled' : 'disabled'}`);
+      },
+    };
+  }, [queryTransformEnabled]);
 
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
@@ -322,6 +348,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       return;
     }
 
+    // Check if this is a clarification response
+    const isRespondingToClarification = awaitingClarification && currentClarification !== null;
+
     // Auto-create session if none exists
     let session = currentSession;
     const cancellationHandle = createCancellationHandle();
@@ -411,6 +440,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
     const runStartTime = getTimestamp();
     const phaseDurations: Record<ProcessingPhaseKey, number> = {
+      understanding: 0,
       searching: 0,
       processing: 0,
       generating: 0,
@@ -492,7 +522,132 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         activeRunRef.current = activeRun;
       }
 
+      // =========================================================================
+      // QUERY TRANSFORMATION LAYER (Phase 1-3)
+      // =========================================================================
+      let transformedQuery: TransformedQuery | null = null;
+      let chatSearchQuery = content; // Default to raw content if transformation is disabled
+      let videoSearchQuery = content; // Default to raw content if transformation is disabled
+
+      if (queryTransformEnabled && videoRagEnabled) {
+        processingStatusService.startPhase(sessionId, 'understanding');
+        const understandPhaseStart = getTimestamp();
+        try {
+          console.log('[QueryTransform] Starting query transformation...');
+
+          // Build context for transformation
+          const conversationHistory = session.messages
+            .slice(-6) // Last 3 turns (6 messages)
+            .map(msg => ({
+              role: msg.isUser ? ('user' as const) : ('assistant' as const),
+              content: msg.content,
+            }));
+
+          // Handle clarification response
+          if (isRespondingToClarification && currentClarification) {
+            console.log('[QueryTransform] Refining query with clarification response...');
+            transformedQuery = await queryTransformationService.refineQuery(
+              originalQuery,
+              currentClarification.question,
+              content,
+              {
+                current_query: originalQuery,
+                conversation_history: conversationHistory,
+              }
+            );
+
+            // Clear clarification state
+            setAwaitingClarification(false);
+            setCurrentClarification(null);
+            setOriginalQuery('');
+          } else {
+            // Initial transformation
+            transformedQuery = await queryTransformationService.transformQuery({
+              current_query: content,
+              conversation_history: conversationHistory,
+            });
+
+            // Check if clarification is needed
+            if (queryTransformationService.needsClarification(transformedQuery)) {
+              console.log(
+                `[QueryTransform] Low confidence (${transformedQuery.confidence_score.toFixed(2)}), generating clarification...`
+              );
+
+              // Generate clarification question
+              const clarificationPrompt = await queryTransformationService.generateClarification(
+                transformedQuery,
+                {
+                  current_query: content,
+                  conversation_history: conversationHistory,
+                }
+              );
+
+              // Update AI message with clarification question
+              // TODO: Split into tokens then update to simulate streaming behavior.
+              const clarificationMessage = `I need a bit more detail to help you better. ${clarificationPrompt.question}`;
+              setSessions(prevSessions =>
+                prevSessions.map(s =>
+                  s.id === sessionId
+                    ? {
+                        ...s,
+                        messages: (s.messages || []).map(msg =>
+                          msg.id === aiMessageId
+                            ? { ...msg, content: clarificationMessage }
+                            : msg
+                        ),
+                      }
+                    : s
+                )
+              );
+
+              // Save clarification state and wait for user response
+              setAwaitingClarification(true);
+              setCurrentClarification(clarificationPrompt);
+              setOriginalQuery(content);
+              setRunState('completed');
+
+              // Save assistant clarification message to backend
+              await chatService.sendMessage(sessionIdNum, 'assistant', clarificationMessage);
+
+              console.log('[QueryTransform] Awaiting clarification from user...');
+              return; // Stop here, wait for user to respond
+            }
+          }
+
+          // Use transformed query for search - different queries for chat vs video
+          if (transformedQuery) {
+            chatSearchQuery = queryTransformationService.getChatSearchQuery(transformedQuery);
+            videoSearchQuery = queryTransformationService.getVideoSearchQuery(transformedQuery);
+            console.log('[QueryTransform] Using transformed queries:', {
+              original: content,
+              chatQuery: chatSearchQuery,
+              videoQuery: videoSearchQuery,
+              confidence: transformedQuery.confidence_score,
+            });
+          }
+        } catch (error) {
+          console.error('[QueryTransform] Transformation failed, falling back to original query:', error);
+          // Continue with original query if transformation fails
+          transformedQuery = null;
+          chatSearchQuery = content;
+          videoSearchQuery = content;
+        } finally {
+          const understandElapsed = getTimestamp() - understandPhaseStart;
+          phaseDurations.understanding = understandElapsed;
+          processingStatusService.completePhase(sessionId, 'understanding', understandElapsed, {
+            retrievalMetrics: {
+              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+              screenRecordings: retrievalSummary.screenRecordings,
+              embeddingsSearched: retrievalSummary.embeddingsSearched,
+            },
+          });
+        }
+      }
+
+      // =========================================================================
       // RAG: Retrieve relevant context from past conversations and screen recordings
+      // =========================================================================
       let contextPrompt = '';
       const videoBlobs: Blob[] = []; // Store reconstructed video blobs for multimodal input
       const videoUrls: string[] = []; // Store object URLs for debugging
@@ -505,17 +660,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       const searchPhaseStart = getTimestamp();
 
       try {
-        // Generate embeddings for the user's query
-        // - DRAGON (768-dim) for chat search
-        // - CLIP (512-dim) for video/screen search
+        // Generate embeddings for the search queries (potentially transformed)
+        // - DRAGON (768-dim) for chat search - uses keywords + action context
+        // - CLIP (512-dim) for video/screen search - uses keywords + visual cues
         const chatQueryEmbedding = await runWithCancellation(() =>
-          embeddingService.embedQuery(content)
+          embeddingService.embedQuery(chatSearchQuery)
         );
         ensureNotCancelled();
 
         const videoQueryEmbedding = videoRagEnabled
           ? await runWithCancellation(() =>
-              embeddingService.embedVideoQuery(content)
+              embeddingService.embedVideoQuery(videoSearchQuery)
             )
           : undefined;
 
@@ -747,13 +902,35 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
       // Construct the current message with RAG context
       let messageWithContext = '';
 
-      if (contextPrompt) {
-        // If we have RAG context, include it
-        messageWithContext += contextPrompt + '\n\n';
-      }
+      if (transformedQuery && queryTransformEnabled) {
+        messageWithContext = `<search_context>
+User Intent: ${transformedQuery.response_guidance}
+Search Focus: ${transformedQuery.search_keywords}
+Visual Details: ${transformedQuery.visual_cues || 'Not specified'}
+</search_context>
 
-      // Add the current user message
-      messageWithContext += content;
+<retrieved_data>
+${contextPrompt || 'No additional context retrieved'}
+</retrieved_data>
+
+<synthesis_task>
+${transformedQuery.response_guidance}
+
+Requirements:
+- Be specific to what the user is looking for
+- Cite sources naturally in your response (mention which screen recording or conversation)
+- Focus on answering: ${transformedQuery.search_keywords}
+</synthesis_task>
+
+User Query: ${transformedQuery.original_query}`;
+      } else {
+        // Fallback to current behavior when query transformation is disabled
+        if (contextPrompt) {
+          messageWithContext += contextPrompt + '\n\n';
+        }
+
+        messageWithContext += content;
+      }
 
       // Log RAG summary
       console.log('[RAG] Context retrieval complete:', {
@@ -1219,6 +1396,7 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
                 isStopping={isStoppingGeneration}
                 videoRagEnabled={videoRagEnabled}
                 onToggleVideoRag={handleToggleVideoRag}
+                queryTransformEnabled={queryTransformEnabled}
               />
             </div>
           </motion.div>

@@ -10,6 +10,12 @@ const PHASE_CONFIG: Record<
   ProcessingPhaseKey,
   { label: string; emoji: string; accent: string; description: string }
 > = {
+  understanding: {
+    label: 'Understanding your request...',
+    emoji: '🤔',
+    accent: 'border-lime-400/40 text-lime-500',
+    description: 'Analyzing the requirements for the video search',
+  },
   searching: {
     label: 'Searching your memories...',
     emoji: '🔍',

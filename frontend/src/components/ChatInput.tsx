@@ -13,6 +13,8 @@ interface ChatInputProps {
   isStopping?: boolean;
   videoRagEnabled?: boolean;
   onToggleVideoRag?: () => void;
+  queryTransformEnabled?: boolean;
+  onToggleQueryTransform?: () => void;
 }
 
 export function ChatInput({
@@ -23,6 +25,8 @@ export function ChatInput({
   isStopping = false,
   videoRagEnabled = false,
   onToggleVideoRag,
+  queryTransformEnabled = true,
+  onToggleQueryTransform,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
