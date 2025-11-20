@@ -172,6 +172,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     localStorage.setItem('queryTransformEnabled', JSON.stringify(queryTransformEnabled));
   }, [queryTransformEnabled]);
 
+  // Expose query transformation controls to console for debugging
+  useEffect(() => {
+    (window as any).__queryTransform = {
+      enabled: queryTransformEnabled,
+      toggle: () => {
+        setQueryTransformEnabled(prev => !prev);
+        console.log(`Query transformation ${!queryTransformEnabled ? 'enabled' : 'disabled'}`);
+      },
+    };
+  }, [queryTransformEnabled]);
+
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
   // Ref to track if initial model check is complete
