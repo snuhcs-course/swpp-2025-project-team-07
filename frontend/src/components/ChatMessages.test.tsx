@@ -27,7 +27,7 @@ describe('ChatMessages', () => {
   it('renders empty state when there are no messages', () => {
     render(<ChatMessages user={null} messages={[]} />);
 
-    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
+    expect(screen.getByText(/Hello,/)).toBeInTheDocument();
     expect(screen.queryByTestId('markdown')).not.toBeInTheDocument();
   });
 

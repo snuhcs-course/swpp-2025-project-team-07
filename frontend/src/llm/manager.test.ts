@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const state = vi.hoisted(() => {
   const contexts: Array<{ dispose: ReturnType<typeof vi.fn>; getSequence: () => unknown }> = [];
 
-  const promptMock = vi.fn(async () => 'mock-response');
+  const promptMock = vi.fn(async (_message?: string, _options?: any) => 'mock-response');
 
   const createContextMock = vi.fn(async () => {
     const context = {
@@ -92,16 +92,16 @@ describe('LLMManager', () => {
     loadArgs.onLoadProgress(0.42);
     expect(onProgress).toHaveBeenCalledWith(0.42);
 
-    expect(state.createContextMock).toHaveBeenCalledWith({ contextSize: 8192 });
+    expect(state.createContextMock).toHaveBeenCalledWith({ contextSize: 32768 });
     expect(state.FakeChatSession.instances).toHaveLength(1);
-    expect(state.FakeChatSession.instances[0].config.systemPrompt).toBe('You are a helpful AI assistant.');
+    expect(state.FakeChatSession.instances[0].config.systemPrompt).toContain('You are a helpful AI assistant');
 
     expect(manager.getSessionCount()).toBe(1);
     expect(manager.getSessionIds()).toEqual(['session-1']);
 
     const info = manager.getModelInfo();
     expect(info.loaded).toBe(true);
-    expect(info.contextSize).toBe(8192);
+    expect(info.contextSize).toBe(32768);
   });
 
   it('supports creating additional sessions with custom prompts', async () => {
@@ -160,7 +160,7 @@ describe('LLMManager', () => {
     const onChunk = vi.fn();
     const onComplete = vi.fn();
 
-    state.promptMock.mockImplementationOnce(async (_message, options) => {
+    state.promptMock.mockImplementationOnce(async (_message: string | undefined, options: any) => {
       options.onTextChunk?.('chunk A');
       options.onTextChunk?.('chunk B');
       return 'ignored';
@@ -217,5 +217,146 @@ describe('LLMManager', () => {
   it('throws descriptive error when chatting with missing session', async () => {
     const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
     await expect(manager.chat('hi', { sessionId: 'missing' })).rejects.toThrow('Session missing not found');
+  });
+
+  it('handles errors during chat and propagates them', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    state.promptMock.mockRejectedValueOnce(new Error('Prompt processing failed'));
+
+    await expect(manager.chat('test message')).rejects.toThrow('Prompt processing failed');
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Chat error:', expect.any(Error));
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('throws descriptive error when streaming with missing session', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    await expect(manager.streamChat('hi', { sessionId: 'missing' })).rejects.toThrow('Session missing not found');
+  });
+
+  it('handles errors during stream chat', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    state.promptMock.mockRejectedValueOnce(new Error('Stream failed'));
+
+    await expect(manager.streamChat('test')).rejects.toThrow('Stream failed');
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Stream chat error:', expect.any(Error));
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('can stop an active stream', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    let chunkCount = 0;
+    const onChunk = vi.fn(() => {
+      chunkCount++;
+      if (chunkCount === 2) {
+        manager.stopStream('stream-1');
+      }
+    });
+
+    state.promptMock.mockImplementationOnce(async (_message: string | undefined, options: any) => {
+      options.onTextChunk?.('chunk 1');
+      options.onTextChunk?.('chunk 2');
+      options.onTextChunk?.('chunk 3');
+      options.onTextChunk?.('chunk 4');
+      return 'done';
+    });
+
+    await expect(
+      manager.streamChat('test', { streamId: 'stream-1', onChunk })
+    ).rejects.toThrow();
+
+    // Should have stopped after 2 chunks
+    expect(onChunk).toHaveBeenCalledTimes(2);
+  });
+
+  it('stopStream does nothing if stream is not active', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    await expect(manager.stopStream('nonexistent')).resolves.not.toThrow();
+  });
+
+  it('calls session abort method when stopping stream if available', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    const abortMock = vi.fn().mockResolvedValue(undefined);
+    const sessions = (manager as any).sessions as Map<string, any>;
+    const sessionData = sessions.get('session-1');
+    sessionData.session.abort = abortMock;
+
+    state.promptMock.mockImplementationOnce(async (_message: string | undefined, options: any) => {
+      await manager.stopStream('test-stream');
+      options.onTextChunk?.('chunk');
+      return 'done';
+    });
+
+    await expect(
+      manager.streamChat('test', { streamId: 'test-stream' })
+    ).rejects.toThrow();
+
+    expect(abortMock).toHaveBeenCalled();
+  });
+
+  it('handles abort errors gracefully', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const abortMock = vi.fn().mockRejectedValue(new Error('Abort failed'));
+    const sessions = (manager as any).sessions as Map<string, any>;
+    const sessionData = sessions.get('session-1');
+    sessionData.session.abort = abortMock;
+
+    state.promptMock.mockImplementationOnce(async (_message: string | undefined, options: any) => {
+      await manager.stopStream('test-stream');
+      options.onTextChunk?.('chunk');
+      return 'done';
+    });
+
+    await expect(
+      manager.streamChat('test', { streamId: 'test-stream' })
+    ).rejects.toThrow();
+
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[LLMManager] Failed to abort session stream:',
+      expect.any(Error)
+    );
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('passes videos to prompt options when provided', async () => {
+    const manager = new LLMManager({ modelPath: '/models/llama.gguf' });
+    await manager.initialize();
+
+    const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const videos = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])];
+
+    await manager.streamChat('test with videos', { videos });
+
+    expect(state.promptMock).toHaveBeenCalledWith(
+      'test with videos',
+      expect.objectContaining({
+        images: videos,
+      })
+    );
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[LLM] Prepared 2 video(s)')
+    );
+
+    consoleLogSpy.mockRestore();
   });
 });

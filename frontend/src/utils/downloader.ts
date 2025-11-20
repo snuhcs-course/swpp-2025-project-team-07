@@ -176,10 +176,6 @@ export async function downloadFile(
 
     console.log('Download complete:', savePath);
 
-    if (!fs.existsSync(savePath)) {
-      throw new Error('Downloaded file not found');
-    }
-
     const stats = fs.statSync(savePath);
     console.log(`File downloaded: ${stats.size} bytes (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
 
