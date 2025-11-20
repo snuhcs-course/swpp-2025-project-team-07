@@ -1,4 +1,4 @@
-export type ProcessingPhaseKey = 'searching' | 'processing' | 'generating';
+export type ProcessingPhaseKey = 'understanding' | 'searching' | 'processing' | 'generating';
 
 export type ProcessingPhase = ProcessingPhaseKey | 'complete';
 

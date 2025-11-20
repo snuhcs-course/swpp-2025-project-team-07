@@ -440,6 +440,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
     const runStartTime = getTimestamp();
     const phaseDurations: Record<ProcessingPhaseKey, number> = {
+      understanding: 0,
       searching: 0,
       processing: 0,
       generating: 0,
@@ -529,6 +530,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       let videoSearchQuery = content; // Default to raw content if transformation is disabled
 
       if (queryTransformEnabled && videoRagEnabled) {
+        processingStatusService.startPhase(sessionId, 'understanding');
+        const understandPhaseStart = getTimestamp();
         try {
           console.log('[QueryTransform] Starting query transformation...');
 
@@ -628,6 +631,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           transformedQuery = null;
           chatSearchQuery = content;
           videoSearchQuery = content;
+        } finally {
+          const understandElapsed = getTimestamp() - understandPhaseStart;
+          phaseDurations.understanding = understandElapsed;
+          processingStatusService.completePhase(sessionId, 'understanding', understandElapsed, {
+            retrievalMetrics: {
+              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+              screenRecordings: retrievalSummary.screenRecordings,
+              embeddingsSearched: retrievalSummary.embeddingsSearched,
+            },
+          });
         }
       }
 
@@ -903,9 +917,7 @@ ${contextPrompt || 'No additional context retrieved'}
 ${transformedQuery.response_guidance}
 
 Requirements:
-- Be ultra-personalized and specific to what the user is looking for
-- Reference exact timestamps from screen recordings when available
-- Describe visual characteristics if relevant: ${transformedQuery.visual_cues || 'general appearance'}
+- Be specific to what the user is looking for
 - Cite sources naturally in your response (mention which screen recording or conversation)
 - Focus on answering: ${transformedQuery.search_keywords}
 </synthesis_task>
@@ -1270,10 +1282,6 @@ User Query: ${transformedQuery.original_query}`;
 
   const handleToggleVideoRag = () => {
     setVideoRagEnabled(prev => !prev);
-  };
-
-  const handleToggleQueryTransform = () => {
-    setQueryTransformEnabled(prev => !prev);
   };
 
   const createNewChat = () => {
