@@ -151,13 +151,13 @@ export function useChunkedEmbeddingQueue(opts?: {
             await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden' });
           }
 
-          // Method3: Always send 'video_set'
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' })
+          // // Method3: Always send 'video_set'
+          // await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' })
 
-          // Method2: Only send 'video_set_hidden' if chunk was NOT focused
-          if (!chunk.wasFocused) {
-            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set_hidden' });
-          }
+          // // Method2: Only send 'video_set_hidden' if chunk was NOT focused
+          // if (!chunk.wasFocused) {
+          //   await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set_hidden' });
+          // }
         } catch (e) {
           console.error('[upload:onEmbeddedChunk] failed:', e);
           // TODO: Implement retry policy when faided to upload 

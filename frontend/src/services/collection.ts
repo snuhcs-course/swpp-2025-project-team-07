@@ -119,20 +119,23 @@ export async function queryChatData(
 
 export async function queryScreenData(
   indices: string[],
-  outputFields: string[]
+  outputFields: string[],
+  collection_version: string = 'mean_pooling'
 ): Promise<QueryResponse> {
   return apiRequestWithAuth<QueryResponse>('/api/collections/query/', {
     method: 'POST',
     body: JSON.stringify({
       screen_ids: indices,
       screen_output_fields: outputFields,
+      collection_version: collection_version,
     }),
   });
 }
 
 export async function queryBothData(
   indices: string[],
-  outputFields: string[]
+  outputFields: string[],
+  collection_version: string = 'mean_pooling'
 ): Promise<QueryResponse> {
   return apiRequestWithAuth<QueryResponse>('/api/collections/query/', {
     method: 'POST',
@@ -141,6 +144,7 @@ export async function queryBothData(
       chat_output_fields: outputFields,
       screen_ids: indices,
       screen_output_fields: outputFields,
+      collection_version: collection_version,
     }),
   });
 }
@@ -204,6 +208,7 @@ export async function searchAndQuery(
   videoQueryVector?: number[], // Optional: separate embedding for video search
   videoTopK: number = 3, // Optional: top-K for video (defaults to 3)
   excludeSessionId?: number, // Optional: exclude memories from this session (to avoid redundancy)
+  collection_version: string = 'mean_pooling'
 ): Promise<VectorData[]> {
   // Search both collections in parallel with appropriate embeddings
   let searchResult: SearchResponse;
@@ -214,7 +219,8 @@ export async function searchAndQuery(
       method: 'POST',
       body: JSON.stringify({
         chat_data: [{ vector: chatQueryVector }],
-        screen_data: [{ vector: videoQueryVector }]
+        screen_data: [{ vector: videoQueryVector }],
+        collection_version: collection_version,
       }),
     });
   } else {
@@ -264,7 +270,7 @@ export async function searchAndQuery(
     // Query both collections in parallel with their respective IDs
     const [chatResult, screenResult] = await Promise.all([
       queryChatData(chatIds, outputFields),
-      queryScreenData(screenIds, outputFields)
+      queryScreenData(screenIds, outputFields, collection_version)
     ]);
     // Combine results
     queryResult = {
@@ -275,7 +281,7 @@ export async function searchAndQuery(
   } else if (chatIds.length > 0) {
     queryResult = await queryChatData(chatIds, outputFields);
   } else {
-    queryResult = await queryScreenData(screenIds, outputFields);
+    queryResult = await queryScreenData(screenIds, outputFields, collection_version);
   }
 
   // Combine results and tag with source type
