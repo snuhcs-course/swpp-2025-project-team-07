@@ -635,6 +635,52 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                 }
               };
 
+              if (doc.video_set_videos && doc.video_set_videos.length > 0) {
+                 const setVideos = doc.video_set_videos;
+                 (window as any)[`__ragVideoSet${videoCount}`] = {
+                    videos: setVideos,
+                    count: setVideos.length,
+                    // Combine all video blobs in the set into one and view it
+                    view: () => {
+                        console.log(`Merging ${setVideos.length} videos from set ${videoCount} for viewing...`);
+                        const blobs = setVideos.map((v: any) => v.video_blob).filter((b: any) => !!b);
+                        
+                        if (blobs.length === 0) {
+                            console.log('No videos to merge.');
+                            return;
+                        }
+                        
+                        // Concatenate all blobs into a single Blob
+                        // Note: Simple concatenation works for some container formats (like MPEG-TS) but might have issues 
+                        // with seeking or accurate duration in WebM depending on the player implementation.
+                        // However, browsers often handle sequential playback of concatenated WebM chunks reasonably well for viewing.
+                        const mergedBlob = new Blob(blobs, { type: blobs[0].type });
+                        const url = URL.createObjectURL(mergedBlob);
+                        
+                        console.log(`Opening merged video (${(mergedBlob.size / 1024 / 1024).toFixed(2)} MB)...`);
+                        window.open(url, '_blank');
+                    },
+                    // Keep download capability
+                    download: () => {
+                        console.log('Merging ' + setVideos.length + ' videos for download...');
+                        const blobs = setVideos.map((v: any) => v.video_blob).filter((b: any) => !!b);
+                        if (blobs.length === 0) return;
+                        
+                        const mergedBlob = new Blob(blobs, { type: blobs[0].type });
+                        const url = URL.createObjectURL(mergedBlob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `rag-video-set-${videoCount}-merged.webm`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), 100);
+                        console.log('Downloaded merged video set');
+                    }
+                 };
+                 console.log(`[RAG] Video set ${videoCount} available: __ragVideoSet${videoCount}.view() | .download()`);
+              }
+
               console.log(`[RAG] Retrieved video ${videoCount}: ${(doc.video_blob.size / 1024).toFixed(1)} KB`);
             } else if (doc.source_type === 'chat') {
               // Parse bundle to extract individual messages

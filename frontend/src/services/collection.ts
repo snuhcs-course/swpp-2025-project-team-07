@@ -2,6 +2,7 @@
 
 import { apiRequestWithAuth } from '@/utils/apiRequest';
 import { type AuthUser } from '.@/services/auth';
+import { decryptText } from '@/utils/encryption'
 
 // Vector data for insertion (combined messages → 1 vector entry)
 export interface VectorData {
@@ -17,6 +18,7 @@ export interface VectorData {
   duration?: number; // Video duration in ms
   frame_count?: number; // Number of frames
   video_set_id?: string | null; // REQUIRED primary key for each video set
+  video_set_videos?: VectorData[];
   [key: string]: any;
 }
 
@@ -284,6 +286,50 @@ function extractScreenVideos(
   return { representatives, allVideosInOrder };
 }
 
+async function processRetrievedDocument(doc: VectorData): Promise<VectorData> {
+  const decryptedContent = await decryptText(doc.content).catch(() => '[Decryption Error]');
+  let processedDoc = { ...doc, content: decryptedContent };
+
+  // If this is a screen recording, reconstruct the original video blob
+  if (processedDoc.source_type === 'screen' && decryptedContent !== '[Decryption Error]') {
+    try {
+      const payload = JSON.parse(decryptedContent);
+
+      // New format: original video blob stored as base64
+      if (payload.video_base64) {
+        const videoBlob = await base64ToVideoBlob(
+          payload.video_base64,
+          payload.video_type || 'video/webm'
+        );
+        processedDoc = {
+          ...processedDoc,
+          video_blob: videoBlob,
+          duration: payload.duration,
+          width: payload.width,
+          height: payload.height,
+        };
+      }
+    } catch (e) {
+      console.error('Failed to reconstruct video for doc:', doc.id, e);
+    }
+  }
+
+  // Recursively process video set items if they exist (RAG Video Set Debugging)
+  if (processedDoc.video_set_videos && processedDoc.video_set_videos.length > 0) {
+    processedDoc.video_set_videos = await Promise.all(
+      processedDoc.video_set_videos.map(v => processRetrievedDocument({ ...v, source_type: 'screen' }))
+    );
+    
+    // Sort videos in set by timestamp/id just in case to ensure correct playback order
+    processedDoc.video_set_videos.sort((a, b) => {
+      if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+      return a.id.localeCompare(b.id);
+    });
+  }
+
+  return processedDoc;
+}
+
 // Complete RAG flow: Search + Query top-K + Decrypt (unified chat + video)
 export async function searchAndQuery(
   chatQueryVector: number[],
@@ -389,42 +435,9 @@ export async function searchAndQuery(
     : allResults;
 
   // Decrypt all results and reconstruct videos for screen recordings
-  const { decryptText } = await import('@/utils/encryption');
   const decryptedResults = await Promise.all(
-    filteredResults.map(async (doc) => {
-      const decryptedContent = await decryptText(doc.content).catch(() => '[Decryption Error]');
-
-      // If this is a screen recording, reconstruct the original video blob
-      if (doc.source_type === 'screen' && decryptedContent !== '[Decryption Error]') {
-        try {
-          const payload = JSON.parse(decryptedContent);
-
-          // New format: original video blob stored as base64
-          if (payload.video_base64) {
-            const videoBlob = await base64ToVideoBlob(
-              payload.video_base64,
-              payload.video_type || 'video/webm'
-            );
-            return {
-              ...doc,
-              content: decryptedContent,
-              video_blob: videoBlob,
-              duration: payload.duration,
-              width: payload.width,
-              height: payload.height,
-            };
-          }
-        } catch (e) {
-          console.error('Failed to reconstruct video:', e);
-        }
-      }
-
-      return {
-        ...doc,
-        content: decryptedContent
-      };
-    })
-  );
+    filteredResults.map(doc => processRetrievedDocument(doc))
+  )
 
   return decryptedResults;
 }
