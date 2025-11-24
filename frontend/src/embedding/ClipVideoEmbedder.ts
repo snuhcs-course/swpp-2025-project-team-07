@@ -47,7 +47,9 @@ export class ClipVideoEmbedder {
 
   private session!: ort.InferenceSession;
   private inputName!: string; 
-  private outputName!: string;
+  
+  private imageOutputName!: string;
+  private textOutputName!: string;
 
   private needTextFeeds = false;
   private textSeqLen = 77;
@@ -102,9 +104,17 @@ export class ClipVideoEmbedder {
       ins.includes('pixel_values') ? 'pixel_values' :
       (ins[0] ?? 'pixel_values');
 
-    this.outputName =
+    this.imageOutputName =
       outs.find(n => n === 'image_embeds') ??
       outs.find(n => n === 'pooled_output') ??
+      outs.find(n => n === 'output') ??
+      outs.find(n => n === 'last_hidden_state') ??
+      outs[0];
+
+    this.textOutputName =
+      outs.find(n => n === 'text_embeds') ??
+      outs.find(n => n === 'text_projection') ??
+      outs.find(n => n === 'pooled_output') ?? // fallback
       outs.find(n => n === 'output') ??
       outs.find(n => n === 'last_hidden_state') ??
       outs[0];
@@ -121,7 +131,8 @@ export class ClipVideoEmbedder {
     }
 
     console.log('[clip] inputs=', ins, ' chosen=', this.inputName);
-    console.log('[clip] outputs=', outs, ' chosen=', this.outputName);
+    console.log('[clip] outputs=', outs, ' chosen=', outs);
+
     if (this.needTextFeeds) {
       console.log('[clip] unified CLIP detected → textSeqLen=', this.textSeqLen,
                   ' dtypes=', this.inputDTypes);
@@ -172,8 +183,8 @@ export class ClipVideoEmbedder {
     }
 
     const outMap = await this.session.run(feeds);
-    const out = outMap[this.outputName];
-    if (!out) throw new Error(`output "${this.outputName}" not found: ${Object.keys(outMap)}`);
+    const out = outMap[this.imageOutputName];
+    if (!out) throw new Error(`output "${this.imageOutputName}" not found: ${Object.keys(outMap)}`);
 
     if (out.dims.length <= 2) {
       const data = out.data as Float32Array | number[];
@@ -213,8 +224,8 @@ export class ClipVideoEmbedder {
     }
 
     const outMap = await this.session.run(feeds);
-    const out = outMap[this.outputName];
-    if (!out) throw new Error(`output "${this.outputName}" not found: ${Object.keys(outMap)}`);
+    const out = outMap[this.textOutputName];
+    if (!out) throw new Error(`output "${this.textOutputName}" not found: ${Object.keys(outMap)}`);
 
     if (out.dims.length <= 2) {
       const data = out.data as Float32Array | number[];
