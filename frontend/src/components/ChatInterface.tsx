@@ -640,37 +640,64 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                  (window as any)[`__ragVideoSet${videoCount}`] = {
                     videos: setVideos,
                     count: setVideos.length,
-                    // Combine all video blobs in the set into one and view it
-                    view: () => {
-                        console.log(`Merging ${setVideos.length} videos from set ${videoCount} for viewing...`);
+                    viewSequence: () => {
+                        // Play videos one after another in a new window
+                        const win = window.open('', '_blank');
+                        if (!win) return console.error('Popup blocked');
+                        
+                        const script = `
+                          const blobs = [];
+                          let currentIndex = 0;
+                          const video = document.getElementById('player');
+                          const status = document.getElementById('status');
+                          
+                          function playNext() {
+                            if (currentIndex >= blobs.length) {
+                                status.innerText = 'All videos played.';
+                                return;
+                            }
+                            status.innerText = 'Playing video ' + (currentIndex + 1) + ' of ' + blobs.length;
+                            const url = URL.createObjectURL(blobs[currentIndex]);
+                            video.src = url;
+                            video.play();
+                            currentIndex++;
+                          }
+                          
+                          video.onended = playNext;
+                          
+                          // Initialize blobs from parent window
+                          window.init = (videoBlobs) => {
+                              videoBlobs.forEach(b => blobs.push(b));
+                              playNext();
+                          };
+                        `;
+                        
+                        win.document.write(`
+                           <html>
+                             <head><title>Video Set Sequence Preview</title></head>
+                             <body style="background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0;">
+                               <h3 id="status">Loading sequence...</h3>
+                               <video id="player" controls autoplay style="max-width:90%; max-height:80vh; border:1px solid #444;"></video>
+                               <script>${script}</script>
+                             </body>
+                           </html>
+                        `);
+                        
+                        // Pass blobs to the new window
                         const blobs = setVideos.map((v: any) => v.video_blob).filter((b: any) => !!b);
-                        
-                        if (blobs.length === 0) {
-                            console.log('No videos to merge.');
-                            return;
-                        }
-                        
-                        // Concatenate all blobs into a single Blob
-                        // Note: Simple concatenation works for some container formats (like MPEG-TS) but might have issues 
-                        // with seeking or accurate duration in WebM depending on the player implementation.
-                        // However, browsers often handle sequential playback of concatenated WebM chunks reasonably well for viewing.
-                        const mergedBlob = new Blob(blobs, { type: blobs[0].type });
-                        const url = URL.createObjectURL(mergedBlob);
-                        
-                        console.log(`Opening merged video (${(mergedBlob.size / 1024 / 1024).toFixed(2)} MB)...`);
-                        window.open(url, '_blank');
+                        (win as any).init(blobs);
                     },
-                    // Keep download capability
-                    download: () => {
-                        console.log('Merging ' + setVideos.length + ' videos for download...');
+                    downloadMerged: () => {
+                        console.log('Merging ' + setVideos.length + ' videos...');
                         const blobs = setVideos.map((v: any) => v.video_blob).filter((b: any) => !!b);
                         if (blobs.length === 0) return;
                         
+                        // Simple concatenation for debugging (WebM concatenation works reasonably well in players like VLC)
                         const mergedBlob = new Blob(blobs, { type: blobs[0].type });
                         const url = URL.createObjectURL(mergedBlob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `rag-video-set-${videoCount}-merged.webm`;
+                        a.download = `rag-video-set-${videoCount}-merged-${Date.now()}.webm`;
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
@@ -678,7 +705,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                         console.log('Downloaded merged video set');
                     }
                  };
-                 console.log(`[RAG] Video set ${videoCount} available: __ragVideoSet${videoCount}.view() | .download()`);
+                 console.log(`[RAG] Video set ${videoCount} available: __ragVideoSet${videoCount}.viewSequence() | .downloadMerged()`);
               }
 
               console.log(`[RAG] Retrieved video ${videoCount}: ${(doc.video_blob.size / 1024).toFixed(1)} KB`);
