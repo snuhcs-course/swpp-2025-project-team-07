@@ -143,13 +143,13 @@ export function useChunkedEmbeddingQueue(opts?: {
         setProcessed(v => v + 1);
 
         try {
-          // Method 1: Always send 'mean_pooling'
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling' });
+          // // Method 1: Always send 'mean_pooling'
+          // await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling' });
 
-          // Method2: Only send 'mean_pooling_hidden' if chunk was NOT focused
-          if (!chunk.wasFocused) {
-            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden' });
-          }
+          // // Method2: Only send 'mean_pooling_hidden' if chunk was NOT focused
+          // if (!chunk.wasFocused) {
+          //   await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden' });
+          // }
 
           // Method3: Always send 'video_set'
           await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' })

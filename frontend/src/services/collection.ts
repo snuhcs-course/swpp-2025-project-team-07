@@ -37,10 +37,16 @@ export interface SearchResponse {
   screen_ids?: string[][];
 }
 
+export interface VideoSetResult {
+  video_set_id: string;
+  representative_id?: string;
+  videos: VectorData[];
+}
+
 export interface QueryResponse {
   ok: boolean;
   chat_results?: VectorData[];
-  screen_results?: VectorData[];
+  screen_results?: (VectorData | VideoSetResult)[];
 }
 
 // Insert - vectorDB requires array format
@@ -119,20 +125,38 @@ export async function queryChatData(
 
 export async function queryScreenData(
   indices: string[],
-  outputFields: string[]
+  outputFields: string[],
+  collection_version: string = 'video_set',
+  chatIds: string[] = [],
+  chatOutputFields?: string[],
+  queryVideoSets: boolean = true
 ): Promise<QueryResponse> {
+  const body: Record<string, unknown> = {
+    screen_ids: indices,
+    screen_output_fields: outputFields,
+  };
+
+  if (queryVideoSets || chatIds.length > 0) {
+    body.chat_ids = chatIds;
+    body.chat_output_fields = chatOutputFields ?? outputFields;
+  }
+
+  if (queryVideoSets) {
+    body.query_video_sets = true;
+    body.collection_version = collection_version;
+  }
+
   return apiRequestWithAuth<QueryResponse>('/api/collections/query/', {
     method: 'POST',
-    body: JSON.stringify({
-      screen_ids: indices,
-      screen_output_fields: outputFields,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
 export async function queryBothData(
   indices: string[],
-  outputFields: string[]
+  outputFields: string[],
+  collection_version: string = 'video_set',
+  queryVideoSets: boolean = true
 ): Promise<QueryResponse> {
   return apiRequestWithAuth<QueryResponse>('/api/collections/query/', {
     method: 'POST',
@@ -141,6 +165,7 @@ export async function queryBothData(
       chat_output_fields: outputFields,
       screen_ids: indices,
       screen_output_fields: outputFields,
+      ...(queryVideoSets ? { query_video_sets: true, collection_version } : {}),
     }),
   });
 }
@@ -197,6 +222,68 @@ async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob
   }
 }
 
+function isVideoSetQueryResult(result: VectorData | VideoSetResult): result is VideoSetResult {
+  return Boolean(result) && typeof result === 'object' && Array.isArray((result as any).videos);
+}
+
+function extractScreenVideos(
+  screenResults: (VectorData | VideoSetResult)[] | undefined,
+  videoTopK: number
+): { representatives: VectorData[]; allVideosInOrder: VectorData[] } {
+  const parsedSets: { video_set_id?: string | null; representative?: VectorData; videos: VectorData[]; }[] = [];
+  const allVideosInOrder: VectorData[] = [];
+
+  if (!screenResults || screenResults.length === 0) {
+    return { representatives: [], allVideosInOrder };
+  }
+
+  for (const rawResult of screenResults) {
+    if (isVideoSetQueryResult(rawResult)) {
+      const videosWithSetId = (rawResult.videos || []).map(video =>
+        video.video_set_id ? video : { ...video, video_set_id: rawResult.video_set_id }
+      );
+
+      allVideosInOrder.push(...videosWithSetId);
+
+      const representative = videosWithSetId.find(video => video.id === rawResult.representative_id);
+      if (!representative) {
+        console.warn(
+          `[VideoSet] Representative "${rawResult.representative_id}" not found in set "${rawResult.video_set_id}"`
+        );
+      }
+
+      parsedSets.push({
+        video_set_id: rawResult.video_set_id,
+        representative,
+        videos: videosWithSetId,
+      });
+    } else {
+      const vectorResult = rawResult as VectorData;
+      allVideosInOrder.push(vectorResult);
+      parsedSets.push({
+        video_set_id: vectorResult.video_set_id ?? null,
+        representative: vectorResult,
+        videos: [vectorResult],
+      });
+    }
+  }
+
+  const representatives = parsedSets
+    .slice(0, videoTopK)
+    .map((set) => {
+      if (!set.representative) return undefined;
+      const representativeWithSetId = set.representative.video_set_id
+        ? { ...set.representative }
+        : { ...set.representative, video_set_id: set.video_set_id };
+
+      representativeWithSetId.video_set_videos = set.videos;
+      return representativeWithSetId;
+    })
+    .filter((rep): rep is VectorData => Boolean(rep));
+
+  return { representatives, allVideosInOrder };
+}
+
 // Complete RAG flow: Search + Query top-K + Decrypt (unified chat + video)
 export async function searchAndQuery(
   chatQueryVector: number[],
@@ -204,17 +291,22 @@ export async function searchAndQuery(
   videoQueryVector?: number[], // Optional: separate embedding for video search
   videoTopK: number = 3, // Optional: top-K for video (defaults to 3)
   excludeSessionId?: number, // Optional: exclude memories from this session (to avoid redundancy)
+  collection_version: string = 'video_set'
 ): Promise<VectorData[]> {
+  const screenCollectionVersion = collection_version ?? 'video_set';
+  const shouldSearchScreens = Boolean(videoQueryVector && videoTopK > 0);
+
   // Search both collections in parallel with appropriate embeddings
   let searchResult: SearchResponse;
 
-  if (videoQueryVector) {
+  if (shouldSearchScreens) {
     // Use separate embeddings for chat (768-dim DRAGON) and video (512-dim CLIP)
     searchResult = await apiRequestWithAuth<SearchResponse>('/api/collections/search/', {
       method: 'POST',
       body: JSON.stringify({
         chat_data: [{ vector: chatQueryVector }],
-        screen_data: [{ vector: videoQueryVector }]
+        screen_data: [{ vector: videoQueryVector }],
+        collection_version: screenCollectionVersion,
       }),
     });
   } else {
@@ -241,16 +333,20 @@ export async function searchAndQuery(
   }
 
   // Get top-K screen results (only if video search was performed)
-  if (videoQueryVector && searchResult.ok && searchResult.screen_scores && searchResult.screen_ids &&
+  if (shouldSearchScreens && searchResult.ok && searchResult.screen_scores && searchResult.screen_ids &&
       searchResult.screen_scores.length > 0 && searchResult.screen_ids.length > 0) {
     const scores = searchResult.screen_scores[0];
     const ids = searchResult.screen_ids[0];
+
+    const videoSetSize = (import.meta as any).env?.VITE_VIDEO_SET_SIZE
+      ? Number((import.meta as any).env.VITE_VIDEO_SET_SIZE)
+      : 15;
 
     // Pair scores with IDs and sort by score (descending)
     screenIds = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, videoTopK)
+      .slice(0, videoTopK * videoSetSize)
       .map(item => item.id);
   }
 
@@ -260,28 +356,31 @@ export async function searchAndQuery(
   let queryResult: QueryResponse;
   const outputFields = ['content', 'timestamp', 'session_id', 'role'];
 
-  if (chatIds.length > 0 && screenIds.length > 0) {
-    // Query both collections in parallel with their respective IDs
-    const [chatResult, screenResult] = await Promise.all([
-      queryChatData(chatIds, outputFields),
-      queryScreenData(screenIds, outputFields)
-    ]);
-    // Combine results
-    queryResult = {
-      ok: chatResult.ok && screenResult.ok,
-      chat_results: chatResult.chat_results,
-      screen_results: screenResult.screen_results,
-    };
+  if (screenIds.length > 0) {
+    // Unified query for chat + screen with video set retrieval
+    queryResult = await queryScreenData(
+      screenIds,
+      outputFields,
+      screenCollectionVersion,
+      chatIds,
+      outputFields,
+      true
+    );
   } else if (chatIds.length > 0) {
     queryResult = await queryChatData(chatIds, outputFields);
   } else {
-    queryResult = await queryScreenData(screenIds, outputFields);
+    queryResult = { ok: false };
   }
 
   // Combine results and tag with source type
+  const { representatives: screenResultsForRag } = extractScreenVideos(
+    queryResult.screen_results,
+    videoTopK
+  );
+
   const allResults: VectorData[] = [
     ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
-    ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
+    ...screenResultsForRag.map(doc => ({ ...doc, source_type: 'screen' as const }))
   ];
 
   // Filter out same-session memories

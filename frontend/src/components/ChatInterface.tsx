@@ -533,6 +533,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             videoQueryEmbedding || undefined,
             videoRagEnabled ? 3 : 0,
             sessionIdNum,
+            'video_set'
           )
         );
         ensureNotCancelled();

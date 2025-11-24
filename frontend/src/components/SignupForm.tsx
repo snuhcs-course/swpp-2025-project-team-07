@@ -81,7 +81,7 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
       const collectionVersions = [
         'mean_pooling',                 // mean_pooling
         'mean_pooling_hidden',          // mean_pooling + hide the Clone app screen
-        'video_set',                    // video-set structure
+        'video_set',                    // video_set structure
         'video_set_hidden'              // video_set structure + hide the Clone app screen
       ]
 
