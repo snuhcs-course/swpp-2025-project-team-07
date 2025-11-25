@@ -207,7 +207,7 @@ class TestProfileView:
 
     def test_get_profile_authenticated(self, jwt_authenticated_client, user):
         """Test authenticated user can retrieve their profile."""
-        url = reverse("user_profile")
+        url = reverse("profile")
         response = jwt_authenticated_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -218,7 +218,7 @@ class TestProfileView:
 
     def test_get_profile_unauthenticated(self, api_client):
         """Test unauthenticated user cannot access profile."""
-        url = reverse("user_profile")
+        url = reverse("profile")
         response = api_client.get(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
