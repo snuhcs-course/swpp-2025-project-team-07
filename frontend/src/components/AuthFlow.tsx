@@ -21,7 +21,9 @@ export function AuthFlow({ onAuthSuccess }: AuthFlowProps = {}) {
   };
 
   const handleSignupSuccess = (_email: string) => {
-    setAuthState('login');
+    if (onAuthSuccess) {
+      onAuthSuccess();
+    }
   };
 
   useEffect(() => {
