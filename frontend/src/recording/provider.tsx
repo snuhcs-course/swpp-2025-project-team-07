@@ -57,7 +57,7 @@ export function useChunkedEmbeddingQueue(opts?: {
   const chunkMs = opts?.chunkMs ?? (
     (import.meta as any).env?.VITE_VIDEO_CHUNK_MS
       ? Number((import.meta as any).env.VITE_VIDEO_CHUNK_MS)
-      : 30_000
+      : 3_000
   );
   const frameCount = opts?.frameCount ?? (
     (import.meta as any).env?.VITE_VIDEO_SAMPLING_FRAMES
