@@ -119,22 +119,6 @@ export function getTopKIndices(scores: number[], k: number): number[] {
     .map(item => item.index);
 }
 
-// Helper: Convert base64 to ImageData
-function base64ToImageData(base64: string, width: number, height: number): Promise<ImageData> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, width, height);
-      const imageData = ctx.getImageData(0, 0, width, height);
-      resolve(imageData);
-    };
-    img.onerror = reject;
-    img.src = `data:image/png;base64,${base64}`;
-  });
-}
-
 // Helper: Convert base64 to video Blob
 async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob> {
   try {

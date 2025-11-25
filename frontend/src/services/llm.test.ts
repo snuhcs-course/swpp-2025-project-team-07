@@ -264,4 +264,61 @@ describe('LLMService', () => {
     window.llmAPI = undefined as any;
     expect(instance.isAvailable()).toBe(false);
   });
+
+  it('generates a concise title from conversation', async () => {
+    const instance = LLMService.getInstance();
+    (window.llmAPI.chat as any).mockResolvedValue('"AI Model Discussion"');
+
+    const title = await instance.generateTitle('What is an AI model?', 'An AI model is a system...');
+
+    expect(window.llmAPI.chat).toHaveBeenCalledWith(
+      expect.stringContaining('generate a very short and concise title'),
+      { temperature: 0.3, maxTokens: 20 }
+    );
+    expect(title).toBe('AI Model Discussion');
+  });
+
+  it('cleans generated title by removing quotes and punctuation', async () => {
+    const instance = LLMService.getInstance();
+    (window.llmAPI.chat as any).mockResolvedValue("'Machine Learning Basics!!!'");
+
+    const title = await instance.generateTitle('How does ML work?', 'Machine learning works by...');
+
+    expect(title).toBe('Machine Learning Basics');
+  });
+
+  it('truncates long titles to 50 characters', async () => {
+    const instance = LLMService.getInstance();
+    const longTitle = 'A Very Long Title That Exceeds The Maximum Character Limit For Conversation Titles';
+    (window.llmAPI.chat as any).mockResolvedValue(longTitle);
+
+    const title = await instance.generateTitle('Long question', 'Long answer');
+
+    expect(title).toBe(longTitle.substring(0, 50));
+  });
+
+  it('falls back to user message when title generation fails', async () => {
+    const instance = LLMService.getInstance();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    (window.llmAPI.chat as any).mockRejectedValue(new Error('API error'));
+
+    const title = await instance.generateTitle('Short message', 'Response');
+
+    expect(title).toBe('Short message');
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to generate title:', expect.any(Error));
+    consoleSpy.mockRestore();
+  });
+
+  it('truncates fallback title and adds ellipsis for long user messages', async () => {
+    const instance = LLMService.getInstance();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    (window.llmAPI.chat as any).mockRejectedValue(new Error('API error'));
+    const longMessage = 'This is a very long user message that exceeds thirty characters';
+
+    const title = await instance.generateTitle(longMessage, 'Response');
+
+    expect(title).toBe('This is a very long user messa...');
+    expect(title.length).toBe(33); // 30 chars + "..."
+    consoleSpy.mockRestore();
+  });
 });

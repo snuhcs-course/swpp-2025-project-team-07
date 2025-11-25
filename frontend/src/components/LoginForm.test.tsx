@@ -175,4 +175,40 @@ describe('LoginForm', () => {
 
     await waitFor(() => expect(submitButton).not.toBeDisabled());
   });
+
+  it('shows error for invalid email format', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LoginForm
+        onSwitchToSignup={vi.fn()}
+        onSwitchToForgotPassword={vi.fn()}
+        onAuthSuccess={vi.fn()}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Email address'), 'invalid-email');
+    await user.type(screen.getByLabelText('Password'), 'password123');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(screen.getByText('Please enter a valid email')).toBeInTheDocument();
+  });
+
+  it('shows error for password shorter than 6 characters', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LoginForm
+        onSwitchToSignup={vi.fn()}
+        onSwitchToForgotPassword={vi.fn()}
+        onAuthSuccess={vi.fn()}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Email address'), 'test@example.com');
+    await user.type(screen.getByLabelText('Password'), '12345');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(screen.getByText('Password must be at least 6 characters')).toBeInTheDocument();
+  });
 });

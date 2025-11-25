@@ -112,7 +112,7 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
       </CardHeader>
       
       <CardContent className="space-y-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {errors.form && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}

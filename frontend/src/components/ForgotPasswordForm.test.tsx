@@ -55,4 +55,57 @@ describe('ForgotPasswordForm', () => {
 
     setTimeoutMock.mockRestore();
   });
+
+  it('shows error when submitting empty email', async () => {
+    const user = userEvent.setup();
+
+    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
+
+    // Click submit without entering email
+    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
+
+    expect(await screen.findByText('Email is required')).toBeInTheDocument();
+  });
+
+  it('shows error when submitting invalid email', async () => {
+    const user = userEvent.setup();
+
+    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
+
+    // Enter invalid email
+    await user.type(screen.getByLabelText('Email address'), 'invalid-email');
+    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
+
+    expect(await screen.findByText('Please enter a valid email')).toBeInTheDocument();
+  });
+
+  it('clears error when submitting valid email after invalid', async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const setTimeoutMock = vi.spyOn(globalThis, 'setTimeout').mockImplementation((cb: any, ms?: number) => {
+      if (typeof ms === 'number' && ms >= 1000 && typeof cb === 'function') {
+        queueMicrotask(() => cb());
+        return 0 as any;
+      }
+      return originalSetTimeout(cb as any, ms as any);
+    });
+    const user = userEvent.setup();
+
+    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
+
+    // First submit invalid email
+    await user.type(screen.getByLabelText('Email address'), 'invalid');
+    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
+
+    expect(await screen.findByText('Please enter a valid email')).toBeInTheDocument();
+
+    // Clear and enter valid email
+    await user.clear(screen.getByLabelText('Email address'));
+    await user.type(screen.getByLabelText('Email address'), 'valid@example.com');
+    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
+
+    // Error should be cleared and success message should appear
+    expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
+
+    setTimeoutMock.mockRestore();
+  });
 });
