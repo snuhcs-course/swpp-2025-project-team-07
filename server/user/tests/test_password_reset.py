@@ -36,7 +36,7 @@ class TestPasswordReset:
         # Check if we can access content via get()
         message_dict = sent_message.get()
 
-        assert sent_message.subject.subject == "Password Reset OTP"
+        assert sent_message.subject.subject == "[Clone] Password Reset OTP"
 
         # Check content in the dictionary representation
         # content is a list of dicts: [{'type': 'text/html', 'value': '...'}]
