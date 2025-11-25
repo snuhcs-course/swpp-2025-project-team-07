@@ -73,8 +73,6 @@ export async function sampleUniformFrames(
   return frames;
 }
 
-
-
 export class VideoFrameSampler {
   static async uniformSample(
     blob: Blob,
@@ -110,9 +108,15 @@ export class VideoFrameSampler {
         const mid = ((i + 0.5) * duration) / K; 
         return Math.max(0, Math.min(duration - eps, mid)); 
       });
+      
       for (const t of times) {
         await seekTo(video, t);
-        drawCenterCrop(ctx, video, targetSize, targetSize);
+        
+        // Use simple resize (squash) instead of crop to preserve all screen content.
+        // This is crucial for screen recordings where UI elements might be at the edges.
+        ctx.clearRect(0, 0, targetSize, targetSize);
+        ctx.drawImage(video, 0, 0, targetSize, targetSize);
+        
         const imageData = ctx.getImageData(0, 0, targetSize, targetSize);
         frames.push({ time: t, image: imageData, imageData });
       }
@@ -120,28 +124,6 @@ export class VideoFrameSampler {
       return { frames, duration, width, height };
     } finally {
       URL.revokeObjectURL(url);
-    }
-    function drawCenterCrop(
-      ctx: CanvasRenderingContext2D,
-      source: HTMLVideoElement,
-      outW: number,
-      outH: number
-    ) {
-      const sW = source.videoWidth;
-      const sH = source.videoHeight;
-      const srcAspect = sW / sH;
-      const dstAspect = outW / outH;
-
-      let sx = 0, sy = 0, sw = sW, sh = sH;
-      if (srcAspect > dstAspect) {
-        sw = Math.floor(sH * dstAspect);
-        sx = Math.floor((sW - sw) / 2);
-      } else if (srcAspect < dstAspect) {
-        sh = Math.floor(sW / dstAspect);
-        sy = Math.floor((sH - sh) / 2);
-      }
-      ctx.clearRect(0, 0, outW, outH);
-      ctx.drawImage(source, sx, sy, sw, sh, 0, 0, outW, outH);
     }
   }
 }
