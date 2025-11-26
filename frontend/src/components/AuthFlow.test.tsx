@@ -98,8 +98,9 @@ describe('AuthFlow', () => {
     expect(screen.getByTestId('forgot-form')).toBeInTheDocument();
   });
 
-  it('returns to login after signup success', async () => {
-    renderAuthFlow();
+  it('invokes onAuthSuccess after signup success', async () => {
+    const onAuthSuccess = vi.fn();
+    renderAuthFlow({ onAuthSuccess });
 
     await act(async () => {
       switchToSignup?.();
@@ -111,7 +112,7 @@ describe('AuthFlow', () => {
       signupSuccessHandler?.('new@example.com');
     });
 
-    expect(screen.getByTestId('login-form')).toBeInTheDocument();
+    expect(onAuthSuccess).toHaveBeenCalledTimes(1);
   });
 
   it('invokes onAuthSuccess after login success', async () => {
