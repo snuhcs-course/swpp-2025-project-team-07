@@ -24,7 +24,7 @@ describe('ForgotPasswordForm', () => {
     expect(screen.getByRole('button', { name: /send code/i })).toBeInTheDocument();
   });
 
-  it.only('validates email input', async () => {
+  it('validates email input', async () => {
     const user = userEvent.setup();
     render(<ForgotPasswordForm onSwitchToLogin={mockOnSwitchToLogin} />);
     
@@ -80,7 +80,7 @@ describe('ForgotPasswordForm', () => {
     // Fill OTP form
     await user.type(screen.getByLabelText('6-Digit Code'), '123456');
     await user.type(screen.getByLabelText('New Password'), 'NewPass123');
-    await user.type(screen.getByLabelText('Confirm Password'), 'NewPass123');
+    await user.type(screen.getByLabelText('Confirm password'), 'NewPass123');
     
     (confirmPasswordReset as any).mockResolvedValue({ message: 'Success' });
     

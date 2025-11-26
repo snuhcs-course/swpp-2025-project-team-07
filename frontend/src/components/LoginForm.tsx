@@ -148,7 +148,7 @@ export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword, onAuthSu
             )}
           </div>
 
-          <div className="text-relative">
+          <div className="text-end">
             <button
               type="button"
               onClick={onSwitchToForgotPassword}
