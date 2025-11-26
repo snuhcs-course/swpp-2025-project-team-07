@@ -6,8 +6,20 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .serializers import UserSignupSerializer, UserLoginSerializer, UserSerializer
+from .serializers import (
+    UserSignupSerializer,
+    UserLoginSerializer,
+    UserSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer,
+)
 from collection.vectordb_client import vectordb_client
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
+User = get_user_model()
 
 
 @swagger_auto_schema(
@@ -158,3 +170,65 @@ def profile(request):
 
 class CustomTokenRefreshView(TokenRefreshView):
     pass
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_description="Request a password reset OTP",
+    request_body=PasswordResetRequestSerializer,
+    responses={
+        200: openapi.Response(
+            description="OTP sent if email exists",
+            examples={
+                "application/json": {"message": "If the email exists, an OTP has been sent."}
+            },
+        ),
+        400: "Bad Request",
+    },
+)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset_request(request):
+    serializer = PasswordResetRequestSerializer(data=request.data)
+    if serializer.is_valid():
+        user, otp = serializer.save()
+
+        if user and otp:
+            # Send email via SendGrid
+            message = Mail(
+                from_email=settings.SENDGRID_FROM_EMAIL,
+                to_emails=user.email,
+                subject="[Clone] Password Reset OTP",
+                html_content=f"<strong>Your password reset code is: {otp}</strong><br>This code expires in 15 minutes.",
+            )
+            try:
+                SendGridAPIClient(settings.SENDGRID_API_KEY).send(message)
+            except Exception as e:
+                print(f"Error sending email: {e}")
+
+        return Response(
+            {"message": "If the email exists, an OTP has been sent."}, status=status.HTTP_200_OK
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_description="Confirm password reset with OTP",
+    request_body=PasswordResetConfirmSerializer,
+    responses={
+        200: openapi.Response(
+            description="Password reset successful",
+            examples={"application/json": {"message": "Password reset successful"}},
+        ),
+        400: "Bad Request - Invalid email or OTP",
+    },
+)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    serializer = PasswordResetConfirmSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({"message": "Password reset successful"}, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
