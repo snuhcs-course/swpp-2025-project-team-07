@@ -153,10 +153,27 @@ function isOllamaDownloaded(): boolean {
 
     // Check if the ollama binary exists in the latest version
     // electron-ollama stores at: electron-ollama/v{version}/darwin/arm64/ollama
-    const latestVersion = versions[versions.length - 1];
+    const sortedVersions = versions.sort();
+    const latestVersion = sortedVersions[sortedVersions.length - 1];
     const platform = process.platform;
     const arch = process.arch;
-    const binaryPath = path.join(ollamaBasePath, latestVersion, platform, arch, 'ollama');
+
+    const platformDir = platform === 'win32'
+      ? 'windows'
+      : platform === 'darwin'
+        ? 'darwin'
+        : platform === 'linux'
+          ? 'linux'
+          : platform;
+
+    const archDir = arch === 'x64'
+      ? 'amd64'
+      : arch === 'arm64'
+        ? 'arm64'
+        : arch;
+
+    const executableName = platform === 'win32' ? 'ollama.exe' : 'ollama';
+    const binaryPath = path.join(ollamaBasePath, latestVersion, platformDir, archDir, executableName);
 
     return existsSync(binaryPath);
   } catch (error) {
