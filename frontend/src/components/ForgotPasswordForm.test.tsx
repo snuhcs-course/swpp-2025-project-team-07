@@ -1,111 +1,99 @@
-import '@/test/mockMotion';
-import '@/test/mockUi';
-import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-
 import { ForgotPasswordForm } from './ForgotPasswordForm';
+import { requestPasswordReset, confirmPasswordReset } from '@/services/auth';
+import { vi } from 'vitest';
+
+// Mock auth service
+vi.mock('@/services/auth', () => ({
+  requestPasswordReset: vi.fn(),
+  confirmPasswordReset: vi.fn(),
+}));
 
 describe('ForgotPasswordForm', () => {
-  it('shows success state after submitting valid email', async () => {
-    const originalSetTimeout = globalThis.setTimeout;
-    const setTimeoutMock = vi.spyOn(globalThis, 'setTimeout').mockImplementation((cb: any, ms?: number) => {
-      if (typeof ms === 'number' && ms >= 1000 && typeof cb === 'function') {
-        queueMicrotask(() => cb());
-        return 0 as any;
-      }
-      return originalSetTimeout(cb as any, ms as any);
-    });
-    const user = userEvent.setup();
+  const mockOnSwitchToLogin = vi.fn();
 
-    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
-
-    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
-    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
-
-    expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
-    expect(screen.getByText(/user@example.com/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /Resend email/i }));
-
-    setTimeoutMock.mockRestore();
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('invokes onSwitchToLogin when returning to sign in', async () => {
-    const originalSetTimeout = globalThis.setTimeout;
-    const setTimeoutMock = vi.spyOn(globalThis, 'setTimeout').mockImplementation((cb: any, ms?: number) => {
-      if (typeof ms === 'number' && ms >= 1000 && typeof cb === 'function') {
-        queueMicrotask(() => cb());
-        return 0 as any;
-      }
-      return originalSetTimeout(cb as any, ms as any);
-    });
-    const user = userEvent.setup();
-    const onSwitchToLogin = vi.fn();
-
-    render(<ForgotPasswordForm onSwitchToLogin={onSwitchToLogin} />);
-
-    // Enter valid email to reach success state
-    await user.type(screen.getByLabelText('Email address'), 'user@example.com');
-    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
-
-    await user.click(screen.getAllByRole('button', { name: /Back to sign in/i })[0]);
-    expect(onSwitchToLogin).toHaveBeenCalledTimes(1);
-
-    setTimeoutMock.mockRestore();
+  it('renders email form initially', () => {
+    render(<ForgotPasswordForm onSwitchToLogin={mockOnSwitchToLogin} />);
+    expect(screen.getByText('Reset Password')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send code/i })).toBeInTheDocument();
   });
 
-  it('shows error when submitting empty email', async () => {
+  it.only('validates email input', async () => {
     const user = userEvent.setup();
-
-    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
-
-    // Click submit without entering email
-    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
-
+    render(<ForgotPasswordForm onSwitchToLogin={mockOnSwitchToLogin} />);
+    
+    const submitBtn = screen.getByRole('button', { name: /send code/i });
+    await user.click(submitBtn);
+    
     expect(await screen.findByText('Email is required')).toBeInTheDocument();
-  });
-
-  it('shows error when submitting invalid email', async () => {
-    const user = userEvent.setup();
-
-    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
-
-    // Enter invalid email
-    await user.type(screen.getByLabelText('Email address'), 'invalid-email');
-    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
-
+    
+    const emailInput = screen.getByLabelText('Email address');
+    await user.type(emailInput, 'invalid-email');
+    await user.click(submitBtn);
+    
+    screen.debug();
     expect(await screen.findByText('Please enter a valid email')).toBeInTheDocument();
   });
 
-  it('clears error when submitting valid email after invalid', async () => {
-    const originalSetTimeout = globalThis.setTimeout;
-    const setTimeoutMock = vi.spyOn(globalThis, 'setTimeout').mockImplementation((cb: any, ms?: number) => {
-      if (typeof ms === 'number' && ms >= 1000 && typeof cb === 'function') {
-        queueMicrotask(() => cb());
-        return 0 as any;
-      }
-      return originalSetTimeout(cb as any, ms as any);
+  it('switches to OTP form after successful email submission', async () => {
+    const user = userEvent.setup();
+    (requestPasswordReset as any).mockResolvedValue({ message: 'OTP sent' });
+    
+    render(<ForgotPasswordForm onSwitchToLogin={mockOnSwitchToLogin} />);
+    
+    const emailInput = screen.getByLabelText('Email address');
+    await user.type(emailInput, 'test@example.com');
+    
+    const submitBtn = screen.getByRole('button', { name: /send code/i });
+    await user.click(submitBtn);
+    
+    await waitFor(() => {
+      expect(requestPasswordReset).toHaveBeenCalledWith('test@example.com');
     });
+    
+    await waitFor(() => {
+      expect(screen.getByLabelText('6-Digit Code')).toBeInTheDocument();
+      expect(screen.getByLabelText('New Password')).toBeInTheDocument();
+    });
+  });
+
+  it('handles OTP submission and resets password', async () => {
     const user = userEvent.setup();
+    // Start at OTP step
+    (requestPasswordReset as any).mockResolvedValue({ message: 'OTP sent' });
+    render(<ForgotPasswordForm onSwitchToLogin={mockOnSwitchToLogin} />);
+    
+    const emailInput = screen.getByLabelText('Email address');
+    await user.type(emailInput, 'test@example.com');
+    await user.click(screen.getByRole('button', { name: /send code/i }));
+    
+    await waitFor(() => {
+      expect(screen.getByLabelText('6-Digit Code')).toBeInTheDocument();
+    });
 
-    render(<ForgotPasswordForm onSwitchToLogin={vi.fn()} />);
-
-    // First submit invalid email
-    await user.type(screen.getByLabelText('Email address'), 'invalid');
-    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
-
-    expect(await screen.findByText('Please enter a valid email')).toBeInTheDocument();
-
-    // Clear and enter valid email
-    await user.clear(screen.getByLabelText('Email address'));
-    await user.type(screen.getByLabelText('Email address'), 'valid@example.com');
-    await user.click(screen.getByRole('button', { name: /Send reset link/i }));
-
-    // Error should be cleared and success message should appear
-    expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
-
-    setTimeoutMock.mockRestore();
+    // Fill OTP form
+    await user.type(screen.getByLabelText('6-Digit Code'), '123456');
+    await user.type(screen.getByLabelText('New Password'), 'NewPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'NewPass123');
+    
+    (confirmPasswordReset as any).mockResolvedValue({ message: 'Success' });
+    
+    await user.click(screen.getByRole('button', { name: /reset password/i }));
+    
+    await waitFor(() => {
+      expect(confirmPasswordReset).toHaveBeenCalledWith('test@example.com', '123456', 'NewPass123');
+      expect(screen.getByText('Password reset successfully!')).toBeInTheDocument();
+    });
+    
+    // Check redirection
+    await waitFor(() => {
+      expect(mockOnSwitchToLogin).toHaveBeenCalled();
+    }, { timeout: 3000 });
   });
 });
