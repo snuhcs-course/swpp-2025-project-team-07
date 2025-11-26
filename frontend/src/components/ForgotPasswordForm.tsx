@@ -297,12 +297,12 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
         </AnimatePresence>
 
         <div className="mt-4 text-center">
-          <Button
+          <button
             onClick={onSwitchToLogin}
             className="text-sm text-primary hover:text-primary/80 transition-colors"
           >
             Back to Sign In
-          </Button>
+          </button>
         </div>
       </CardContent>
     </Card>
