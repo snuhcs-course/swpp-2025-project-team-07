@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, KeyRound, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Mail, Lock, KeyRound, ArrowLeft, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -12,36 +12,54 @@ interface ForgotPasswordFormProps {
 }
 
 export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps) {
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    otp: ''
+  });
   const [step, setStep] = useState<'email' | 'otp'>('email');
-  const [email, setEmail] = useState('');
-  console.log('Rendering ForgotPasswordForm, email:', email);
-  const [otp, setOtp] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
 
-  const validateEmail = () => {
-    if (!email) return 'Email is required';
-    if (!/\S+@\S+\.\S+/.test(email)) return 'Please enter a valid email';
-    return '';
+  const validateOtpRequest = () => {
+    const newErrors: Record<string, string> = {};
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const validateReset = () => {
     const newErrors: Record<string, string> = {};
-    if (!otp) newErrors.otp = 'OTP is required';
-    if (otp.length !== 6) newErrors.otp = 'OTP must be 6 digits';
-    
-    if (!password) {
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email';
+    }
+
+    if (!formData.otp) {
+      newErrors.otp = 'OTP is required';
+    } else if (formData.otp.length !== 6) {
+      newErrors.otp = 'OTP must be 6 digits';
+    }
+
+    if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (password.length < 8) {
+    } else if (formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
       newErrors.password = 'Password must contain uppercase, lowercase, and number';
     }
  
-    if (password !== confirmPassword) {
+    if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
     
@@ -51,20 +69,14 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Validating email:', email);
-    const emailError = validateEmail();
-    console.log('Email error:', emailError);
-    if (emailError) {
-      setErrors({ email: emailError });
-      return;
-    }
+    if (!validateOtpRequest()) return;
 
     setIsLoading(true);
     setErrors({});
     try {
-      await requestPasswordReset(email);
+      await requestPasswordReset(formData.email);
       setStep('otp');
-      setSuccessMessage('Code sent! Check your email.');
+      setSuccessMessage(`If ${formData.email} is associated to an account, a code has been sent. Check your inbox and spam folder.`); 
     } catch (err: any) {
       setErrors({ form: err.message || 'Failed to send code' });
     } finally {
@@ -79,7 +91,7 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
     setIsLoading(true);
     setErrors({});
     try {
-      await confirmPasswordReset(email, otp, password);
+      await confirmPasswordReset(formData.email, formData.otp, formData.password);
       setSuccessMessage('Password reset successfully!');
       setTimeout(() => {
         onSwitchToLogin();
@@ -88,6 +100,13 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
       setErrors({ form: err.message || 'Failed to reset password' });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const updateFormData = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
@@ -134,8 +153,8 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
                     id="email"
                     type="email"
                     placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => { setEmail(e.target.value); }}
+                    value={formData.email}
+                    onChange={(e) => { updateFormData('email', e.target.value); }}
                     className={`pl-10 bg-input-background border-border/50 focus:border-primary/50 transition-colors ${
                       errors.email ? 'border-destructive' : ''
                     }`}
@@ -181,8 +200,8 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
                 <Input
                   id="otp"
                   placeholder="123456"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
+                  value={formData.otp}
+                  onChange={(e) => updateFormData('otp', e.target.value)}
                   maxLength={6}
                   className={`pl-10 pr-10 bg-input-background border-border/50 focus:border-primary/50 transition-colors ${
                     errors.otp ? 'border-destructive' : ''
@@ -205,14 +224,21 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="New password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={formData.password}
+                    onChange={(e) => updateFormData('password', e.target.value)}
                     className={`pl-10 pr-10 bg-input-background border-border/50 focus:border-primary/50 transition-colors ${
                       errors.password ? 'border-destructive' : ''
                     }`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Password must be at least 8 characters and include uppercase, lowercase, and a number.
@@ -234,14 +260,21 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
                     id="confirmPassword"
-                    type="password"
+                    type={showConfirmPassword ? "text" : "password"}
                     placeholder="Confirm password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    value={formData.confirmPassword}
+                    onChange={(e) => updateFormData('confirmPassword', e.target.value)}
                     className={`pl-10 pr-10 bg-input-background border-border/50 focus:border-primary/50 transition-colors ${
                       errors.confirmPassword ? 'border-destructive' : ''
                     }`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
                 {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword}</p>}
               </div>
@@ -264,12 +297,12 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
         </AnimatePresence>
 
         <div className="mt-4 text-center">
-          <button
+          <Button
             onClick={onSwitchToLogin}
             className="text-sm text-primary hover:text-primary/80 transition-colors"
           >
             Back to Sign In
-          </button>
+          </Button>
         </div>
       </CardContent>
     </Card>
