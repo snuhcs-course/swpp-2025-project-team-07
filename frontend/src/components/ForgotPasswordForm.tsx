@@ -115,17 +115,17 @@ export function ForgotPasswordForm({ onSwitchToLogin }: ForgotPasswordFormProps)
       <CardContent>
         <AnimatePresence mode="wait">
           {step === 'email' ? (
-            <form
-              key="email-form"
-              onSubmit={handleRequestOtp}
-              className="space-y-4"
-            >
+            <form key="email-form" onSubmit={handleRequestOtp} noValidate className="space-y-4">
               {errors.form && (
-                <div className="rounded-md border border-destructive/60 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive">
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="rounded-md border border-destructive/60 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive"
+                >
                   {errors.form}
-                </div>
+                </motion.div>
               )}
-              
               <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
                 <div className="relative">

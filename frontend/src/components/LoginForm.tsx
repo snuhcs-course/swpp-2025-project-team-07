@@ -148,7 +148,7 @@ export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword, onAuthSu
             )}
           </div>
 
-          <div className="flex justify-end">
+          <div className="text-relative">
             <button
               type="button"
               onClick={onSwitchToForgotPassword}
