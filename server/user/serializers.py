@@ -56,7 +56,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             attrs["reset_otp"] = reset_otp
             return attrs
         except (User.DoesNotExist, PasswordResetOTP.DoesNotExist):
-            raise serializers.ValidationError("Invalid email or expired OTP")
+            raise serializers.ValidationError("OTP is invalid or expired, please try again.")
 
     def save(self):
         user = self.validated_data["user"]
