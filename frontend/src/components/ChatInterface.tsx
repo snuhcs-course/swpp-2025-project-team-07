@@ -216,39 +216,22 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [runTour, setRunTour] = useState(false);
   const [tourSteps] = useState<Step[]>([
     {
-      target: '.tour-sidebar',
-      content: 'Once you start chatting, you can access your chat history and manage your sessions here.',
-      placement: 'right',
+      target: '.tour-recording-button',
+      title: 'Start recording',
+      content: 'Record your screen to share context with Clone.',
+      placement: 'bottom',
       disableBeacon: true,
     },
     {
-      target: '.tour-new-chat',
-      content: 'Click here to start a new conversation with Clone.',
-      placement: 'right',
-    },
-    {
-      target: '.tour-toggle-sidebar',
-      content: 'You can collapse the sidebar to focus on your chat.',
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-recording-button',
-      content: 'Click to toggle screen recording for sharing context with the AI.',
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-profile-button',
-      content: 'Access your profile settings here.',
-      placement: 'bottom',
-    },
-    {
       target: '.tour-chat-input',
-      content: 'Type your messages here to interact with the AI.',
+      title: 'Chat with Clone',
+      content: 'Ask Clone about things you want to recall from screen recordings or your past chat history.',
       placement: 'top',
     },
     {
       target: '.tour-video-search',
-      content: 'Click to toggle video search to let the AI analyze your screen recordings.',
+      title: 'Toggle video search',
+      content: "Enable searching through your screen recordings for more context, disable it for faster responses.",
       placement: 'top',
     },
   ]);
@@ -1401,7 +1384,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         styles={{
           options: {
             zIndex: 1000,
-            overlayColor: 'rgba(0, 0, 0, 0.7)',
+            overlayColor: 'rgba(0, 0, 0, 0.8)',
           },
         }}
       />
