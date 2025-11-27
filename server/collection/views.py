@@ -499,7 +499,7 @@ def _extract_and_store_video_content(
         try:
             ScreenRecording.objects.bulk_create(
                 recording_objects,
-                update_conflicts=True,
+                ignore_conflicts=True,
                 update_fields=["encrypted_content", "video_set_id", "timestamp", "updated_at"],
                 unique_fields=["video_id"],
             )
