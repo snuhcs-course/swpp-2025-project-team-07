@@ -7,7 +7,7 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { Checkbox } from './ui/checkbox';
-import { signup, saveAuth, type AuthUser } from '@/services/auth';
+import { signup, saveAuth } from '@/services/auth';
 import { collectionService } from '@/services/collection';
 
 interface SignupFormProps {
@@ -95,7 +95,7 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
       );
 
       await Promise.all(creationPromises);
-      
+
       onAuthSuccess(res.user.email);
     } catch (err: any) {
       const message = err.message || 'Signup failed';
@@ -132,7 +132,7 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
       </CardHeader>
       
       <CardContent className="space-y-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {errors.form && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}

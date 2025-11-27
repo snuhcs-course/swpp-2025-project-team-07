@@ -1,8 +1,7 @@
 // VectorDB API service - stores chat embeddings for memory
 
 import { apiRequestWithAuth } from '@/utils/apiRequest';
-import { type AuthUser } from '.@/services/auth';
-import { decryptText } from '@/utils/encryption'
+import { decryptText } from '@/utils/encryption';
 
 // Vector data for insertion (combined messages → 1 vector entry)
 export interface VectorData {
@@ -18,6 +17,7 @@ export interface VectorData {
   duration?: number; // Video duration in ms
   frame_count?: number; // Number of frames
   video_set_id?: string | null; // REQUIRED primary key for each video set
+  representative_id?: string; // ID of representative video for a set
   video_set_videos?: VectorData[];
   [key: string]: any;
 }
@@ -63,12 +63,14 @@ export async function insertScreenData(
   screenData: VectorData[],
   collection_version?: string
 ): Promise<InsertResponse> {
+  const body: Record<string, unknown> = { screen_data: screenData };
+  if (collection_version) {
+    body.collection_version = collection_version;
+  }
+
   return apiRequestWithAuth<InsertResponse>('/api/collections/insert/', {
     method: 'POST',
-    body: JSON.stringify({ 
-      screen_data: screenData,
-      collection_version: collection_version,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -181,22 +183,6 @@ export function getTopKIndices(scores: number[], k: number): number[] {
     .map(item => item.index);
 }
 
-// Helper: Convert base64 to ImageData
-function base64ToImageData(base64: string, width: number, height: number): Promise<ImageData> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, width, height);
-      const imageData = ctx.getImageData(0, 0, width, height);
-      resolve(imageData);
-    };
-    img.onerror = reject;
-    img.src = `data:image/png;base64,${base64}`;
-  });
-}
-
 // Helper: Convert base64 to video Blob
 async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob> {
   try {
@@ -232,7 +218,7 @@ function extractScreenVideos(
   screenResults: (VectorData | VideoSetResult)[] | undefined,
   videoTopK: number
 ): { representatives: VectorData[]; allVideosInOrder: VectorData[] } {
-  const parsedSets: { video_set_id?: string | null; representative?: VectorData; videos: VectorData[]; }[] = [];
+  const parsedSets: { video_set_id?: string | null; representative?: VectorData; videos: VectorData[]; representative_id?: string; }[] = [];
   const allVideosInOrder: VectorData[] = [];
 
   if (!screenResults || screenResults.length === 0) {
@@ -258,6 +244,7 @@ function extractScreenVideos(
         video_set_id: rawResult.video_set_id,
         representative,
         videos: videosWithSetId,
+        representative_id: rawResult.representative_id,
       });
     } else {
       const vectorResult = rawResult as VectorData;
@@ -265,6 +252,7 @@ function extractScreenVideos(
       parsedSets.push({
         video_set_id: vectorResult.video_set_id ?? null,
         representative: vectorResult,
+        representative_id: vectorResult.id,
         videos: [vectorResult],
       });
     }
@@ -279,6 +267,7 @@ function extractScreenVideos(
         : { ...set.representative, video_set_id: set.video_set_id };
 
       representativeWithSetId.video_set_videos = set.videos;
+      representativeWithSetId.representative_id = set.representative_id ?? set.representative.id;
       return representativeWithSetId;
     })
     .filter((rep): rep is VectorData => Boolean(rep));
@@ -398,12 +387,11 @@ export async function searchAndQuery(
 
   if (chatIds.length === 0 && screenIds.length === 0) return [];
 
-  // Query collections based on what we have (use correct IDs for each collection)
-  let queryResult: QueryResponse;
   const outputFields = ['content', 'timestamp', 'session_id', 'role'];
+  let queryResult: QueryResponse = { ok: false };
 
   if (screenIds.length > 0) {
-    // Unified query for chat + screen with video set retrieval
+    // Unified query for chat + screen with video set retrieval support
     queryResult = await queryScreenData(
       screenIds,
       outputFields,
@@ -414,11 +402,8 @@ export async function searchAndQuery(
     );
   } else if (chatIds.length > 0) {
     queryResult = await queryChatData(chatIds, outputFields);
-  } else {
-    queryResult = { ok: false };
   }
 
-  // Combine results and tag with source type
   const { representatives: screenResultsForRag } = extractScreenVideos(
     queryResult.screen_results,
     videoTopK

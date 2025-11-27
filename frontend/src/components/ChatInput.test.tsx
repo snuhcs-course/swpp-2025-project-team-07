@@ -107,6 +107,62 @@ describe('ChatInput', () => {
     expect(mockOnStop).toHaveBeenCalled();
   });
 
+  it('should send message when Enter key is pressed without Shift', async () => {
+    const mockOnSendMessage = vi.fn();
+    const user = userEvent.setup();
+
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+
+    const textarea = screen.getByPlaceholderText('Type your message...');
+
+    // Type a message
+    await user.type(textarea, 'Hello, world!');
+
+    // Press Enter without Shift
+    await user.keyboard('{Enter}');
+
+    // Verify the callback was called
+    expect(mockOnSendMessage).toHaveBeenCalledWith('Hello, world!');
+  });
+
+  it('should not send message when Enter+Shift is pressed', async () => {
+    const mockOnSendMessage = vi.fn();
+    const user = userEvent.setup();
+
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+
+    const textarea = screen.getByPlaceholderText('Type your message...');
+
+    // Type a message
+    await user.type(textarea, 'Line 1');
+
+    // Press Shift+Enter (should add new line, not send)
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+
+    // Verify the callback was not called
+    expect(mockOnSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('should auto-focus textarea on mount after delay', async () => {
+    vi.useFakeTimers();
+    const mockOnSendMessage = vi.fn();
+
+    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+
+    const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+
+    // Initially textarea is not focused
+    expect(document.activeElement).not.toBe(textarea);
+
+    // Fast-forward time past the 100ms delay
+    vi.advanceTimersByTime(150);
+
+    // Now textarea should be focused
+    expect(document.activeElement).toBe(textarea);
+
+    vi.useRealTimers();
+  });
+
   describe('Video RAG Toggle', () => {
     it('should not render video toggle button when onToggleVideoRag is not provided', () => {
       const mockOnSendMessage = vi.fn();

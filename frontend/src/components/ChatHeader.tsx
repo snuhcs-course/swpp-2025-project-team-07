@@ -58,7 +58,7 @@ export function ChatHeader({
   } = useChunkedEmbeddingQueue({
     onEmbeddedChunk: async ({ chunk, pooled, method }) => {
       try {
-        const shouldSendVideoSetID = method == 'video_set' || method == 'video_set_hidden';
+        const shouldSendVideoSetID = method === 'video_set' || method === 'video_set_hidden';
         const videoSetIdToSend = shouldSendVideoSetID ? chunk.video_set_id : null;
         await memoryService.storeVideoEmbedding(
           pooled,

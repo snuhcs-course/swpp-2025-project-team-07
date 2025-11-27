@@ -7,6 +7,7 @@ import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
 import { ChatStatusIndicators, StopIndicator } from './ChatStatusIndicators';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
+import { VideoPlayerModal } from './VideoPlayerModal';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
 import { chatService } from '@/services/chat';
@@ -14,9 +15,10 @@ import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
-import { DEFAULT_VIDEO_SAMPLE_FRAMES, sampleUniformFramesAsBase64 } from '@/embedding/video-sampler';
+import { sampleUniformFramesAsBase64 } from '@/embedding/video-sampler';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
+import type { VideoCandidate } from '@/types/video';
 
 // Local UI types
 export interface Message {
@@ -78,6 +80,8 @@ const getTimestamp = () =>
 
 const MIN_SEARCH_DISPLAY_MS = 900;
 const MIN_PROCESSING_DISPLAY_MS = 1200;
+const MAX_VIDEO_CANDIDATES = 3;
+const MAX_VIDEO_SELECTION = 3;
 
 const RUN_CANCELLED_ERROR_NAME = 'RunCancelledError';
 
@@ -118,6 +122,26 @@ const createCancellationHandle = (): CancellationHandle => {
   };
 };
 
+const buildContextPrompt = (chatContexts: string[], selectedVideoCount: number): string => {
+  if (chatContexts.length === 0 && selectedVideoCount === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  if (chatContexts.length > 0) {
+    lines.push(chatContexts.join('\n\n'));
+  }
+  if (selectedVideoCount > 0) {
+    lines.push(
+      `${selectedVideoCount} screen recording${selectedVideoCount === 1 ? '' : 's'} selected by the user for visual reasoning (1 fps).`
+    );
+  }
+
+  return `<memory>
+${lines.join('\n')}
+</memory>`;
+};
+
 export type ChatRunState =
   | 'idle'
   | 'awaitingFirstToken'
@@ -135,6 +159,42 @@ type ActiveRunContext = {
   cancellationSignal: Promise<never>;
 };
 
+type VideoSequenceItem = {
+  id: string;
+  blob: Blob;
+  durationMs?: number;
+  timestamp?: number;
+  video_set_id?: string | null;
+  url?: string;
+  order?: number;
+};
+
+type VideoDoc = {
+  id: string; // Represents the video set id when available
+  blob: Blob; // Representative video blob for the set
+  durationMs?: number;
+  timestamp?: number;
+  video_set_id?: string | null;
+  representative_id?: string;
+  sequence?: VideoSequenceItem[]; // Ordered videos in the set
+};
+
+type PendingGenerationData = {
+  sessionId: string;
+  sessionIdNum: number;
+  aiMessageId: string;
+  conversationMessages: { role: 'user' | 'assistant'; content: string }[];
+  chatContexts: string[];
+  videoDocs: VideoDoc[];
+  userMessageContent: string;
+  userMsg: BackendChatMessage;
+  runStartTime: number;
+  phaseDurations: Record<ProcessingPhaseKey, number>;
+  retrievalSummary: RetrievalMetrics;
+  shouldGenerateTitle: boolean;
+  videoDebugUrls: string[];
+};
+
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -146,6 +206,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [isCheckingModels, setIsCheckingModels] = useState(true);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isStoppingGeneration, setIsStoppingGeneration] = useState(false);
+  const [videoCandidates, setVideoCandidates] = useState<VideoCandidate[]>([]);
+  const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
+  const [isRetrievalComplete, setIsRetrievalComplete] = useState(false);
+  const [isGenerationInProgress, setIsGenerationInProgress] = useState(false);
+  const [videoSearchUsed, setVideoSearchUsed] = useState(false);
+  const [previewVideo, setPreviewVideo] = useState<{
+    url: string;
+    id: string;
+    sequence?: VideoCandidate['sequence'];
+    title?: string;
+  } | null>(null);
 
   // Video RAG toggle state - disabled by default, persisted in localStorage
   const [videoRagEnabled, setVideoRagEnabled] = useState<boolean>(() => {
@@ -163,10 +234,36 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   // Ref to track if initial model check is complete
   const initialModelCheckCompleteRef = useRef(false);
   const activeRunRef = useRef<ActiveRunContext | null>(null);
+  const candidatePreviewUrlsRef = useRef<Map<string, string>>(new Map());
+  const videoSelectionResolverRef = useRef<((ids: string[]) => void) | null>(null);
+  const videoSelectionRejectRef = useRef<((error?: Error) => void) | null>(null);
+
+  const clearCandidatePreviewUrls = () => {
+    candidatePreviewUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    candidatePreviewUrlsRef.current.clear();
+  };
+
+  const resetVideoSelectionState = () => {
+    clearCandidatePreviewUrls();
+    setVideoCandidates([]);
+    setSelectedVideoIds([]);
+    setSelectedVideoIds([]);
+    setIsRetrievalComplete(false);
+    setIsGenerationInProgress(false);
+    setVideoSearchUsed(false);
+    videoSelectionResolverRef.current = null;
+    videoSelectionRejectRef.current = null;
+  };
 
   const currentSession = currentSessionId
     ? sessions.find(s => s.id === currentSessionId)
     : undefined;
+
+  useEffect(() => {
+    return () => {
+      clearCandidatePreviewUrls();
+    };
+  }, []);
 
   // Initialize LLM session with system prompt once model is ready
   useEffect(() => {
@@ -314,6 +411,431 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     setRunState(prev => (prev === 'stoppedBeforeTokens' ? 'idle' : prev));
   }, [currentSessionId]);
 
+  const runGeneration = async (
+    pendingData: PendingGenerationData,
+    selectedIds: string[],
+  ) => {
+    const {
+      sessionId,
+      sessionIdNum,
+      aiMessageId,
+      conversationMessages,
+      chatContexts,
+      videoDocs,
+      userMessageContent,
+      userMsg,
+      runStartTime,
+      phaseDurations,
+      retrievalSummary,
+      shouldGenerateTitle,
+      videoDebugUrls,
+    } = pendingData;
+
+    const selectedDocs =
+      selectedIds.length > 0
+        ? videoDocs.filter(doc => selectedIds.includes(doc.id))
+        : [];
+    const contextPrompt = buildContextPrompt(chatContexts, selectedDocs.length);
+
+    let messageWithContext = '';
+    if (contextPrompt) {
+      messageWithContext += contextPrompt + '\n\n';
+    }
+    messageWithContext += userMessageContent;
+
+    let fullResponse = '';
+
+    const debugVideoBlobs = selectedDocs.flatMap(doc => doc.sequence?.map(item => item.blob) ?? [doc.blob]);
+    const debugVideoSets = selectedDocs.map(doc => ({
+      setId: doc.video_set_id ?? doc.id,
+      representativeId: doc.representative_id ?? doc.id,
+      sequence: (doc.sequence ?? []).map(item => ({
+        id: item.id,
+        order: item.order,
+        url: item.url,
+      })),
+    }));
+    (window as any).__ragPrompt = {
+      full: messageWithContext,
+      userQuery: userMessageContent,
+      contextAdded: Boolean(contextPrompt),
+      contextLength: contextPrompt.length,
+      totalLength: messageWithContext.length,
+      chatMemories: chatContexts.length,
+      videoCount: selectedDocs.length,
+      conversationHistory: conversationMessages,
+      videos: debugVideoBlobs,
+      videoSets: debugVideoSets,
+      view: () => {
+        console.log('=== RAG Prompt Debug ===');
+        console.log('User Query:', userMessageContent);
+        console.log('\nContext Added:', contextPrompt.length > 0 ? 'Yes' : 'No');
+        console.log('Chat Memories:', chatContexts.length);
+        console.log('Selected Videos:', selectedDocs.length);
+        console.log('\n--- Full Prompt ---');
+        console.log(messageWithContext);
+        console.log('\n--- Context Only ---');
+        console.log(contextPrompt);
+      },
+      copy: () => {
+        navigator.clipboard.writeText(messageWithContext);
+        console.log('Full prompt copied to clipboard');
+      },
+      frames: async (fps = 1, maxFrames = 50) => {
+        if (debugVideoBlobs.length === 0) {
+          console.log('No videos attached to this query');
+          return [];
+        }
+        console.log(`[Frame Extractor] Extracting frames from ${debugVideoBlobs.length} video(s) at ${fps} fps...`);
+        const allFrames = [];
+        for (let i = 0; i < debugVideoBlobs.length; i++) {
+          console.log(`\n[Frame Extractor] Processing video ${i + 1}/${debugVideoBlobs.length}...`);
+          const frames = await extractFramesFromVideoBlob(debugVideoBlobs[i], fps, maxFrames);
+          console.log(`[Frame Extractor] Video ${i + 1}: ${frames.length} frames`);
+          displayFramesInConsole(frames);
+          allFrames.push(...frames);
+        }
+        console.log(`\n[Frame Extractor] Total: ${allFrames.length} frames from ${debugVideoBlobs.length} video(s)`);
+        return allFrames;
+      },
+      viewFrames: async (fps = 1, maxFrames = 50) => {
+        if (debugVideoBlobs.length === 0) {
+          console.log('No videos attached to this query');
+          return;
+        }
+        console.log(`[Frame Extractor] Extracting frames from ${debugVideoBlobs.length} video(s)...`);
+        const allFrames = [];
+        for (const videoBlob of debugVideoBlobs) {
+          const frames = await extractFramesFromVideoBlob(videoBlob, fps, maxFrames);
+          allFrames.push(...frames);
+        }
+        console.log(`[Frame Extractor] Opening ${allFrames.length} frames in new window...`);
+        openFramesInWindow(allFrames);
+      },
+      debugVLMFrames: async () => {
+        if (selectedDocs.length === 0) {
+          console.log('No videos to sample.');
+          return;
+        }
+        console.log('[VLM Debug] Sampling frames exactly as sent to LLM (224px, 10 frames)...');
+
+        // videoSamplingTargets -> selectedDocs 로 변경
+        const allSamples = await Promise.all(
+          selectedDocs.map(async (doc, idx) => {
+            const frames = await sampleUniformFramesAsBase64(
+               doc.blob,
+               1,
+               { size: 224, format: 'image/jpeg', quality: 0.92 }
+            );
+            return { idx, frames, setId: doc.video_set_id ?? doc.id };
+          })
+        );
+        
+        // 팝업 창 생성
+        const win = window.open('', '_blank');
+        if(!win) return console.error('Popup blocked. Please allow popups.');
+
+        let html = `
+          <html>
+          <head>
+            <title>VLM Input Debug (Actual Sampling)</title>
+            <style>
+              body { background:#111; color:#eee; font-family:sans-serif; padding:20px; }
+              .video-row { margin-bottom:30px; border-bottom:1px solid #444; padding-bottom:20px; }
+              .frames-grid { display:flex; gap:8px; flex-wrap:wrap; }
+              .frame-item { text-align:center; }
+              img { width:112px; height:112px; object-fit:contain; border:1px solid #555; background:#000; }
+              .meta { font-size: 12px; color: #aaa; margin-top: 4px; }
+              h3 { color: #4ade80; margin-bottom: 10px; }
+            </style>
+          </head>
+          <body>
+            <h1>VLM Input Frames Debug</h1>
+            <p>Showing frames exactly as processed for the LLM (224x224px, resized/squashed).</p>
+        `;
+
+        allSamples.forEach(({idx, frames, setId}) => {
+          html += `
+            <div class="video-row">
+              <h3>Video #${idx + 1} ${setId ? `<span style="color:#888;font-size:0.8em">(${setId})</span>` : ''}</h3>
+              <div class="frames-grid">`;
+          
+          frames.forEach((f, fIdx) => {
+               // sampleUniformFramesAsBase64의 리턴값 구조에 따라 f.base64, f.time 사용
+               html += `
+                <div class="frame-item">
+                  <img src="data:image/jpeg;base64,${f.base64}" />
+                  <div class="meta">Frame ${fIdx + 1}<br/>${f.time ? f.time.toFixed(2) + 's' : ''}</div>
+                </div>`;
+          });
+          
+          html += `</div></div>`;
+        });
+
+        html += '</body></html>';
+        win.document.write(html);
+        win.document.close();
+      }
+    
+    };
+
+    if (selectedDocs.length > 0) {
+      console.log('[RAG] Selected video sets ready. Use __ragPrompt.view() or __ragPrompt.frames() for debugging.');
+    } else {
+      console.log('[RAG] No videos attached to this query');
+    }
+
+    const sampledFrames = selectedDocs.length > 0
+      ? await Promise.all(
+          selectedDocs.map(async (doc) => {
+            try {
+              const frames = await sampleUniformFramesAsBase64(
+                doc.blob,
+                1,
+                { size: 224, format: 'image/jpeg', quality: 0.92 }
+              );
+              const frame = frames[0];
+              if (frame) {
+                console.log(
+                  `[VLM] Sampled 1 frame from representative of set ${doc.video_set_id ?? doc.id}`
+                );
+              }
+              return frame?.base64;
+            } catch (error) {
+              console.error('[VLM] Failed to sample representative frame', error);
+              return undefined;
+            }
+          })
+        )
+      : [];
+    const vlmImages = sampledFrames.filter((frame): frame is string => Boolean(frame));
+
+    if (vlmImages.length > 0) {
+      console.log(
+        `[RAG] Sending ${vlmImages.length} representative frame(s) from ${selectedDocs.length} video set(s) to LLM`
+      );
+    } else if (selectedDocs.length > 0) {
+      console.warn('[RAG] No frames sampled from selected video sets; continuing without visual input');
+    }
+
+    setIsGenerationInProgress(true);
+    setIsRetrievalComplete(false);
+    setVideoCandidates([]);
+    clearCandidatePreviewUrls();
+    setVideoSearchUsed(false);
+
+    processingStatusService.startPhase(sessionId, 'generating');
+    const generationPhaseStart = getTimestamp();
+    let generatedChunks = 0;
+    let generatedCharacters = 0;
+    let streamingErrored = false;
+    let tokensAnnounced = false;
+
+    const updatedRetrievalSummary: RetrievalMetrics = {
+      ...retrievalSummary,
+      screenRecordings: selectedDocs.length,
+    };
+
+    try {
+      await llmService.streamMessage(
+        messageWithContext,
+        (chunk) => {
+          const currentRun = activeRunRef.current;
+          if (!currentRun || currentRun.isStopped) {
+            return;
+          }
+
+          if (!currentRun.tokensReceived) {
+            currentRun.tokensReceived = true;
+            if (!tokensAnnounced) {
+              tokensAnnounced = true;
+              processingStatusService.tokensStarted(sessionId);
+            }
+            setRunState('streaming');
+          }
+
+          generatedChunks += 1;
+          generatedCharacters += chunk.length;
+          fullResponse += chunk;
+          setSessions(prevSessions =>
+            prevSessions.map(s =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    messages: (s.messages || []).map(msg =>
+                      msg.id === aiMessageId
+                        ? { ...msg, content: fullResponse }
+                        : msg
+                    ),
+                    lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
+                    timestamp: new Date()
+                  }
+                : s
+            )
+          );
+        },
+        {
+          temperature: 0.7,
+          maxTokens: 2048,
+          images: vlmImages.length > 0 ? vlmImages : undefined,
+          messages: conversationMessages,
+        }
+      );
+    } catch (error) {
+      streamingErrored = true;
+      throw error;
+    } finally {
+      const generationElapsed = getTimestamp() - generationPhaseStart;
+      phaseDurations.generating = generationElapsed;
+      processingStatusService.completePhase(sessionId, 'generating', generationElapsed, {
+        generatedChunks,
+        generatedCharacters,
+        retrievalMetrics: updatedRetrievalSummary,
+      });
+
+      if (!streamingErrored) {
+        processingStatusService.completeProcessing(sessionId, {
+          totalElapsedMs: getTimestamp() - runStartTime,
+          phaseBreakdown: phaseDurations,
+          retrievalMetrics: updatedRetrievalSummary,
+        });
+      }
+
+      setIsGenerationInProgress(false);
+    }
+
+    videoDebugUrls.forEach(url => URL.revokeObjectURL(url));
+
+    if (activeRunRef.current?.isStopped) {
+      return;
+    }
+
+    const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
+    const latestSession = sessions.find(s => s.id === sessionId);
+    const existingMessages = latestSession?.messages || [];
+    const backendUserMsg: BackendChatMessage = {
+      ...userMsg,
+      content: userMessageContent,
+    };
+    const backendAssistantMsg: BackendChatMessage = {
+      ...assistantMsg,
+      content: fullResponse,
+    };
+
+    memoryService.trackMessage(sessionIdNum, [
+      ...existingMessages.map(m => ({
+        id: parseInt(m.id),
+        session: sessionIdNum,
+        role: m.isUser ? 'user' as const : 'assistant' as const,
+        content: m.content,
+        timestamp: m.timestamp.getTime(),
+        created_at: m.timestamp.toISOString(),
+      })),
+      backendUserMsg,
+      backendAssistantMsg,
+    ]).catch(err => console.error('Memory tracking failed:', err));
+
+    if (shouldGenerateTitle) {
+      try {
+        console.log('Generating title for first conversation...');
+        const generatedTitle = await llmService.generateTitle(userMessageContent, fullResponse);
+        console.log('Generated title:', generatedTitle);
+        await chatService.updateSession(sessionIdNum, generatedTitle);
+        setSessions(prevSessions =>
+          prevSessions.map(s =>
+            s.id === sessionId
+              ? { ...s, title: generatedTitle }
+              : s
+          )
+        );
+      } catch (titleError) {
+        console.error('Failed to generate/update title:', titleError);
+      }
+    }
+
+    setRunState('completed');
+  };
+
+  const handleToggleVideoSelection = (id: string) => {
+    setSelectedVideoIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(existing => existing !== id);
+      }
+      if (prev.length >= MAX_VIDEO_SELECTION) {
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const handleOpenVideoPreview = (id: string) => {
+    const candidate = videoCandidates.find(video => video.id === id);
+    if (candidate) {
+      setPreviewVideo({
+        id,
+        url: candidate.videoUrl,
+        sequence: candidate.sequence,
+        title: candidate.videoSetId ? `Video set ${candidate.videoSetId}` : undefined,
+      });
+    }
+  };
+
+  const handleClosePreview = () => setPreviewVideo(null);
+
+  const buildVideoCandidateList = (docs: VideoDoc[]): VideoCandidate[] => {
+    clearCandidatePreviewUrls();
+    const visibleDocs = docs.slice(0, MAX_VIDEO_CANDIDATES);
+
+    return visibleDocs.map(doc => {
+      const representativeUrl =
+        doc.sequence?.[0]?.url ??
+        (() => {
+          const createdUrl = URL.createObjectURL(doc.blob);
+          candidatePreviewUrlsRef.current.set(`${doc.id}:rep`, createdUrl);
+          return createdUrl;
+        })();
+
+      const sequence = (doc.sequence ?? []).map(item => {
+        const seqUrl = item.url ?? URL.createObjectURL(item.blob);
+        candidatePreviewUrlsRef.current.set(`${doc.id}:${item.id}:${item.order ?? 0}`, seqUrl);
+        return {
+          id: item.id,
+          url: seqUrl,
+          order: item.order,
+          durationMs: item.durationMs,
+          timestamp: item.timestamp,
+        };
+      });
+
+      return {
+        id: doc.id,
+        thumbnailUrl: representativeUrl,
+        videoUrl: representativeUrl,
+        score: 0,
+        videoBlob: doc.blob,
+        durationMs: doc.durationMs,
+        timestamp: doc.timestamp,
+        videoSetId: doc.video_set_id ?? doc.id,
+        representativeId: doc.representative_id,
+        sequenceLength: sequence.length || 1,
+        sequence,
+      };
+    });
+  };
+
+  const handleGenerateWithSelectedVideos = () => {
+    if (!videoSelectionResolverRef.current) {
+      return;
+    }
+    if (selectedVideoIds.length === 0 || selectedVideoIds.length > MAX_VIDEO_SELECTION) {
+      return;
+    }
+    const resolver = videoSelectionResolverRef.current;
+    videoSelectionResolverRef.current = null;
+    videoSelectionRejectRef.current = null;
+    resolver(selectedVideoIds);
+  };
+
   const handleSendMessage = async (content: string) => {
     if (!isModelReady) {
       return;
@@ -322,6 +844,9 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     if (runState === 'awaitingFirstToken' || runState === 'streaming') {
       return;
     }
+
+    resetVideoSelectionState();
+    setVideoSearchUsed(videoRagEnabled);
 
     // Auto-create session if none exists
     let session = currentSession;
@@ -438,6 +963,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       activeRun.sessionId = sessionId;
     }
 
+    const videoDocsForSelection: VideoDoc[] = [];
+    const videoUrls: Set<string> = new Set(); // Store object URLs for debugging/cleanup
+    const chatContexts: string[] = [];
+    let videoSetCount = 0;
+    let relevantDocs: any[] = [];
+    let searchErrored = false;
+
     try {
       // Send user message to backend (encrypted automatically)
       const userMsg = await chatService.sendMessage(sessionIdNum, 'user', content);
@@ -494,15 +1026,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       }
 
       // RAG: Retrieve relevant context from past conversations and screen recordings
-      let contextPrompt = '';
-      const videoBlobs: Blob[] = []; // Store reconstructed video blobs for multimodal input
-      const videoSamplingTargets: { blob: Blob; video_set_id?: string | null; representative_id?: string }[] = [];
-      const videoUrls: string[] = []; // Store object URLs for debugging
-      const chatContexts: string[] = []; // Chat memory contexts
-      let videoCount = 0; // Number of screen recordings retrieved
-      let relevantDocs: any[] = [];
-      let searchErrored = false;
-
       processingStatusService.startPhase(sessionId, 'searching');
       const searchPhaseStart = getTimestamp();
 
@@ -533,7 +1056,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             chatQueryEmbedding,
             7,
             videoQueryEmbedding || undefined,
-            videoRagEnabled ? 3 : 0,
+            videoRagEnabled ? MAX_VIDEO_CANDIDATES : 0,
             sessionIdNum,
             'video_set'
           )
@@ -590,132 +1113,87 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           // Separate chat and video contexts
           const seenMessages = new Map<string, { role: string; content: string }>();
 
-          relevantDocs.forEach((doc: any) => {
+          relevantDocs.forEach((doc: any, idx: number) => {
             if (doc.source_type === 'screen' && doc.video_blob) {
-              // Store reconstructed video blob for multimodal input
-              videoBlobs.push(doc.video_blob);
-              videoSamplingTargets.push({
-                blob: doc.video_blob,
-                video_set_id: doc.video_set_id ?? null,
-                representative_id: doc.id,
+              const setId = (doc.video_set_id ?? doc.id ?? `video_set_${idx + 1}`).toString();
+              const rawSequence = Array.isArray(doc.video_set_videos) && doc.video_set_videos.length > 0
+                ? doc.video_set_videos
+                : [doc];
+
+              const sequenceVideos: VideoSequenceItem[] = [];
+              rawSequence.forEach((video: any, order: number) => {
+                if (!video?.video_blob) return;
+                const url = URL.createObjectURL(video.video_blob);
+                videoUrls.add(url);
+                sequenceVideos.push({
+                  id: video.id?.toString() ?? `${setId}_${order}`,
+                  blob: video.video_blob,
+                  durationMs: video.duration,
+                  timestamp: video.timestamp,
+                  video_set_id: video.video_set_id ?? setId,
+                  url,
+                  order,
+                });
               });
-              videoCount++;
 
-              // Create object URL for debugging
-              const videoUrl = URL.createObjectURL(doc.video_blob);
-              videoUrls.push(videoUrl);
-
-              // Store on window for debugging access
-              const videoKey = `__ragVideo${videoCount}`;
-              (window as any)[videoKey] = {
-                url: videoUrl,
-                blob: doc.video_blob,
-                download: () => {
-                  const freshUrl = URL.createObjectURL(doc.video_blob);
-                  const a = document.createElement('a');
-                  a.href = freshUrl;
-                  a.download = `rag-video-${videoCount}-${Date.now()}.webm`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  setTimeout(() => URL.revokeObjectURL(freshUrl), 100);
-                },
-                view: () => {
-                  const freshUrl = URL.createObjectURL(doc.video_blob);
-                  window.open(freshUrl, '_blank');
-                },
-                // Extract and preview frames sent to LLM
-                frames: async (fps = 1, maxFrames = 50) => {
-                  console.log(
-                    `[Frame Extractor] Extracting frames from video ${videoCount} at ${fps} fps...`
-                  );
-                  const frames = await extractFramesFromVideoBlob(doc.video_blob, fps, maxFrames);
-                  console.log(`[Frame Extractor] Extracted ${frames.length} frames`);
-                  displayFramesInConsole(frames);
-                  return frames;
-                },
-                // Open frames in new window
-                viewFrames: async (fps = 1, maxFrames = 50) => {
-                  console.log(`[Frame Extractor] Extracting frames from video ${videoCount}...`);
-                  const frames = await extractFramesFromVideoBlob(doc.video_blob, fps, maxFrames);
-                  openFramesInWindow(frames);
-                }
-              };
-
-              if (doc.video_set_videos && doc.video_set_videos.length > 0) {
-                 const setVideos = doc.video_set_videos;
-                 (window as any)[`__ragVideoSet${videoCount}`] = {
-                    videos: setVideos,
-                    count: setVideos.length,
-                    viewSequence: () => {
-                        // Play videos one after another in a new window
-                        const win = window.open('', '_blank');
-                        if (!win) return console.error('Popup blocked');
-                        
-                        const script = `
-                          const blobs = [];
-                          let currentIndex = 0;
-                          const video = document.getElementById('player');
-                          const status = document.getElementById('status');
-                          
-                          function playNext() {
-                            if (currentIndex >= blobs.length) {
-                                status.innerText = 'All videos played.';
-                                return;
-                            }
-                            status.innerText = 'Playing video ' + (currentIndex + 1) + ' of ' + blobs.length;
-                            const url = URL.createObjectURL(blobs[currentIndex]);
-                            video.src = url;
-                            video.play();
-                            currentIndex++;
-                          }
-                          
-                          video.onended = playNext;
-                          
-                          // Initialize blobs from parent window
-                          window.init = (videoBlobs) => {
-                              videoBlobs.forEach(b => blobs.push(b));
-                              playNext();
-                          };
-                        `;
-                        
-                        win.document.write(`
-                           <html>
-                             <head><title>Video Set Sequence Preview</title></head>
-                             <body style="background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0;">
-                               <h3 id="status">Loading sequence...</h3>
-                               <video id="player" controls autoplay style="max-width:90%; max-height:80vh; border:1px solid #444;"></video>
-                               <script>${script}</script>
-                             </body>
-                           </html>
-                        `);
-                        
-                        // Pass blobs to the new window
-                        const blobs = setVideos.map((v: any) => v.video_blob).filter((b: any) => !!b);
-                        (win as any).init(blobs);
-                    },
-                    downloadMerged: () => {
-                        console.log('Merging ' + setVideos.length + ' videos...');
-                        const blobs = setVideos.map((v: any) => v.video_blob).filter((b: any) => !!b);
-                        if (blobs.length === 0) return;
-                        
-                        // Simple concatenation for debugging (WebM concatenation works reasonably well in players like VLC)
-                        const mergedBlob = new Blob(blobs, { type: blobs[0].type });
-                        const url = URL.createObjectURL(mergedBlob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `rag-video-set-${videoCount}-merged-${Date.now()}.webm`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setTimeout(() => URL.revokeObjectURL(url), 100);
-                        console.log('Downloaded merged video set');
-                    }
-                 };
-                 console.log(`[RAG] Video set ${videoCount} available: __ragVideoSet${videoCount}.viewSequence() | .downloadMerged()`);
+              if (sequenceVideos.length === 0) {
+                console.warn('[RAG] Skipping video set with no blobs', setId);
+                return;
               }
 
-              console.log(`[RAG] Retrieved video ${videoCount}: ${(doc.video_blob.size / 1024).toFixed(1)} KB`);
+              const representativeId = doc.representative_id ?? doc.id?.toString();
+              const representativeVideo =
+                sequenceVideos.find(v => v.id === representativeId) ?? sequenceVideos[0];
+
+              videoDocsForSelection.push({
+                id: setId,
+                blob: representativeVideo.blob,
+                durationMs: representativeVideo.durationMs,
+                timestamp: representativeVideo.timestamp,
+                video_set_id: setId,
+                representative_id: representativeId,
+                sequence: sequenceVideos,
+              });
+
+              videoSetCount += 1;
+
+              const debugKey = `__ragVideoSet${videoSetCount}`;
+              (window as any)[debugKey] = {
+                videos: sequenceVideos,
+                representative: representativeVideo,
+                viewSequence: () => {
+                  const win = window.open('', '_blank');
+                  if (!win) return console.error('Popup blocked');
+                  const scripts = `
+                    const videos = ${JSON.stringify(sequenceVideos.map(v => v.url))};
+                    let idx = 0;
+                    const player = document.getElementById('player');
+                    const label = document.getElementById('label');
+                    function playNext() {
+                      if (idx >= videos.length) { label.innerText = 'Done'; return; }
+                      const url = videos[idx];
+                      label.innerText = 'Playing ' + (idx + 1) + ' / ' + videos.length;
+                      player.src = url;
+                      player.play();
+                      idx += 1;
+                    }
+                    player.onended = playNext;
+                    playNext();
+                  `;
+                  win.document.write(`
+                    <html><body style="margin:0;background:#111;color:#eee;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px">
+                      <div id="label">Loading...</div>
+                      <video id="player" controls autoplay style="max-width:95vw;max-height:85vh;background:black;border:1px solid #444;border-radius:8px"></video>
+                      <script>${scripts}</script>
+                    </body></html>
+                  `);
+                },
+              };
+              console.log(
+                `[RAG] Retrieved video set ${videoSetCount} (${sequenceVideos.length} video${
+                  sequenceVideos.length === 1 ? '' : 's'
+                }): ${debugKey}.viewSequence()`
+              );
             } else if (doc.source_type === 'chat') {
               // Parse bundle to extract individual messages
               // Bundle format: "user: content\nassistant: content\nuser: content\n..."
@@ -759,12 +1237,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             chatContexts.push(formattedLines.join('\n'));
           }
 
-          // Build context prompt with <memory> tags matching the chat RAG style
-          if (chatContexts.length > 0 || videoCount > 0) {
-            contextPrompt = `<memory>
-${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' : ''}${videoCount > 0 ? `${videoCount} screen recording(s) as image sequences (1 fps).` : ''}
-</memory>`;
-          }
         }
       } catch (error) {
         if (isRunCancelledError(error)) {
@@ -791,14 +1263,14 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
         const secureMessages: string[] = ['Processing encrypted data'];
         if (processingErrored) {
           secureMessages.push('Secure processing encountered an issue');
-        } else if (videoCount > 0) {
+        } else if (videoSetCount > 0) {
           secureMessages.push(
-            `Prepared ${videoCount} secure screen capture${videoCount === 1 ? '' : 's'}`
+            `Prepared ${videoSetCount} retrieved video set${videoSetCount === 1 ? '' : 's'}`
           );
         }
 
-        retrievalSummary.memoriesRetrieved = chatContexts.length + videoCount;
-        retrievalSummary.screenRecordings = videoCount;
+        retrievalSummary.memoriesRetrieved = chatContexts.length + videoSetCount;
+        retrievalSummary.screenRecordings = videoSetCount;
         if (retrievalSummary.memoriesRetrieved > 0 && !processingErrored) {
           retrievalSummary.encryptedDataProcessed = true;
         }
@@ -806,7 +1278,7 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
         processingStatusService.completePhase(sessionId, 'processing', secureProcessingElapsed, {
           retrievalMetrics: {
             memoriesRetrieved: retrievalSummary.memoriesRetrieved,
-            screenRecordings: videoCount,
+            screenRecordings: videoSetCount,
             embeddingsSearched: retrievalSummary.embeddingsSearched,
             encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
           },
@@ -814,366 +1286,48 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
         });
       }
 
-      // Stream the LLM response with RAG context + videos
-      let fullResponse = '';
-
-      // Build conversation history as message array (exclude the empty AI message we just added)
+      // Prepare generation payload and handle video selection
       const conversationMessages = session.messages
-        .filter(msg => msg.id !== aiMessageId) // Exclude the temporary AI message
+        .filter(msg => msg.id !== aiMessageId)
         .map(msg => ({
           role: msg.isUser ? 'user' as const : 'assistant' as const,
           content: msg.content
         }));
 
-      // Construct the current message with RAG context
-      let messageWithContext = '';
-
-      if (contextPrompt) {
-        // If we have RAG context, include it
-        messageWithContext += contextPrompt + '\n\n';
-      }
-
-      // Add the current user message
-      messageWithContext += content;
-
-      // Log RAG summary
-      console.log('[RAG] Context retrieval complete:', {
-        chatMemories: chatContexts.length,
-        screenRecordings: videoCount,
-        conversationHistoryMessages: conversationMessages.length,
-        contextLength: contextPrompt.length,
-        totalPromptLength: messageWithContext.length
-      });
-
-      // Expose the final prompt for debugging in console
-      (window as any).__ragPrompt = {
-        full: messageWithContext,
-        userQuery: content,
-        contextAdded: contextPrompt.length > 0,
-        contextLength: contextPrompt.length,
-        totalLength: messageWithContext.length,
-        chatMemories: chatContexts.length,
-        videoCount: videoCount,
-        conversationHistory: conversationMessages,
-        videos: videoBlobs, // Store video blobs for frame extraction
-        view: () => {
-          console.log('=== RAG Prompt Debug ===');
-          console.log('User Query:', content);
-          console.log('\nContext Added:', contextPrompt.length > 0 ? 'Yes' : 'No');
-          console.log('Chat Memories:', chatContexts.length);
-          console.log('Screen Recordings:', videoCount);
-          console.log('\n--- Full Prompt ---');
-          console.log(messageWithContext);
-          console.log('\n--- Context Only ---');
-          console.log(contextPrompt);
-        },
-        copy: () => {
-          navigator.clipboard.writeText(messageWithContext);
-          console.log('✓ Full prompt copied to clipboard');
-        },
-        // Extract frames from all videos
-        frames: async (fps = 1, maxFrames = 50) => {
-          if (videoBlobs.length === 0) {
-            console.log('No videos attached to this query');
-            return [];
-          }
-          console.log(`[Frame Extractor] Extracting frames from ${videoBlobs.length} video(s) at ${fps} fps...`);
-          const allFrames = [];
-          for (let i = 0; i < videoBlobs.length; i++) {
-            console.log(`\n[Frame Extractor] Processing video ${i + 1}/${videoBlobs.length}...`);
-            const frames = await extractFramesFromVideoBlob(videoBlobs[i], fps, maxFrames);
-            console.log(`[Frame Extractor] Video ${i + 1}: ${frames.length} frames`);
-            displayFramesInConsole(frames);
-            allFrames.push(...frames);
-          }
-          console.log(`\n[Frame Extractor] Total: ${allFrames.length} frames from ${videoBlobs.length} video(s)`);
-          return allFrames;
-        },
-        // Open all frames in new window
-        viewFrames: async (fps = 1, maxFrames = 50) => {
-          if (videoBlobs.length === 0) {
-            console.log('No videos attached to this query');
-            return;
-          }
-          console.log(`[Frame Extractor] Extracting frames from ${videoBlobs.length} video(s)...`);
-          const allFrames = [];
-          for (const videoBlob of videoBlobs) {
-            const frames = await extractFramesFromVideoBlob(videoBlob, fps, maxFrames);
-            allFrames.push(...frames);
-          }
-          console.log(`[Frame Extractor] Opening ${allFrames.length} frames in new window...`);
-          openFramesInWindow(allFrames);
-        },
-        debugVLMFrames: async () => {
-          if (videoSamplingTargets.length === 0) {
-            console.log('No videos to sample.');
-            return;
-          }
-          console.log('[VLM Debug] Sampling frames exactly as sent to LLM (224px, 10 frames)...');
-
-          // 실제 로직과 동일한 파라미터 사용
-          const allSamples = await Promise.all(
-            videoSamplingTargets.map(async (target, idx) => {
-              const frames = await sampleUniformFramesAsBase64(
-                 target.blob,
-                 DEFAULT_VIDEO_SAMPLE_FRAMES, // 기본값 10
-                 { size: 224, format: 'image/jpeg', quality: 0.92 }
-              );
-              return { idx, frames, setId: target.video_set_id };
-            })
-          );
-          // 팝업 창 생성
-          const win = window.open('', '_blank');
-          if(!win) return console.error('Popup blocked. Please allow popups.');
-
-          let html = `
-            <html>
-            <head>
-              <title>VLM Input Debug (Actual Sampling)</title>
-              <style>
-                body { background:#111; color:#eee; font-family:sans-serif; padding:20px; }
-                .video-row { margin-bottom:30px; border-bottom:1px solid #444; padding-bottom:20px; }
-                .frames-grid { display:flex; gap:8px; flex-wrap:wrap; }
-                .frame-item { text-align:center; }
-                img { width:112px; height:112px; object-fit:contain; border:1px solid #555; background:#000; }
-                .meta { font-size: 12px; color: #aaa; margin-top: 4px; }
-                h3 { color: #4ade80; margin-bottom: 10px; }
-              </style>
-            </head>
-            <body>
-              <h1>VLM Input Frames Debug</h1>
-              <p>Showing frames exactly as processed for the LLM (224x224px, resized/squashed).</p>
-          `;
-
-          allSamples.forEach(({idx, frames, setId}) => {
-            html += `
-              <div class="video-row">
-                <h3>Video #${idx + 1} ${setId ? `<span style="color:#888;font-size:0.8em">(${setId})</span>` : ''}</h3>
-                <div class="frames-grid">`;
-            
-            frames.forEach((f, fIdx) => {
-                 html += `
-                  <div class="frame-item">
-                    <img src="data:image/jpeg;base64,${f.base64}" />
-                    <div class="meta">Frame ${fIdx + 1}<br/>${f.time.toFixed(2)}s</div>
-                  </div>`;
-            });
-            
-            html += `</div></div>`;
-          });
-
-          html += '</body></html>';
-          win.document.write(html);
-          win.document.close();
-        },
+      const pendingData: PendingGenerationData = {
+        sessionId,
+        sessionIdNum,
+        aiMessageId,
+        conversationMessages,
+        chatContexts,
+        videoDocs: videoDocsForSelection,
+        userMessageContent: content,
+        userMsg,
+        runStartTime,
+        phaseDurations,
+        retrievalSummary,
+        shouldGenerateTitle: session.messages.length === 0 && session.title === 'New Conversation',
+        videoDebugUrls: Array.from(videoUrls),
       };
-      if (videoCount > 0) {
-        console.log('[RAG] Debug: __ragPrompt.view() | __ragPrompt.frames() | __ragPrompt.viewFrames()');
-        console.log(`[RAG] Debug: Individual videos: __ragVideo1.frames() | __ragVideo1.viewFrames()`);
-      } else {
-        console.log('[RAG] Debug: Use __ragPrompt.view() to inspect prompt or __ragPrompt.copy() to copy it');
-      }
 
-      // Sample frames for VLM using the same logic as the embedding pipeline
-      let vlmImages: string[] | undefined;
-      if (videoSamplingTargets.length > 0) {
-        try {
-          const sampledGroups = await runWithCancellation(() =>
-            Promise.all(
-              videoSamplingTargets.map(async (video, idx) => {
-                const frames = await sampleUniformFramesAsBase64(
-                  video.blob,
-                  DEFAULT_VIDEO_SAMPLE_FRAMES,
-                  { size: 224, format: 'image/jpeg', quality: 0.92 }
-                );
-                console.log(
-                  `[VLM] Sampled ${frames.length} frames from video ${idx + 1}/${videoSamplingTargets.length}${
-                    video.video_set_id ? ` (video_set_id=${video.video_set_id})` : ''
-                  }`
-                );
-                return frames.map(f => f.base64);
-              })
-            )
-          );
-          ensureNotCancelled();
-          vlmImages = sampledGroups.flat();
-        } catch (samplingError) {
-          console.error('[VLM] Failed to sample frames with embedding sampler:', samplingError);
-        }
-      }
+      let selectedIdsForRun: string[] = [];
 
-      // Fallback: if no images were produced, stream raw videos for backend extraction
-      let videoArrayBuffers: ArrayBuffer[] | undefined;
-      if ((!vlmImages || vlmImages.length === 0) && videoBlobs.length > 0) {
-        videoArrayBuffers = await runWithCancellation(() =>
-          Promise.all(videoBlobs.map(blob => blob.arrayBuffer()))
-        );
+      if (videoRagEnabled && videoDocsForSelection.length > 0) {
+        setVideoCandidates(buildVideoCandidateList(videoDocsForSelection));
+        setSelectedVideoIds([]);
+        setIsRetrievalComplete(true);
+
+        selectedIdsForRun = await new Promise<string[]>((resolve, reject) => {
+          videoSelectionResolverRef.current = resolve;
+          videoSelectionRejectRef.current = reject;
+        });
         ensureNotCancelled();
+      } else if (videoRagEnabled) {
+        setIsRetrievalComplete(true);
       }
-
-      if (vlmImages && vlmImages.length > 0) {
-        console.log(
-          `[RAG] Sending ${vlmImages.length} sampled frame(s) (${videoSamplingTargets.length} video${
-            videoSamplingTargets.length === 1 ? '' : 's'
-          }) to LLM`
-        );
-      } else if (videoArrayBuffers && videoArrayBuffers.length > 0) {
-        console.log(`[RAG] Sending ${videoArrayBuffers.length} video(s) to LLM for fallback frame extraction`);
-        console.log(
-          `[RAG] Video sizes:`,
-          videoArrayBuffers.map((buf, i) => `Video ${i + 1}: ${(buf.byteLength / 1024).toFixed(1)} KB`)
-        );
-      } else {
-        console.log('[RAG] No videos attached to this query');
-      }
-
-      processingStatusService.startPhase(sessionId, 'generating');
-      const generationPhaseStart = getTimestamp();
-      let generatedChunks = 0;
-      let generatedCharacters = 0;
-      let streamingErrored = false;
-      let tokensAnnounced = false;
 
       ensureNotCancelled();
-      try {
-        await runWithCancellation(() =>
-          llmService.streamMessage(
-            messageWithContext,
-            (chunk) => {
-              const currentRun = activeRunRef.current;
-              if (!currentRun || currentRun.isStopped) {
-                return;
-              }
-
-              if (!currentRun.tokensReceived) {
-                currentRun.tokensReceived = true;
-                if (!tokensAnnounced) {
-                  tokensAnnounced = true;
-                  processingStatusService.tokensStarted(sessionId);
-                }
-                setRunState('streaming');
-              }
-
-              generatedChunks += 1;
-              generatedCharacters += chunk.length;
-              fullResponse += chunk;
-              // Update the AI message content with each chunk
-              setSessions(prevSessions =>
-                prevSessions.map(s =>
-                  s.id === sessionId
-                    ? {
-                        ...s,
-                        messages: (s.messages || []).map(msg =>
-                          msg.id === aiMessageId
-                            ? { ...msg, content: fullResponse }
-                            : msg
-                        ),
-                        lastMessage: fullResponse.slice(0, 100) + (fullResponse.length > 100 ? '...' : ''),
-                        timestamp: new Date()
-                      }
-                    : s
-                )
-              );
-            },
-            {
-              temperature: 0.7,
-              maxTokens: 2048,
-              images: vlmImages, // Prefer pre-sampled frames (embedding-aligned) for Gemma 3
-              videos: vlmImages && vlmImages.length > 0 ? undefined : videoArrayBuffers, // Fallback to raw videos if sampling failed
-              messages: conversationMessages, // Pass conversation history for multi-turn format
-            }
-          )
-        );
-      } catch (streamError) {
-        streamingErrored = true;
-        throw streamError;
-      } finally {
-        const generationElapsed = getTimestamp() - generationPhaseStart;
-        phaseDurations.generating = generationElapsed;
-        processingStatusService.completePhase(sessionId, 'generating', generationElapsed, {
-          generatedChunks,
-          generatedCharacters,
-          retrievalMetrics: {
-            memoriesRetrieved: retrievalSummary.memoriesRetrieved,
-            encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
-            screenRecordings: retrievalSummary.screenRecordings,
-            embeddingsSearched: retrievalSummary.embeddingsSearched,
-          },
-        });
-
-        if (!streamingErrored) {
-          processingStatusService.completeProcessing(sessionId, {
-            totalElapsedMs: getTimestamp() - runStartTime,
-            phaseBreakdown: phaseDurations,
-            retrievalMetrics: {
-              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
-              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
-              screenRecordings: retrievalSummary.screenRecordings,
-              embeddingsSearched: retrievalSummary.embeddingsSearched,
-            },
-          });
-        }
-      }
-
-      // Cleanup initial video object URLs (blobs remain accessible via window.__ragVideoN)
-      videoUrls.forEach(url => URL.revokeObjectURL(url));
-
-      if (activeRun?.isStopped) {
-        return;
-      }
-
-      // Send assistant message to backend (just for storage, don't update UI)
-      const assistantMsg = await chatService.sendMessage(sessionIdNum, 'assistant', fullResponse);
-
-      // Track assistant message for memory
-      const existingMessages = session.messages || [];
-      const backendUserMsg: BackendChatMessage = {
-        ...userMsg,
-        content: content, // Original plaintext
-      };
-      const backendAssistantMsg: BackendChatMessage = {
-        ...assistantMsg,
-        content: fullResponse, // Original plaintext
-      };
-      memoryService.trackMessage(sessionIdNum, [
-        ...existingMessages.map(m => ({
-          id: parseInt(m.id),
-          session: sessionIdNum,
-          role: m.isUser ? 'user' as const : 'assistant' as const,
-          content: m.content,
-          timestamp: m.timestamp.getTime(),
-          created_at: m.timestamp.toISOString(),
-        })),
-        backendUserMsg,
-        backendAssistantMsg,
-      ]).catch(err => console.error('Memory tracking failed:', err));
-
-      // Auto-generate title after first user-assistant interaction
-      // Check if this was the first message (session had no messages before this exchange)
-      if (session.messages.length === 0 && session.title === 'New Conversation') {
-        try {
-          console.log('Generating title for first conversation...');
-          const generatedTitle = await llmService.generateTitle(content, fullResponse);
-          console.log('Generated title:', generatedTitle);
-
-          // Update title in backend
-          await chatService.updateSession(sessionIdNum, generatedTitle);
-
-          // Update title in local state
-          setSessions(prevSessions =>
-            prevSessions.map(s =>
-              s.id === session.id
-                ? { ...s, title: generatedTitle }
-                : s
-            )
-          );
-        } catch (error) {
-          console.error('Failed to generate/update title:', error);
-          // Don't throw - title generation is not critical
-        }
-      }
-
-      setRunState('completed');
+      await runGeneration(pendingData, selectedIdsForRun);
 
     } catch (error: any) {
       const rawErrorMessage =
@@ -1234,12 +1388,18 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
         setRunState('idle');
       }
     } finally {
+      videoUrls.forEach(url => URL.revokeObjectURL(url));
       activeRun = null;
       activeRunRef.current = null;
     }
   };
 
   const handleStopGeneration = async () => {
+    if (videoSelectionRejectRef.current) {
+      videoSelectionRejectRef.current(createRunCancelledError());
+      resetVideoSelectionState();
+    }
+
     const activeRun = activeRunRef.current;
     if (!activeRun || activeRun.isStopped) {
       return;
@@ -1311,10 +1471,25 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
   };
 
   const indicatorSessionId = currentSession?.id ?? activeRunRef.current?.sessionId ?? null;
+  const hasVideoCandidates = videoCandidates.length > 0;
+  const showVideoGrid = hasVideoCandidates && isRetrievalComplete && !isGenerationInProgress;
 
   let statusIndicatorNode: ReactNode = null;
   if (runState === 'awaitingFirstToken') {
-    statusIndicatorNode = <ChatStatusIndicators sessionId={indicatorSessionId} />;
+    statusIndicatorNode = (
+      <ChatStatusIndicators
+        sessionId={indicatorSessionId}
+        videoCandidates={videoCandidates}
+        selectedVideoIds={selectedVideoIds}
+        onToggleVideoSelection={handleToggleVideoSelection}
+        onOpenVideo={handleOpenVideoPreview}
+        onGenerateWithSelectedVideos={handleGenerateWithSelectedVideos}
+        showVideoGrid={showVideoGrid}
+        isRetrievalComplete={isRetrievalComplete}
+        videoSearchActive={videoSearchUsed}
+        isGenerationInProgress={isGenerationInProgress}
+      />
+    );
   } else if (runState === 'stoppedBeforeTokens') {
     statusIndicatorNode = <StopIndicator isStopping={isStoppingGeneration} />;
   }
@@ -1381,8 +1556,8 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
             <div
               className={
                 (!currentSession?.messages || currentSession.messages.length === 0)
-                  ? 'pt-[calc(50vh-13rem)]'
-                  : 'flex-1 flex flex-col'
+                  ? 'pt-[calc(50vh-13rem)] overflow-auto min-h-0'
+                  : 'flex-1 flex flex-col overflow-auto min-h-0'
               }
             >
               <ChatMessages
@@ -1392,18 +1567,28 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
                 statusIndicator={statusIndicatorNode}
               />
             </div>
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              onStop={handleStopGeneration}
-              runState={runState}
-              modelNotReady={!isModelReady}
-              isStopping={isStoppingGeneration}
-              videoRagEnabled={videoRagEnabled}
-              onToggleVideoRag={handleToggleVideoRag}
-            />
+            <div className="flex-shrink-0">
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                onStop={handleStopGeneration}
+                runState={runState}
+                modelNotReady={!isModelReady}
+                isStopping={isStoppingGeneration}
+                videoRagEnabled={videoRagEnabled}
+                onToggleVideoRag={handleToggleVideoRag}
+              />
+            </div>
           </motion.div>
         </div>
       </div>
+
+      <VideoPlayerModal
+        open={Boolean(previewVideo)}
+        videoUrl={previewVideo?.url ?? null}
+        sequence={previewVideo?.sequence}
+        title={previewVideo?.title}
+        onClose={handleClosePreview}
+      />
     </>
   );
 }

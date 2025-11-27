@@ -47,7 +47,7 @@ export type EmbeddedChunk = {
   chunk: VideoChunk;
   pooled: Float32Array;
   frames: ClipVideoEmbedding['frames'];
-  method: string;
+  method: 'video_set' | 'video_set_hidden';
 };
 
 export function useChunkedEmbeddingQueue(opts?: {
@@ -61,7 +61,7 @@ export function useChunkedEmbeddingQueue(opts?: {
   const chunkMs = opts?.chunkMs ?? (
     (import.meta as any).env?.VITE_VIDEO_CHUNK_MS
       ? Number((import.meta as any).env.VITE_VIDEO_CHUNK_MS)
-      : 30_000
+      : 3_000
   );
   const frameCount = opts?.frameCount ?? (
     (import.meta as any).env?.VITE_VIDEO_SAMPLING_FRAMES
@@ -143,18 +143,10 @@ export function useChunkedEmbeddingQueue(opts?: {
         setProcessed(v => v + 1);
 
         try {
-          // // Method 1: Always send 'mean_pooling'
-          // await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling' });
+          // Always write to the primary video_set collection
+          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' });
 
-          // // Method2: Only send 'mean_pooling_hidden' if chunk was NOT focused
-          // if (!chunk.wasFocused) {
-          //   await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'mean_pooling_hidden' });
-          // }
-
-          // Method3: Always send 'video_set'
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' })
-
-          // Method2: Only send 'video_set_hidden' if chunk was NOT focused
+          // Also add to the hidden collection when the Clone app was not focused
           if (!chunk.wasFocused) {
             await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set_hidden' });
           }
