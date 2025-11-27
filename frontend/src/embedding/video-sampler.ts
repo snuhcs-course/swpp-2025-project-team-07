@@ -1,3 +1,8 @@
+export const DEFAULT_VIDEO_SAMPLE_FRAMES =
+  Number((import.meta as any)?.env?.VITE_VIDEO_SAMPLING_FRAMES ?? 1) || 1;
+
+const DEFAULT_TARGET_SIZE = 224;
+
 export type SampledFrame = {
   time: number;                                      // timestamp - seconds
   image: ImageData | ImageBitmap | HTMLCanvasElement; // 임베더가 소비하는 표준 키
@@ -68,16 +73,53 @@ export async function sampleUniformFrames(
   count: number,
   opts?: { size?: number } 
 ): Promise<SampledFrame[]> {
-  const target = Math.max(1, Math.floor(opts?.size ?? 224));
+  const target = Math.max(1, Math.floor(opts?.size ?? DEFAULT_TARGET_SIZE));
   const { frames } = await VideoFrameSampler.uniformSample(blob, Math.max(1, count), target);
   return frames;
+}
+
+export async function sampleUniformFramesAsBase64(
+  blob: Blob,
+  frameCount: number = DEFAULT_VIDEO_SAMPLE_FRAMES,
+  opts?: { size?: number; format?: 'image/png' | 'image/jpeg'; quality?: number }
+): Promise<Array<{ time: number; base64: string }>> {
+  const target = Math.max(1, Math.floor(opts?.size ?? DEFAULT_TARGET_SIZE));
+  const frames = await sampleUniformFrames(blob, frameCount, { size: target });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = target;
+  canvas.height = target;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas 2D context not available');
+  }
+
+  const results: Array<{ time: number; base64: string }> = [];
+  const format = opts?.format ?? 'image/jpeg';
+  const quality = opts?.quality ?? 0.9;
+
+  for (const frame of frames) {
+    // Normalize frame.image into the canvas
+    if (frame.image instanceof ImageData || frame.imageData) {
+      ctx.putImageData(frame.imageData ?? (frame.image as ImageData), 0, 0);
+    } else {
+      ctx.clearRect(0, 0, target, target);
+      ctx.drawImage(frame.image as CanvasImageSource, 0, 0, target, target);
+    }
+
+    const dataUrl = canvas.toDataURL(format, quality);
+    const base64 = dataUrl.split(',')[1] ?? dataUrl;
+    results.push({ time: frame.time ?? 0, base64 });
+  }
+
+  return results;
 }
 
 export class VideoFrameSampler {
   static async uniformSample(
     blob: Blob,
     frameCount: number,
-    targetSize = 224
+    targetSize = DEFAULT_TARGET_SIZE
   ): Promise<{ frames: SampledFrame[]; duration: number; width: number; height: number }> {
     const url = URL.createObjectURL(blob);
     try {

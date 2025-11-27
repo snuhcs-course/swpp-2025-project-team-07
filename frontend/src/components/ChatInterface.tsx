@@ -14,6 +14,7 @@ import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
+import { DEFAULT_VIDEO_SAMPLE_FRAMES, sampleUniformFramesAsBase64 } from '@/embedding/video-sampler';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 
@@ -495,6 +496,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       // RAG: Retrieve relevant context from past conversations and screen recordings
       let contextPrompt = '';
       const videoBlobs: Blob[] = []; // Store reconstructed video blobs for multimodal input
+      const videoSamplingTargets: { blob: Blob; video_set_id?: string | null; representative_id?: string }[] = [];
       const videoUrls: string[] = []; // Store object URLs for debugging
       const chatContexts: string[] = []; // Chat memory contexts
       let videoCount = 0; // Number of screen recordings retrieved
@@ -592,6 +594,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             if (doc.source_type === 'screen' && doc.video_blob) {
               // Store reconstructed video blob for multimodal input
               videoBlobs.push(doc.video_blob);
+              videoSamplingTargets.push({
+                blob: doc.video_blob,
+                video_set_id: doc.video_set_id ?? null,
+                representative_id: doc.id,
+              });
               videoCount++;
 
               // Create object URL for debugging
@@ -896,7 +903,69 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
           }
           console.log(`[Frame Extractor] Opening ${allFrames.length} frames in new window...`);
           openFramesInWindow(allFrames);
-        }
+        },
+        debugVLMFrames: async () => {
+          if (videoSamplingTargets.length === 0) {
+            console.log('No videos to sample.');
+            return;
+          }
+          console.log('[VLM Debug] Sampling frames exactly as sent to LLM (224px, 10 frames)...');
+
+          // 실제 로직과 동일한 파라미터 사용
+          const allSamples = await Promise.all(
+            videoSamplingTargets.map(async (target, idx) => {
+              const frames = await sampleUniformFramesAsBase64(
+                 target.blob,
+                 DEFAULT_VIDEO_SAMPLE_FRAMES, // 기본값 10
+                 { size: 224, format: 'image/jpeg', quality: 0.92 }
+              );
+              return { idx, frames, setId: target.video_set_id };
+            })
+          );
+          // 팝업 창 생성
+          const win = window.open('', '_blank');
+          if(!win) return console.error('Popup blocked. Please allow popups.');
+
+          let html = `
+            <html>
+            <head>
+              <title>VLM Input Debug (Actual Sampling)</title>
+              <style>
+                body { background:#111; color:#eee; font-family:sans-serif; padding:20px; }
+                .video-row { margin-bottom:30px; border-bottom:1px solid #444; padding-bottom:20px; }
+                .frames-grid { display:flex; gap:8px; flex-wrap:wrap; }
+                .frame-item { text-align:center; }
+                img { width:112px; height:112px; object-fit:contain; border:1px solid #555; background:#000; }
+                .meta { font-size: 12px; color: #aaa; margin-top: 4px; }
+                h3 { color: #4ade80; margin-bottom: 10px; }
+              </style>
+            </head>
+            <body>
+              <h1>VLM Input Frames Debug</h1>
+              <p>Showing frames exactly as processed for the LLM (224x224px, resized/squashed).</p>
+          `;
+
+          allSamples.forEach(({idx, frames, setId}) => {
+            html += `
+              <div class="video-row">
+                <h3>Video #${idx + 1} ${setId ? `<span style="color:#888;font-size:0.8em">(${setId})</span>` : ''}</h3>
+                <div class="frames-grid">`;
+            
+            frames.forEach((f, fIdx) => {
+                 html += `
+                  <div class="frame-item">
+                    <img src="data:image/jpeg;base64,${f.base64}" />
+                    <div class="meta">Frame ${fIdx + 1}<br/>${f.time.toFixed(2)}s</div>
+                  </div>`;
+            });
+            
+            html += `</div></div>`;
+          });
+
+          html += '</body></html>';
+          win.document.write(html);
+          win.document.close();
+        },
       };
       if (videoCount > 0) {
         console.log('[RAG] Debug: __ragPrompt.view() | __ragPrompt.frames() | __ragPrompt.viewFrames()');
@@ -905,17 +974,55 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
         console.log('[RAG] Debug: Use __ragPrompt.view() to inspect prompt or __ragPrompt.copy() to copy it');
       }
 
-      // Convert video Blobs to ArrayBuffers for IPC transfer
-      const videoArrayBuffers = videoBlobs.length > 0
-        ? await runWithCancellation(() =>
-            Promise.all(videoBlobs.map(blob => blob.arrayBuffer())),
-          )
-        : undefined;
-      ensureNotCancelled();
+      // Sample frames for VLM using the same logic as the embedding pipeline
+      let vlmImages: string[] | undefined;
+      if (videoSamplingTargets.length > 0) {
+        try {
+          const sampledGroups = await runWithCancellation(() =>
+            Promise.all(
+              videoSamplingTargets.map(async (video, idx) => {
+                const frames = await sampleUniformFramesAsBase64(
+                  video.blob,
+                  DEFAULT_VIDEO_SAMPLE_FRAMES,
+                  { size: 224, format: 'image/jpeg', quality: 0.92 }
+                );
+                console.log(
+                  `[VLM] Sampled ${frames.length} frames from video ${idx + 1}/${videoSamplingTargets.length}${
+                    video.video_set_id ? ` (video_set_id=${video.video_set_id})` : ''
+                  }`
+                );
+                return frames.map(f => f.base64);
+              })
+            )
+          );
+          ensureNotCancelled();
+          vlmImages = sampledGroups.flat();
+        } catch (samplingError) {
+          console.error('[VLM] Failed to sample frames with embedding sampler:', samplingError);
+        }
+      }
 
-      if (videoArrayBuffers && videoArrayBuffers.length > 0) {
-        console.log(`[RAG] Sending ${videoArrayBuffers.length} video(s) to LLM for frame extraction`);
-        console.log(`[RAG] Video sizes:`, videoArrayBuffers.map((buf, i) => `Video ${i + 1}: ${(buf.byteLength / 1024).toFixed(1)} KB`));
+      // Fallback: if no images were produced, stream raw videos for backend extraction
+      let videoArrayBuffers: ArrayBuffer[] | undefined;
+      if ((!vlmImages || vlmImages.length === 0) && videoBlobs.length > 0) {
+        videoArrayBuffers = await runWithCancellation(() =>
+          Promise.all(videoBlobs.map(blob => blob.arrayBuffer()))
+        );
+        ensureNotCancelled();
+      }
+
+      if (vlmImages && vlmImages.length > 0) {
+        console.log(
+          `[RAG] Sending ${vlmImages.length} sampled frame(s) (${videoSamplingTargets.length} video${
+            videoSamplingTargets.length === 1 ? '' : 's'
+          }) to LLM`
+        );
+      } else if (videoArrayBuffers && videoArrayBuffers.length > 0) {
+        console.log(`[RAG] Sending ${videoArrayBuffers.length} video(s) to LLM for fallback frame extraction`);
+        console.log(
+          `[RAG] Video sizes:`,
+          videoArrayBuffers.map((buf, i) => `Video ${i + 1}: ${(buf.byteLength / 1024).toFixed(1)} KB`)
+        );
       } else {
         console.log('[RAG] No videos attached to this query');
       }
@@ -971,7 +1078,8 @@ ${chatContexts.join('\n\n')}${chatContexts.length > 0 && videoCount > 0 ? '\n' :
             {
               temperature: 0.7,
               maxTokens: 2048,
-              videos: videoArrayBuffers, // Pass video ArrayBuffers (IPC-compatible) to Gemma 3
+              images: vlmImages, // Prefer pre-sampled frames (embedding-aligned) for Gemma 3
+              videos: vlmImages && vlmImages.length > 0 ? undefined : videoArrayBuffers, // Fallback to raw videos if sampling failed
               messages: conversationMessages, // Pass conversation history for multi-turn format
             }
           )

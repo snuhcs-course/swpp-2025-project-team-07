@@ -1,12 +1,12 @@
 // src/embedding/ClipVideoEmbedder.ts
 import ort from './ort';
-import { sampleUniformFrames, type SampledFrame } from './video-sampler';
+import {
+  DEFAULT_VIDEO_SAMPLE_FRAMES,
+  sampleUniformFrames,
+} from './video-sampler';
 
 const MEAN = [0.48145466, 0.4578275, 0.40821073] as const;
 const STD  = [0.26862954, 0.26130258, 0.27577711] as const;
-
-const DEFAULT_FRAMES =
-  Number((import.meta as any)?.env?.VITE_VIDEO_SAMPLING_FRAMES ?? 10) || 10;
 
 type ImgLike = ImageData | ImageBitmap | HTMLCanvasElement;
 
@@ -139,7 +139,7 @@ export class ClipVideoEmbedder {
     }
   }
 
-  async embedVideo(videoBlob: Blob, frameCount = DEFAULT_FRAMES): Promise<ClipVideoEmbedding> {
+  async embedVideo(videoBlob: Blob, frameCount = DEFAULT_VIDEO_SAMPLE_FRAMES): Promise<ClipVideoEmbedding> {
     await this.ensureReady();
 
     const sampled = await sampleUniformFrames(videoBlob, frameCount, { size: 224, crop: 'center' });
