@@ -19,6 +19,7 @@ import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessa
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 import type { VideoCandidate } from '@/types/video';
 import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
+import { OnboardingTooltip } from './OnboardingTooltip';
 
 // Local UI types
 export interface Message {
@@ -216,13 +217,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [tourSteps] = useState<Step[]>([
     {
       target: '.tour-sidebar',
-      content: 'Here you can access your chat history and manage your sessions.',
+      content: 'Once you start chatting, you can access your chat history and manage your sessions here.',
       placement: 'right',
       disableBeacon: true,
     },
     {
       target: '.tour-new-chat',
-      content: 'Click here to start a fresh conversation.',
+      content: 'Click here to start a new conversation with Clone.',
       placement: 'right',
     },
     {
@@ -232,12 +233,12 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     },
     {
       target: '.tour-recording-button',
-      content: 'Start recording your screen to share context with the AI.',
+      content: 'Click to toggle screen recording for sharing context with the AI.',
       placement: 'bottom',
     },
     {
       target: '.tour-profile-button',
-      content: 'Access your profile settings and sign out here.',
+      content: 'Access your profile settings here.',
       placement: 'bottom',
     },
     {
@@ -247,7 +248,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     },
     {
       target: '.tour-video-search',
-      content: 'Toggle video search to let the AI analyze your screen recordings.',
+      content: 'Click to toggle video search to let the AI analyze your screen recordings.',
       placement: 'top',
     },
   ]);
@@ -1394,23 +1395,13 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         showProgress
         showSkipButton
         callback={handleJoyrideCallback}
+        tooltipComponent={OnboardingTooltip}
+        disableOverlayClose={true}
+        disableCloseOnEsc={true}
         styles={{
           options: {
-            primaryColor: 'hsl(var(--primary))',
-            textColor: 'hsl(var(--foreground))',
-            backgroundColor: 'hsl(var(--card))',
-            arrowColor: 'hsl(var(--card))',
             zIndex: 1000,
-          },
-          tooltipContainer: {
-            textAlign: 'left',
-          },
-          buttonNext: {
-            backgroundColor: 'hsl(var(--primary))',
-            color: 'hsl(var(--primary-foreground))',
-          },
-          buttonBack: {
-            color: 'hsl(var(--muted-foreground))',
+            overlayColor: 'rgba(0, 0, 0, 0.7)',
           },
         }}
       />

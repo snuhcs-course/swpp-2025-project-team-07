@@ -120,7 +120,7 @@ export function ChatHeader({
             variant="ghost"
             size="icon"
             onClick={onToggleSidebar}
-            className="hover:bg-accent transition-all duration-300 rounded-xl cursor-pointer tour-toggle-sidebar"
+            className="hover:bg-accent transition-all duration-300 rounded-xl cursor-pointer"
             disabled={isSidebarOpen}
           >
             <PanelLeft className="w-5 h-5" />

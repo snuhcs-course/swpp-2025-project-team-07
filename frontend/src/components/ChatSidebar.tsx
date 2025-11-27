@@ -55,7 +55,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
               variant="ghost"
               size="icon"
               onClick={onToggleSidebar}
-              className="h-8 w-8 hover:bg-accent cursor-pointer"
+              className="h-8 w-8 hover:bg-accent cursor-pointer tour-toggle-sidebar"
             >
               <PanelLeft className="w-4 h-4" />
             </Button>
