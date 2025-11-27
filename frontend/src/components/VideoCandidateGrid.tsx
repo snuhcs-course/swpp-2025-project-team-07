@@ -45,7 +45,6 @@ export function VideoCandidateGrid({
           const isSelected = selectedIds.includes(video.id);
           const sequence = video.sequence ?? [];
           const sequenceLength = (video.sequenceLength ?? sequence.length) || 1;
-          const hasMultiple = sequenceLength > 1;
           const setLabel = video.videoSetId ?? video.id;
           return (
             <button
@@ -79,39 +78,6 @@ export function VideoCandidateGrid({
 
                 {isSelected ? (
                   <div className="absolute inset-0 bg-primary/20" aria-hidden="true" />
-                ) : null}
-
-                <div className="absolute bottom-2 left-2 flex flex-col gap-1 text-[11px] font-medium">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-white/80 backdrop-blur">
-                    <span className="h-1 w-1 rounded-full bg-primary" aria-hidden />
-                    {sequenceLength} clip{sequenceLength === 1 ? '' : 's'} in order
-                  </span>
-                </div>
-
-                {hasMultiple ? (
-                  <div className="absolute bottom-2 right-2 flex gap-1">
-                    {sequence.slice(0, 4).map(item => (
-                      <span
-                        key={`${video.id}-${item.id}-${item.order ?? 0}`}
-                        className="h-8 w-8 overflow-hidden rounded border border-white/40 shadow-inner"
-                      >
-                        {item.url ? (
-                          <video
-                            src={item.url}
-                            muted
-                            playsInline
-                            loop
-                            autoPlay
-                            className="h-full w-full object-cover opacity-90"
-                          />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center bg-black/50 text-[10px] text-white/70">
-                            {item.order ?? 0}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
                 ) : null}
 
                 <span
