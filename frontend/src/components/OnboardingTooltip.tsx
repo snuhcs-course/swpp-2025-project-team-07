@@ -41,7 +41,7 @@ export function OnboardingTooltip({
           {...backProps}
           variant="ghost"
           size="sm"
-          className={`text-zinc-300 hover:text-white hover:bg-zinc-700/50`}
+          className={`text-zinc-300 hover:text-white hover:bg-zinc-700/50 ${index === 0 ? 'invisible' : ''}`}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
