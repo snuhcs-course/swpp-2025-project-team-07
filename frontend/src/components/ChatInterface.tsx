@@ -18,6 +18,7 @@ import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 import type { VideoCandidate } from '@/types/video';
+import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
 
 // Local UI types
 export interface Message {
@@ -209,6 +210,63 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   useEffect(() => {
     localStorage.setItem('videoRagEnabled', JSON.stringify(videoRagEnabled));
   }, [videoRagEnabled]);
+
+  // Onboarding state
+  const [runTour, setRunTour] = useState(false);
+  const [tourSteps] = useState<Step[]>([
+    {
+      target: '.tour-sidebar',
+      content: 'Here you can access your chat history and manage your sessions.',
+      placement: 'right',
+      disableBeacon: true,
+    },
+    {
+      target: '.tour-new-chat',
+      content: 'Click here to start a fresh conversation.',
+      placement: 'right',
+    },
+    {
+      target: '.tour-toggle-sidebar',
+      content: 'You can collapse the sidebar to focus on your chat.',
+      placement: 'bottom',
+    },
+    {
+      target: '.tour-recording-button',
+      content: 'Start recording your screen to share context with the AI.',
+      placement: 'bottom',
+    },
+    {
+      target: '.tour-profile-button',
+      content: 'Access your profile settings and sign out here.',
+      placement: 'bottom',
+    },
+    {
+      target: '.tour-chat-input',
+      content: 'Type your messages here to interact with the AI.',
+      placement: 'top',
+    },
+    {
+      target: '.tour-video-search',
+      content: 'Toggle video search to let the AI analyze your screen recordings.',
+      placement: 'top',
+    },
+  ]);
+
+  useEffect(() => {
+    const onboardingCompleted = localStorage.getItem('onboarding_completed');
+    console.log("checking onboarding", onboardingCompleted);
+    if (onboardingCompleted !== 'true') {
+      setRunTour(true);
+    }
+  }, []);
+
+  const handleJoyrideCallback = (data: CallBackProps) => {
+    const { status } = data;
+    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+      setRunTour(false);
+      localStorage.setItem('onboarding_completed', 'true');
+    }
+  };
 
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
@@ -1329,6 +1387,33 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
   return (
     <>
+      <Joyride
+        steps={tourSteps}
+        run={runTour}
+        continuous
+        showProgress
+        showSkipButton
+        callback={handleJoyrideCallback}
+        styles={{
+          options: {
+            primaryColor: 'hsl(var(--primary))',
+            textColor: 'hsl(var(--foreground))',
+            backgroundColor: 'hsl(var(--card))',
+            arrowColor: 'hsl(var(--card))',
+            zIndex: 1000,
+          },
+          tooltipContainer: {
+            textAlign: 'left',
+          },
+          buttonNext: {
+            backgroundColor: 'hsl(var(--primary))',
+            color: 'hsl(var(--primary-foreground))',
+          },
+          buttonBack: {
+            color: 'hsl(var(--muted-foreground))',
+          },
+        }}
+      />
       {/* Only show download dialog after initial model check is complete */}
       {!isCheckingModels && (
         <ModelDownloadDialog
