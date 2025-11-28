@@ -138,4 +138,18 @@ export function clearAuth() {
   localStorage.removeItem('auth_user');
 }
 
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/api/auth/password-reset/', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function confirmPasswordReset(email: string, otp: string, password: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/api/auth/password-reset-confirm/', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp, password }),
+  });
+}
+
 
