@@ -33,12 +33,14 @@ export function VideoPlayerModal({ open, videoUrl, title, onClose }: VideoPlayer
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          onClick={onClose}
         >
           <motion.div
             className="relative w-full max-w-3xl rounded-2xl bg-background shadow-2xl"
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
+            onClick={event => event.stopPropagation()}
           >
             <button
               type="button"
