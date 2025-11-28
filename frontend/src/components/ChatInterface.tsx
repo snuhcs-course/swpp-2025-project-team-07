@@ -201,10 +201,10 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   const [videoSearchUsed, setVideoSearchUsed] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<{ url: string; id: string } | null>(null);
 
-  // Video RAG toggle state - disabled by default, persisted in localStorage
+  // Video RAG toggle state - enabled by default, persisted in localStorage
   const [videoRagEnabled, setVideoRagEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem('videoRagEnabled');
-    return stored ? JSON.parse(stored) : false;
+    return stored ? JSON.parse(stored) : true;
   });
 
   // Save videoRagEnabled to localStorage whenever it changes
