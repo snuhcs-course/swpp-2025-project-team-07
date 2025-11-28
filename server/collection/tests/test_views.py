@@ -521,34 +521,37 @@ class TestClearCollections:
 
     @responses.activate
     def test_clear_screen_deletes_video_metadata(self, api_client, user):
-        """Test that clearing screen collection also deletes VideoSetMetadata entries."""
-        from collection.models import VideoSetMetadata
+        """Test that clearing screen collection also deletes ScreenRecording entries."""
+        from collection.models import ScreenRecording
 
-        # Create some VideoSetMetadata entries
-        VideoSetMetadata.objects.create(
+        # Create some ScreenRecording entries
+        ScreenRecording.objects.create(
             video_id=f"user_{user.id}_screen_100",
             video_set_id="set-1",
             user=user,
             timestamp=1000,
             collection_version=None,
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
+        ScreenRecording.objects.create(
             video_id=f"user_{user.id}_screen_101",
             video_set_id="set-1",
             user=user,
             timestamp=2000,
             collection_version=None,
+            encrypted_content="encrypted_data_2",
         )
-        VideoSetMetadata.objects.create(
+        ScreenRecording.objects.create(
             video_id=f"user_{user.id}_screen_200",
             video_set_id="set-2",
             user=user,
             timestamp=3000,
             collection_version="v2",
+            encrypted_content="encrypted_data_3",
         )
 
         # Verify metadata exists
-        assert VideoSetMetadata.objects.filter(user=user).count() == 3
+        assert ScreenRecording.objects.filter(user=user).count() == 3
 
         # Mock drop and create operations
         responses.add(
@@ -571,39 +574,42 @@ class TestClearCollections:
 
         assert response.status_code == status.HTTP_200_OK
 
-        # Verify all VideoSetMetadata entries for this user are deleted
-        assert VideoSetMetadata.objects.filter(user=user).count() == 0
+        # Verify all ScreenRecording entries for this user are deleted
+        assert ScreenRecording.objects.filter(user=user).count() == 0
 
     @responses.activate
     def test_clear_screen_deletes_only_matching_version(self, api_client, user):
         """Test that clearing with collection_version only deletes matching metadata."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
         # Create metadata with different collection_versions
-        VideoSetMetadata.objects.create(
+        ScreenRecording.objects.create(
             video_id=f"user_{user.id}_screen_100",
             video_set_id="set-1",
             user=user,
             timestamp=1000,
             collection_version="v1",
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
+        ScreenRecording.objects.create(
             video_id=f"user_{user.id}_screen_200",
             video_set_id="set-2",
             user=user,
             timestamp=2000,
             collection_version="v2",
+            encrypted_content="encrypted_data_2",
         )
-        VideoSetMetadata.objects.create(
+        ScreenRecording.objects.create(
             video_id=f"user_{user.id}_screen_300",
             video_set_id="set-3",
             user=user,
             timestamp=3000,
             collection_version=None,
+            encrypted_content="encrypted_data_3",
         )
 
         # Verify 3 entries exist
-        assert VideoSetMetadata.objects.filter(user=user).count() == 3
+        assert ScreenRecording.objects.filter(user=user).count() == 3
 
         # Mock drop and create operations
         responses.add(
@@ -632,20 +638,20 @@ class TestClearCollections:
         assert response.status_code == status.HTTP_200_OK
 
         # Verify only v2 metadata was deleted
-        assert VideoSetMetadata.objects.filter(user=user).count() == 2
-        assert VideoSetMetadata.objects.filter(user=user, collection_version="v1").exists()
-        assert VideoSetMetadata.objects.filter(user=user, collection_version=None).exists()
-        assert not VideoSetMetadata.objects.filter(user=user, collection_version="v2").exists()
+        assert ScreenRecording.objects.filter(user=user).count() == 2
+        assert ScreenRecording.objects.filter(user=user, collection_version="v1").exists()
+        assert ScreenRecording.objects.filter(user=user, collection_version=None).exists()
+        assert not ScreenRecording.objects.filter(user=user, collection_version="v2").exists()
 
 
 @pytest.mark.django_db
-class TestVideoSetMetadata:
-    """Tests for video set metadata functionality."""
+class TestScreenRecordingMetadata:
+    """Tests for screen recording metadata functionality."""
 
     @responses.activate
     def test_insert_with_video_set_id_stores_metadata(self, jwt_authenticated_client, user):
         """Test that inserting screen data with video_set_id stores metadata."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
         # Mock screen VectorDB
         responses.add(
@@ -663,18 +669,21 @@ class TestVideoSetMetadata:
                     "vector": [0.1] * 512,
                     "timestamp": 1000,
                     "video_set_id": "set-abc-123",
+                    "content": "encrypted_video_data_1",
                 },
                 {
                     "id": "screen_101",
                     "vector": [0.2] * 512,
                     "timestamp": 2000,
                     "video_set_id": "set-abc-123",
+                    "content": "encrypted_video_data_2",
                 },
                 {
                     "id": "screen_102",
                     "vector": [0.3] * 512,
                     "timestamp": 3000,
                     "video_set_id": "set-abc-123",
+                    "content": "encrypted_video_data_3",
                 },
             ]
         }
@@ -683,19 +692,20 @@ class TestVideoSetMetadata:
         assert response.status_code == status.HTTP_201_CREATED
 
         # Verify metadata was stored
-        metadata = VideoSetMetadata.objects.filter(user=user)
+        metadata = ScreenRecording.objects.filter(user=user)
         assert metadata.count() == 3
         assert metadata.filter(video_set_id="set-abc-123").count() == 3
 
-        # Verify timestamps are stored correctly (with user_id prefix)
-        video_100 = VideoSetMetadata.objects.get(video_id=f"user_{user.id}_screen_100")
+        # Verify timestamps are stored correctly
+        video_100 = ScreenRecording.objects.get(video_id="screen_100")
         assert video_100.timestamp == 1000
         assert video_100.video_set_id == "set-abc-123"
+        assert video_100.encrypted_content == "encrypted_video_data_1"
 
     @responses.activate
-    def test_insert_without_video_set_id_no_metadata(self, jwt_authenticated_client, user):
-        """Test that inserting without video_set_id doesn't create metadata (backward compatible)."""
-        from collection.models import VideoSetMetadata
+    def test_insert_without_content_no_recording(self, jwt_authenticated_client, user):
+        """Test that inserting without content field doesn't create ScreenRecording (backward compatible)."""
+        from collection.models import ScreenRecording
 
         responses.add(
             responses.POST,
@@ -708,20 +718,20 @@ class TestVideoSetMetadata:
         data = {
             "screen_data": [
                 {"id": "screen_200", "vector": [0.1] * 512, "timestamp": 1000}
-                # No video_set_id
+                # No content field
             ]
         }
         response = jwt_authenticated_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED
 
-        # Verify no metadata was created
-        assert VideoSetMetadata.objects.count() == 0
+        # Verify no ScreenRecording was created (because no content field)
+        assert ScreenRecording.objects.count() == 0
 
     @responses.activate
     def test_insert_with_collection_version_stores_version(self, jwt_authenticated_client, user):
         """Test that collection_version is stored in metadata."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
         responses.add(
             responses.POST,
@@ -738,6 +748,7 @@ class TestVideoSetMetadata:
                     "vector": [0.1] * 512,
                     "timestamp": 1000,
                     "video_set_id": "set-xyz",
+                    "content": "encrypted_video_data",
                 }
             ],
             "collection_version": "v2",
@@ -746,32 +757,36 @@ class TestVideoSetMetadata:
 
         assert response.status_code == status.HTTP_201_CREATED
 
-        metadata = VideoSetMetadata.objects.get(video_id=f"user_{user.id}_screen_300")
+        metadata = ScreenRecording.objects.get(video_id="screen_300")
         assert metadata.collection_version == "v2"
+        assert metadata.encrypted_content == "encrypted_video_data"
 
     @responses.activate
     def test_query_with_query_video_sets_expands_to_full_set(self, jwt_authenticated_client, user):
         """Test that query_video_sets=true returns video sets grouped and sorted by timestamp."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
-        # Create metadata for a video set (with user_id prefix)
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_100",
+        # Create metadata for a video set
+        ScreenRecording.objects.create(
+            video_id="screen_100",
             video_set_id="set-abc",
             user=user,
             timestamp=1000,
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_101",
+        ScreenRecording.objects.create(
+            video_id="screen_101",
             video_set_id="set-abc",
             user=user,
             timestamp=2000,
+            encrypted_content="encrypted_data_2",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_102",
+        ScreenRecording.objects.create(
+            video_id="screen_102",
             video_set_id="set-abc",
             user=user,
             timestamp=3000,
+            encrypted_content="encrypted_data_3",
         )
 
         # Mock VectorDB response - should be called with ALL 3 IDs
@@ -821,20 +836,22 @@ class TestVideoSetMetadata:
     @responses.activate
     def test_query_without_query_video_sets_no_expansion(self, jwt_authenticated_client, user):
         """Test that query_video_sets=false doesn't expand video sets."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
-        # Create metadata (with user_id prefix)
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_100",
+        # Create metadata
+        ScreenRecording.objects.create(
+            video_id="screen_100",
             video_set_id="set-abc",
             user=user,
             timestamp=1000,
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_101",
+        ScreenRecording.objects.create(
+            video_id="screen_101",
             video_set_id="set-abc",
             user=user,
             timestamp=2000,
+            encrypted_content="encrypted_data_2",
         )
 
         responses.add(
@@ -868,32 +885,36 @@ class TestVideoSetMetadata:
     @responses.activate
     def test_query_expansion_with_multiple_sets(self, jwt_authenticated_client, user):
         """Test that querying videos from multiple sets returns both sets grouped separately."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
-        # Create two separate video sets (with user_id prefix)
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_100",
+        # Create two separate video sets
+        ScreenRecording.objects.create(
+            video_id="screen_100",
             video_set_id="set-A",
             user=user,
             timestamp=1000,
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_101",
+        ScreenRecording.objects.create(
+            video_id="screen_101",
             video_set_id="set-A",
             user=user,
             timestamp=2000,
+            encrypted_content="encrypted_data_2",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_200",
+        ScreenRecording.objects.create(
+            video_id="screen_200",
             video_set_id="set-B",
             user=user,
             timestamp=5000,
+            encrypted_content="encrypted_data_3",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_201",
+        ScreenRecording.objects.create(
+            video_id="screen_201",
             video_set_id="set-B",
             user=user,
             timestamp=6000,
+            encrypted_content="encrypted_data_4",
         )
 
         responses.add(
@@ -943,26 +964,29 @@ class TestVideoSetMetadata:
     @responses.activate
     def test_query_representative_id_picks_first_from_request(self, jwt_authenticated_client, user):
         """Test that representative_id is the first ID from original request when multiple qualify."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
         # Create a video set with 3 videos
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_100",
+        ScreenRecording.objects.create(
+            video_id="screen_100",
             video_set_id="set-abc",
             user=user,
             timestamp=1000,
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_101",
+        ScreenRecording.objects.create(
+            video_id="screen_101",
             video_set_id="set-abc",
             user=user,
             timestamp=2000,
+            encrypted_content="encrypted_data_2",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_102",
+        ScreenRecording.objects.create(
+            video_id="screen_102",
             video_set_id="set-abc",
             user=user,
             timestamp=3000,
+            encrypted_content="encrypted_data_3",
         )
 
         responses.add(
@@ -1003,33 +1027,36 @@ class TestVideoSetMetadata:
         self, jwt_authenticated_client, user, django_user_model
     ):
         """Test that users can only expand their own video sets."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
         # Create another user
         other_user = django_user_model.objects.create_user(
             email="other@test.com", username="other", password="pass123"
         )
 
-        # Create metadata for current user (with user_id prefix)
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_100",
+        # Create metadata for current user
+        ScreenRecording.objects.create(
+            video_id="screen_100",
             video_set_id="set-abc",
             user=user,
             timestamp=1000,
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_101",
+        ScreenRecording.objects.create(
+            video_id="screen_101",
             video_set_id="set-abc",
             user=user,
             timestamp=2000,
+            encrypted_content="encrypted_data_2",
         )
 
-        # Create metadata for other user with SAME video_set_id (with other_user_id prefix)
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{other_user.id}_screen_200",
+        # Create metadata for other user with SAME video_set_id
+        ScreenRecording.objects.create(
+            video_id="screen_200",
             video_set_id="set-abc",  # Same set ID!
             user=other_user,
             timestamp=3000,
+            encrypted_content="encrypted_data_3",
         )
 
         responses.add(
@@ -1099,29 +1126,32 @@ class TestVideoSetMetadata:
     @responses.activate
     def test_query_expansion_respects_collection_version(self, jwt_authenticated_client, user):
         """Test that expansion respects collection_version filtering."""
-        from collection.models import VideoSetMetadata
+        from collection.models import ScreenRecording
 
-        # Create metadata with different collection versions (with user_id prefix)
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_100",
+        # Create metadata with different collection versions
+        ScreenRecording.objects.create(
+            video_id="screen_100",
             video_set_id="set-abc",
             user=user,
             timestamp=1000,
             collection_version="v1",
+            encrypted_content="encrypted_data_1",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_101",
+        ScreenRecording.objects.create(
+            video_id="screen_101",
             video_set_id="set-abc",
             user=user,
             timestamp=2000,
             collection_version="v1",
+            encrypted_content="encrypted_data_2",
         )
-        VideoSetMetadata.objects.create(
-            video_id=f"user_{user.id}_screen_102",
+        ScreenRecording.objects.create(
+            video_id="screen_102",
             video_set_id="set-abc",
             user=user,
             timestamp=3000,
             collection_version="v2",  # Different version
+            encrypted_content="encrypted_data_3",
         )
 
         responses.add(
@@ -1159,3 +1189,343 @@ class TestVideoSetMetadata:
         assert "screen_100" in result_ids
         assert "screen_101" in result_ids
         assert "screen_102" not in result_ids
+
+
+@pytest.mark.django_db
+class TestGroupByVideoSets:
+    """Unit tests for the _group_by_video_sets helper function."""
+
+    def test_empty_videos_list(self):
+        """Test that empty videos list returns empty result."""
+        from collection.views import _group_by_video_sets
+
+        result = _group_by_video_sets([], {}, [])
+        assert result == []
+
+    def test_single_video_set_basic(self):
+        """Test grouping videos from a single video set."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+            {"id": "screen_102", "content": "video3"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+            "screen_102": {"video_set_id": "set-A", "timestamp": 3000},
+        }
+        original_screen_ids = ["screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert len(result) == 1
+        assert result[0]["video_set_id"] == "set-A"
+        assert result[0]["representative_id"] == "screen_100"
+        assert len(result[0]["videos"]) == 3
+        # Videos should be sorted by timestamp
+        assert result[0]["videos"][0]["id"] == "screen_100"
+        assert result[0]["videos"][1]["id"] == "screen_101"
+        assert result[0]["videos"][2]["id"] == "screen_102"
+
+    def test_multiple_video_sets(self):
+        """Test grouping videos from multiple video sets."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+            {"id": "screen_200", "content": "video3"},
+            {"id": "screen_201", "content": "video4"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+            "screen_200": {"video_set_id": "set-B", "timestamp": 5000},
+            "screen_201": {"video_set_id": "set-B", "timestamp": 6000},
+        }
+        original_screen_ids = ["screen_100", "screen_200"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert len(result) == 2
+        # Sets should be sorted by earliest timestamp
+        assert result[0]["video_set_id"] == "set-A"
+        assert result[0]["representative_id"] == "screen_100"
+        assert len(result[0]["videos"]) == 2
+
+        assert result[1]["video_set_id"] == "set-B"
+        assert result[1]["representative_id"] == "screen_200"
+        assert len(result[1]["videos"]) == 2
+
+    def test_videos_not_in_mapping(self):
+        """Test that videos not in mapping go to __no_set__ group."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_999", "content": "video_unknown"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+        }
+        original_screen_ids = ["screen_100", "screen_999"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert len(result) == 2
+        # Check for __no_set__ group
+        no_set_group = [r for r in result if r["video_set_id"] == "__no_set__"]
+        assert len(no_set_group) == 1
+        assert len(no_set_group[0]["videos"]) == 1
+        assert no_set_group[0]["videos"][0]["id"] == "screen_999"
+
+    def test_adds_timestamp_to_video_from_mapping(self):
+        """Test that timestamp is added to video if not present."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},  # No timestamp field
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+        }
+        original_screen_ids = ["screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert result[0]["videos"][0]["timestamp"] == 1000
+
+    def test_preserves_existing_timestamp(self):
+        """Test that existing timestamp field is not overwritten."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1", "timestamp": 9999},  # Has timestamp
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+        }
+        original_screen_ids = ["screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        # Should preserve the existing timestamp, not overwrite
+        assert result[0]["videos"][0]["timestamp"] == 9999
+
+    def test_representative_id_selection(self):
+        """Test that representative_id is the first ID from original request."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+            {"id": "screen_102", "content": "video3"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+            "screen_102": {"video_set_id": "set-A", "timestamp": 3000},
+        }
+        # Request with screen_102 first, then screen_101
+        original_screen_ids = ["screen_102", "screen_101"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        # Representative should be screen_102 (appears first in original_screen_ids)
+        assert result[0]["representative_id"] == "screen_102"
+
+    def test_representative_id_none_when_not_found(self):
+        """Test that representative_id is None when no original IDs match."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+        }
+        # Original IDs don't include any video from this set
+        original_screen_ids = ["screen_999"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert result[0]["representative_id"] is None
+
+    def test_sorting_videos_within_set(self):
+        """Test that videos within a set are sorted by timestamp."""
+        from collection.views import _group_by_video_sets
+
+        # Videos in random order
+        videos = [
+            {"id": "screen_102", "content": "video3"},
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+            "screen_102": {"video_set_id": "set-A", "timestamp": 3000},
+        }
+        original_screen_ids = ["screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        # Should be sorted by timestamp (1000, 2000, 3000)
+        assert result[0]["videos"][0]["id"] == "screen_100"
+        assert result[0]["videos"][1]["id"] == "screen_101"
+        assert result[0]["videos"][2]["id"] == "screen_102"
+
+    def test_sorting_sets_by_earliest_timestamp(self):
+        """Test that video sets are sorted by their earliest timestamp."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_200", "content": "video3"},
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_201", "content": "video4"},
+            {"id": "screen_101", "content": "video2"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 5000},  # Earliest: 5000
+            "screen_101": {"video_set_id": "set-A", "timestamp": 6000},
+            "screen_200": {"video_set_id": "set-B", "timestamp": 1000},  # Earliest: 1000
+            "screen_201": {"video_set_id": "set-B", "timestamp": 2000},
+        }
+        original_screen_ids = ["screen_100", "screen_200"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        # set-B should come first (earliest timestamp 1000 < 5000)
+        assert result[0]["video_set_id"] == "set-B"
+        assert result[1]["video_set_id"] == "set-A"
+
+    def test_empty_mapping_all_videos_go_to_no_set(self):
+        """Test that with empty mapping, all videos go to __no_set__."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+        ]
+        video_set_mapping = {}  # Empty mapping
+        original_screen_ids = ["screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert len(result) == 1
+        assert result[0]["video_set_id"] == "__no_set__"
+        assert len(result[0]["videos"]) == 2
+
+    def test_empty_original_screen_ids(self):
+        """Test that empty original_screen_ids results in None representative_id."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+        }
+        original_screen_ids = []  # Empty
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert result[0]["representative_id"] is None
+
+    def test_videos_with_zero_timestamp(self):
+        """Test handling of videos with timestamp=0."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 0},  # Timestamp is 0
+            "screen_101": {"video_set_id": "set-A", "timestamp": 1000},
+        }
+        original_screen_ids = ["screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        # Should handle timestamp=0 correctly
+        assert result[0]["videos"][0]["id"] == "screen_100"
+        assert result[0]["videos"][0]["timestamp"] == 0
+        assert result[0]["videos"][1]["id"] == "screen_101"
+
+    def test_mixed_videos_some_in_mapping_some_not(self):
+        """Test mixed scenario with some videos in mapping and some not."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+            {"id": "screen_999", "content": "unknown1"},
+            {"id": "screen_998", "content": "unknown2"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+        }
+        original_screen_ids = ["screen_100", "screen_999"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert len(result) == 2
+        # Find each group
+        set_a = [r for r in result if r["video_set_id"] == "set-A"][0]
+        no_set = [r for r in result if r["video_set_id"] == "__no_set__"][0]
+
+        assert len(set_a["videos"]) == 2
+        assert len(no_set["videos"]) == 2
+
+    def test_no_set_group_sorting(self):
+        """Test that __no_set__ group handles sorting gracefully when videos have no timestamp."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_999", "content": "unknown1"},
+            {"id": "screen_998", "content": "unknown2"},
+        ]
+        video_set_mapping = {}  # No mapping
+        original_screen_ids = []
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        assert len(result) == 1
+        assert result[0]["video_set_id"] == "__no_set__"
+        # Should not crash even without timestamps
+        assert len(result[0]["videos"]) == 2
+
+    def test_representative_id_with_multiple_sets(self):
+        """Test representative_id selection when multiple sets have matching original IDs."""
+        from collection.views import _group_by_video_sets
+
+        videos = [
+            {"id": "screen_100", "content": "video1"},
+            {"id": "screen_101", "content": "video2"},
+            {"id": "screen_200", "content": "video3"},
+            {"id": "screen_201", "content": "video4"},
+        ]
+        video_set_mapping = {
+            "screen_100": {"video_set_id": "set-A", "timestamp": 1000},
+            "screen_101": {"video_set_id": "set-A", "timestamp": 2000},
+            "screen_200": {"video_set_id": "set-B", "timestamp": 3000},
+            "screen_201": {"video_set_id": "set-B", "timestamp": 4000},
+        }
+        # Multiple original IDs, different sets
+        original_screen_ids = ["screen_201", "screen_100"]
+
+        result = _group_by_video_sets(videos, video_set_mapping, original_screen_ids)
+
+        # set-A should have screen_100 as representative (second in original list)
+        set_a = [r for r in result if r["video_set_id"] == "set-A"][0]
+        assert set_a["representative_id"] == "screen_100"
+
+        # set-B should have screen_201 as representative (first in original list)
+        set_b = [r for r in result if r["video_set_id"] == "set-B"][0]
+        assert set_b["representative_id"] == "screen_201"
