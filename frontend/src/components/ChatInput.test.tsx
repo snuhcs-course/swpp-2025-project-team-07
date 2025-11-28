@@ -221,7 +221,7 @@ describe('ChatInput', () => {
       );
 
       const videoToggleButton = screen.getByText('Video search').closest('button');
-      expect(videoToggleButton).toHaveClass('bg-primary/90');
+      expect(videoToggleButton).toHaveClass('from-primary/90');
       expect(videoToggleButton).toHaveClass('text-primary-foreground');
     });
 

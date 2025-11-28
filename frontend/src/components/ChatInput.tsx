@@ -112,7 +112,7 @@ export function ChatInput({
                   variant="ghost"
                   className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full ${
                     videoRagEnabled
-                      ? 'bg-primary/90 text-primary-foreground hover:bg-primary/50'
+                      ? 'bg-linear-to-br from-primary/90 to-primary text-primary-foreground hover:from-primary hover:text-primary-foreground shadow-lg hover:shadow-xl'
                       : 'bg-muted/50 text-muted-foreground/70 hover:text-muted-foreground/50 hover:bg-muted/10'
                   } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
                   title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
