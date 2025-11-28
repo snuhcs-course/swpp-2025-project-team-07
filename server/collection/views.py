@@ -562,9 +562,7 @@ def _populate_video_content(
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.warning(
-                f"No content found in RDB for video_id={video_id}, user_id={user_id}"
-            )
+            logger.warning(f"No content found in RDB for video_id={video_id}, user_id={user_id}")
             result["content"] = None
 
         populated_results.append(result)
@@ -617,9 +615,7 @@ def _expand_to_video_sets_with_mapping(
         return video_ids, {}
 
     # Get ALL videos from these video sets
-    full_query = ScreenRecording.objects.filter(
-        user_id=user_id, video_set_id__in=video_set_ids
-    )
+    full_query = ScreenRecording.objects.filter(user_id=user_id, video_set_id__in=video_set_ids)
 
     if collection_version:
         full_query = full_query.filter(collection_version=collection_version)
