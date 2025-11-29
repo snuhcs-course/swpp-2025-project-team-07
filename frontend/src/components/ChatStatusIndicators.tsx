@@ -297,7 +297,7 @@ export function ChatStatusIndicators({
               onClick={onGenerateWithSelectedVideos}
               className="w-full sm:w-auto"
             >
-              Generate with selected videos
+              Answer with selected videos
             </Button>
           </div>
         </div>

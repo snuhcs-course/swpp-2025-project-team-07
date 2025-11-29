@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Circle, Maximize2, Video } from 'lucide-react';
+import { Maximize2, Video } from 'lucide-react';
 import type { VideoCandidate } from '@/types/video';
 
 interface VideoCandidateGridProps {
@@ -79,21 +79,6 @@ export function VideoCandidateGrid({
                 {isSelected ? (
                   <div className="absolute inset-0 bg-primary/20" aria-hidden="true" />
                 ) : null}
-
-                <span
-                  className={`absolute left-2 top-2 inline-flex items-center justify-center rounded-full border p-1 transition ${
-                    isSelected
-                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-400/50'
-                      : 'border-white/30 bg-black/60 text-white/70 backdrop-blur'
-                  }`}
-                  aria-hidden="true"
-                >
-                  {isSelected ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <Circle className="h-3.5 w-3.5" />
-                  )}
-                </span>
 
                 <span
                   role="button"

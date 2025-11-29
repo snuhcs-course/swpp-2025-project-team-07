@@ -19,6 +19,8 @@ import { sampleUniformFramesAsBase64, sampleUniformFrames } from '@/embedding/vi
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 import type { VideoCandidate } from '@/types/video';
+import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
+import { OnboardingTooltip } from './OnboardingTooltip';
 
 // Local UI types
 export interface Message {
@@ -218,16 +220,56 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     title?: string;
   } | null>(null);
 
-  // Video RAG toggle state - disabled by default, persisted in localStorage
+  // Video RAG toggle state - enabled by default, persisted in localStorage
   const [videoRagEnabled, setVideoRagEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem('videoRagEnabled');
-    return stored ? JSON.parse(stored) : false;
+    return stored ? JSON.parse(stored) : true;
   });
 
   // Save videoRagEnabled to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('videoRagEnabled', JSON.stringify(videoRagEnabled));
   }, [videoRagEnabled]);
+
+  // Onboarding state
+  const [runTour, setRunTour] = useState(false);
+  const [tourSteps] = useState<Step[]>([
+    {
+      target: '.tour-recording-button',
+      title: 'Start recording',
+      content: 'Record your screen to share context with Clone.',
+      placement: 'bottom',
+      disableBeacon: true,
+    },
+    {
+      target: '.tour-chat-input',
+      title: 'Chat with Clone',
+      content: 'Ask Clone about things you want to recall from screen recordings or your past chat history.',
+      placement: 'top',
+    },
+    {
+      target: '.tour-video-search',
+      title: 'Toggle video search',
+      content: "Enable searching through your screen recordings for more context, disable it for faster responses.",
+      placement: 'top',
+    },
+  ]);
+
+  useEffect(() => {
+    const onboardingCompleted = localStorage.getItem('onboarding_completed');
+    console.log("checking onboarding", onboardingCompleted);
+    if (onboardingCompleted !== 'true') {
+      setRunTour(true);
+    }
+  }, []);
+
+  const handleJoyrideCallback = (data: CallBackProps) => {
+    const { status } = data;
+    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+      setRunTour(false);
+      localStorage.setItem('onboarding_completed', 'true');
+    }
+  };
 
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
@@ -1571,6 +1613,23 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
   return (
     <>
+      <Joyride
+        steps={tourSteps}
+        run={runTour}
+        continuous
+        showProgress
+        showSkipButton
+        callback={handleJoyrideCallback}
+        tooltipComponent={OnboardingTooltip}
+        disableOverlayClose={true}
+        disableCloseOnEsc={true}
+        styles={{
+          options: {
+            zIndex: 1000,
+            overlayColor: 'rgba(0, 0, 0, 0.8)',
+          },
+        }}
+      />
       {/* Only show download dialog after initial model check is complete */}
       {!isCheckingModels && (
         <ModelDownloadDialog

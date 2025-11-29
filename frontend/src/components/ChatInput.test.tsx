@@ -221,8 +221,8 @@ describe('ChatInput', () => {
       );
 
       const videoToggleButton = screen.getByText('Video search').closest('button');
-      expect(videoToggleButton).toHaveClass('bg-primary/10');
-      expect(videoToggleButton).toHaveClass('text-primary');
+      expect(videoToggleButton).toHaveClass('from-primary/90');
+      expect(videoToggleButton).toHaveClass('text-primary-foreground');
     });
 
     it('should apply inactive styling when videoRagEnabled is false', () => {
@@ -239,7 +239,8 @@ describe('ChatInput', () => {
       );
 
       const videoToggleButton = screen.getByText('Video search').closest('button');
-      expect(videoToggleButton).toHaveClass('text-muted-foreground/60');
+      expect(videoToggleButton).toHaveClass('bg-muted/50');
+      expect(videoToggleButton).toHaveClass('text-muted-foreground/50');
     });
 
     it('should disable video toggle button when streaming', () => {

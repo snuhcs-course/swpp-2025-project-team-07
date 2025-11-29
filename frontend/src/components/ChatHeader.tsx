@@ -172,7 +172,7 @@ export function ChatHeader({
           <Button
             size="sm"
             onClick={handleStartRecording}
-            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer tour-recording-button"
             disabled={isProcessing}
             title="Start screen recording"
           >
@@ -194,7 +194,7 @@ export function ChatHeader({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg cursor-pointer"
+              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg cursor-pointer tour-profile-button"
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             >
               <Avatar className="h-9 w-9 bg-primary text-primary-foreground items-center justify-center">

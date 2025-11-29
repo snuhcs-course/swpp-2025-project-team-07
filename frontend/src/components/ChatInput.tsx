@@ -21,7 +21,7 @@ export function ChatInput({
   runState,
   modelNotReady = false,
   isStopping = false,
-  videoRagEnabled = false,
+  videoRagEnabled = true,
   onToggleVideoRag,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
@@ -84,7 +84,7 @@ export function ChatInput({
           animate={{ opacity: 1 }}
           layout
           transition={{ duration: 0.3 }}
-          className="relative bg-background border border-border rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl"
+          className="relative bg-background border border-border rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl tour-chat-input"
         >
           {/* Input area */}
           <div className="flex flex-col p-5 gap-3">
@@ -110,12 +110,12 @@ export function ChatInput({
                   onClick={onToggleVideoRag}
                   disabled={isStreaming}
                   variant="ghost"
-                  className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full ${
-                    videoRagEnabled
-                      ? 'bg-primary/10 text-primary hover:bg-primary/20'
-                      : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50'
-                  } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
                   title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
+                  className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full tour-video-search ${
+                    videoRagEnabled
+                      ? 'bg-linear-to-br from-primary/90 to-primary text-primary-foreground hover:from-primary hover:text-primary-foreground shadow-lg hover:shadow-xl'
+                      : 'bg-muted/50 text-muted-foreground/70 hover:text-muted-foreground/50 hover:bg-muted/10'
+                  } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <motion.div
                     className="flex items-center gap-1.5"

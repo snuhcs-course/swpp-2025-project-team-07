@@ -42,7 +42,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
   };
 
   return (
-    <div className="w-80 h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col">
+    <div className="w-80 h-full bg-card/80 backdrop-blur-xl border-r border-border flex flex-col tour-sidebar">
       {/* Header */}
       <div className="p-4 space-y-7">
         {/* Logo and Toggle */}
@@ -55,7 +55,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
               variant="ghost"
               size="icon"
               onClick={onToggleSidebar}
-              className="h-8 w-8 hover:bg-accent cursor-pointer"
+              className="h-8 w-8 hover:bg-accent cursor-pointer tour-toggle-sidebar"
             >
               <PanelLeft className="w-4 h-4" />
             </Button>
@@ -70,7 +70,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
         >
           <Button
             onClick={onNewChat}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 group shadow-lg hover:shadow-xl cursor-pointer"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-300 group shadow-lg hover:shadow-xl cursor-pointer tour-new-chat"
           >
             <SquarePen className="w-4 h-4 mr-2" />
             New Chat
