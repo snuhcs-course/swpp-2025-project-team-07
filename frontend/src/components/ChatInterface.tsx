@@ -82,7 +82,7 @@ const getTimestamp = () =>
 
 const MIN_SEARCH_DISPLAY_MS = 900;
 const MIN_PROCESSING_DISPLAY_MS = 1200;
-const MAX_VIDEO_CANDIDATES = 3;
+const MAX_VIDEO_CANDIDATES = 18;
 const MAX_VIDEO_SELECTION = 3;
 
 const RUN_CANCELLED_ERROR_NAME = 'RunCancelledError';
