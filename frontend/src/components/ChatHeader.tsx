@@ -57,23 +57,21 @@ export function ChatHeader({
     isProcessing,
   } = useChunkedEmbeddingQueue({
     onEmbeddedChunk: async ({ chunk, pooled, method }) => {
-      try {
-        const shouldSendVideoSetID = method === 'video_set' || method === 'video_set_hidden';
-        const videoSetIdToSend = shouldSendVideoSetID ? chunk.video_set_id : null;
-        await memoryService.storeVideoEmbedding(
-          pooled,
-          chunk.blob,
-          {
-            duration: chunk.durationMs,
-            width: chunk.width,
-            height: chunk.height,
-          },
-          method,
-          videoSetIdToSend
-        );
-      } catch (error) {
-        console.error('[video upload] failed:', error);
-      }
+      const shouldSendVideoSetID = method === 'video_set' || method === 'video_set_hidden';
+      const videoSetIdToSend = shouldSendVideoSetID ? chunk.video_set_id : null;
+      memoryService.storeVideoEmbedding(
+        pooled,
+        chunk.blob,
+        {
+          duration: chunk.durationMs,
+          width: chunk.width,
+          height: chunk.height,
+        },
+        method,
+        videoSetIdToSend
+      ).catch((error) => {
+        console.error('[video upload] failed: ', error);
+      });
     },
   });
 

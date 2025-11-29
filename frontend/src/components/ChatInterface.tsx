@@ -525,7 +525,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             const frames = await sampleUniformFramesAsBase64(
                doc.blob,
                1,
-               { keepOriginal: true, format: 'image/jpeg', quality: 0.92 }
+               { keepOriginal: true, format: 'image/jpeg', quality: 0.8 }
             );
             return { idx, frames, setId: doc.video_set_id ?? doc.id };
           })
@@ -592,7 +592,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
               const frames = await sampleUniformFramesAsBase64(
                 doc.blob,
                 1,
-                { keepOriginal: true, format: 'image/jpeg', quality: 0.92 }
+                { keepOriginal: true, format: 'image/jpeg', quality: 0.8 }
               );
               const frame = frames[0];
               if (frame) {
@@ -1217,7 +1217,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                     const frames = await sampleUniformFramesAsBase64(
                       representativeVideo.blob, 
                       1, 
-                      { keepOriginal: true, format: 'image/jpeg', quality: 0.92 }
+                      { keepOriginal: true, format: 'image/jpeg', quality: 0.8 }
                     );
                     const base64 = frames[0]?.base64;
                     if (!base64) return console.error('No frame extracted');
@@ -1225,7 +1225,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                     openDebugPopup(
                       `VLM Input (Actual)`,
                       `<img src="data:image/jpeg;base64,${base64}" style="width:224px;height:224px;border:2px solid #00f;" />
-                       <p style="font-size:12px;color:#aaa;margin-top:10px">Logic: sampleUniformFramesAsBase64 (JPEG q=0.92)</p>`
+                       <p style="font-size:12px;color:#aaa;margin-top:10px">Logic: sampleUniformFramesAsBase64 (JPEG q=0.8)</p>`
                     );
                   } catch (e) { console.error(e); }
                 },
