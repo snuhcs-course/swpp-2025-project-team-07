@@ -195,3 +195,9 @@ export class VideoFrameSampler {
     }
   }
 }
+
+export const __private__ = {
+  waitForMetadata,
+  ensureFiniteDuration,
+  seekTo,
+};

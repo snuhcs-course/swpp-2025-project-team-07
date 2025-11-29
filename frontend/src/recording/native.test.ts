@@ -134,7 +134,7 @@ describe('native desktop recorder', () => {
     expect(mediaRecorderState.started).toBe(true);
     expect(mediaRecorderState.startCalls).toEqual([250]);
 
-    const result = await recorder.stop();
+    const result = await recorder.stop({ releaseStream: true });
 
     expect(result.mimeType).toBe('video/webm;codecs=vp9'); // default when supported
     expect(result.width).toBe(1280);

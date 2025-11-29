@@ -13,6 +13,12 @@ vi.mock('@/services/auth', () => ({
   clearAuth: authMocks.clearAuthMock,
 }));
 
+vi.mock('react-joyride', () => ({
+  default: () => null,
+  STATUS: { RUNNING: 'running', FINISHED: 'finished', SKIPPED: 'skipped' },
+  ACTIONS: { CLOSE: 'close' },
+}), { virtual: true });
+
 const { loadAuthMock, clearAuthMock } = authMocks;
 
 let lastAuthSuccess: (() => void) | undefined;

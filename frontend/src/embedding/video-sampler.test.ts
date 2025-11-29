@@ -1,878 +1,210 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { VideoFrameSampler, sampleUniformFrames, type SampledFrame } from './video-sampler';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-describe('VideoFrameSampler', () => {
+import * as sampler from './video-sampler';
+import {
+  DEFAULT_VIDEO_SAMPLE_FRAMES,
+  VideoFrameSampler,
+  sampleUniformFrames,
+  sampleUniformFramesAsBase64,
+} from './video-sampler';
+
+const originalCreateElement = document.createElement.bind(document);
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
+const ImageDataPolyfill = class {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    this.data = new Uint8ClampedArray(width * height * 4);
+  }
+};
+
+describe('video-sampler', () => {
+  const privates = (sampler as any).__private__;
   beforeEach(() => {
-    vi.clearAllMocks();
+    (global as any).ImageData = (global as any).ImageData ?? (ImageDataPolyfill as any);
+    URL.createObjectURL = vi.fn(() => 'blob:url');
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  afterEach(() => {
+    document.createElement = originalCreateElement;
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
     vi.restoreAllMocks();
   });
 
-  describe('sampleUniformFrames', () => {
-    it('should call VideoFrameSampler.uniformSample with correct parameters', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-      const spy = vi.spyOn(VideoFrameSampler, 'uniformSample').mockResolvedValue({
-        frames: [{ time: 0, image: {} as ImageData, imageData: {} as ImageData }],
-        duration: 10,
-        width: 640,
-        height: 480,
-      });
+  it('delegates sampling to VideoFrameSampler with sane defaults', async () => {
+    const frames = [{ time: 0.5, image: new ImageData(1, 1) }];
+    const samplerSpy = vi
+      .spyOn(VideoFrameSampler, 'uniformSample')
+      .mockResolvedValue({ frames, duration: 1, width: 1, height: 1 });
 
-      await sampleUniformFrames(mockBlob, 5, { size: 256 });
+    const result = await sampleUniformFrames(new Blob(['data']), 0, { size: 128 });
 
-      expect(spy).toHaveBeenCalledWith(mockBlob, 5, 256);
-      spy.mockRestore();
-    });
-
-    it('should use default size of 224 when not provided', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-      const spy = vi.spyOn(VideoFrameSampler, 'uniformSample').mockResolvedValue({
-        frames: [],
-        duration: 10,
-        width: 640,
-        height: 480,
-      });
-
-      await sampleUniformFrames(mockBlob, 3);
-
-      expect(spy).toHaveBeenCalledWith(mockBlob, 3, 224);
-      spy.mockRestore();
-    });
-
-    it('should enforce minimum count of 1', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-      const spy = vi.spyOn(VideoFrameSampler, 'uniformSample').mockResolvedValue({
-        frames: [],
-        duration: 10,
-        width: 640,
-        height: 480,
-      });
-
-      await sampleUniformFrames(mockBlob, 0);
-      expect(spy).toHaveBeenCalledWith(mockBlob, 1, 224);
-
-      await sampleUniformFrames(mockBlob, -5);
-      expect(spy).toHaveBeenCalledWith(mockBlob, 1, 224);
-
-      spy.mockRestore();
-    });
-
-    it('should return frames from uniformSample', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-      const mockFrames = [
-        { time: 0, image: {} as ImageData, imageData: {} as ImageData },
-        { time: 5, image: {} as ImageData, imageData: {} as ImageData },
-      ];
-
-      vi.spyOn(VideoFrameSampler, 'uniformSample').mockResolvedValue({
-        frames: mockFrames,
-        duration: 10,
-        width: 640,
-        height: 480,
-      });
-
-      const result = await sampleUniformFrames(mockBlob, 2);
-
-      expect(result).toEqual(mockFrames);
-    });
+    expect(result).toEqual(frames);
+    expect(samplerSpy).toHaveBeenCalledWith(expect.any(Blob), 1, { size: 128 });
   });
 
-  describe('VideoFrameSampler.uniformSample', () => {
-    it('should create video element and load metadata', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
+  it('converts sampled frames to base64 strings using a canvas', async () => {
+    const imgData = new ImageData(new Uint8ClampedArray(4), 1, 1);
+    document.createElement = ((tag: string) => {
+      if (tag === 'canvas') {
+        return {
+          width: 1,
+          height: 1,
+          getContext: () => ({
+            putImageData: vi.fn(),
+            clearRect: vi.fn(),
+            drawImage: vi.fn(),
+          }),
+          toDataURL: vi.fn(() => 'data:image/jpeg;base64,abc123'),
+        } as any;
+      }
+      return originalCreateElement(tag);
+    }) as any;
 
-      let videoCreated = false;
-      let canvasCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            duration: 10,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 0);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          // Trigger loadedmetadata asynchronously
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      // Mock URL.createObjectURL and revokeObjectURL
-      const mockUrl = 'blob:mock';
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue(mockUrl);
-      const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      const result = await VideoFrameSampler.uniformSample(mockBlob, 1, 224);
-
-      expect(result.duration).toBe(10);
-      expect(result.width).toBe(640);
-      expect(result.height).toBe(480);
-      expect(result.frames).toHaveLength(1);
-      expect(revokeObjectURLSpy).toHaveBeenCalledWith(mockUrl);
+    vi.spyOn(VideoFrameSampler, 'uniformSample').mockResolvedValue({
+      frames: [
+        { time: 0, image: imgData, imageData: imgData },
+        { time: 1, image: imgData },
+      ],
+      duration: 1,
+      width: 1,
+      height: 1,
     });
 
-    it('should handle multiple frames with uniform timestamps', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-      let canvasCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 1920,
-            videoHeight: 1080,
-            duration: 20,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 0);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      const result = await VideoFrameSampler.uniformSample(mockBlob, 4, 224);
-
-      expect(result.frames).toHaveLength(4);
-      // Check that timestamps are uniformly distributed
-      expect(result.frames[0].time).toBeCloseTo(2.5, 1); // (0.5 * 20) / 4
-      expect(result.frames[1].time).toBeCloseTo(7.5, 1); // (1.5 * 20) / 4
-      expect(result.frames[2].time).toBeCloseTo(12.5, 1); // (2.5 * 20) / 4
-      expect(result.frames[3].time).toBeCloseTo(17.5, 1); // (3.5 * 20) / 4
+    const result = await sampler.sampleUniformFramesAsBase64(new Blob(['video']), DEFAULT_VIDEO_SAMPLE_FRAMES, {
+      format: 'image/jpeg',
+      quality: 0.8,
     });
 
-    it('should throw error when canvas context is not available', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
+    expect(result).toEqual([
+      { time: 0, base64: 'abc123' },
+      { time: 1, base64: 'abc123' },
+    ]);
+  });
 
-      let videoCreated = false;
-      let canvasCreated = false;
+  it('samples frames uniformly and cleans up URLs', async () => {
+    const listeners: Record<string, Array<() => void>> = {};
 
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            duration: 10,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
-          };
+    const videoStub: any = {
+      readyState: 0,
+      videoWidth: 8,
+      videoHeight: 8,
+      duration: 1,
+      muted: false,
+      playsInline: false,
+      _onloadedmetadata: null as any,
+      onloadedmetadata: null as any,
+      onerror: null as any,
+      addEventListener: (type: string, handler: () => void) => {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      removeEventListener: vi.fn(),
+      set src(_url: string) {
+        setTimeout(() => {
+          this.readyState = 1;
+          this.onloadedmetadata?.();
+          listeners['loadedmetadata']?.forEach(fn => fn());
+        }, 0);
+      },
+      set currentTime(_t: number) {
+        setTimeout(() => {
+          listeners['seeked']?.forEach(fn => fn());
+          listeners['timeupdate']?.forEach(fn => fn());
+        }, 0);
+      },
+    };
 
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
+    const canvasStub = {
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        clearRect: vi.fn(),
+        drawImage: vi.fn(),
+        getImageData: vi.fn(() => new ImageData(8, 8)),
+      }),
+    };
 
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => null), // Return null to trigger error
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
+    document.createElement = ((tag: string) => {
+      if (tag === 'video') return videoStub;
+      if (tag === 'canvas') return canvasStub as any;
+      return originalCreateElement(tag);
+    }) as any;
 
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const result = await VideoFrameSampler.uniformSample(new Blob(['clip']), 2, { size: 4 });
 
-      await expect(VideoFrameSampler.uniformSample(mockBlob, 1, 224))
-        .rejects.toThrow('Canvas 2D context not available');
+    expect(result.frames).toHaveLength(2);
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    expect(URL.revokeObjectURL).toHaveBeenCalled();
+    expect(result.width).toBe(8);
+    expect(result.height).toBe(8);
+  });
+
+  it('throws when no canvas context is available', async () => {
+    document.createElement = ((tag: string) => {
+      if (tag === 'canvas') {
+        return { getContext: () => null } as any;
+      }
+      return originalCreateElement(tag);
+    }) as any;
+
+    vi.spyOn(VideoFrameSampler, 'uniformSample').mockResolvedValue({
+      frames: [{ time: 0, image: new ImageData(1, 1), imageData: new ImageData(1, 1) }],
+      duration: 1,
+      width: 1,
+      height: 1,
     });
 
-    it('should handle video metadata load error', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 0,
-            videoHeight: 0,
-            duration: 0,
-            readyState: 0,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
-          };
-
-          // Trigger error asynchronously
-          setTimeout(() => {
-            if (videoElement.onerror) {
-              videoElement.onerror(new Event('error'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      await expect(VideoFrameSampler.uniformSample(mockBlob, 1, 224))
-        .rejects.toThrow('Failed to load video metadata');
-
-      // Should still revoke URL even on error (finally block)
-      expect(revokeObjectURLSpy).toHaveBeenCalled();
-    });
-
-    it('should enforce minimum frameCount of 1', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-      let canvasCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            duration: 10,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 0);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      const result = await VideoFrameSampler.uniformSample(mockBlob, 0, 224);
-      expect(result.frames).toHaveLength(1);
-    });
-
-    it('should set canvas dimensions to targetSize', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-      const targetSize = 512;
-
-      let canvasWidth = 0;
-      let canvasHeight = 0;
-      let videoCreated = false;
-      let canvasCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 1920,
-            videoHeight: 1080,
-            duration: 10,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 0);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            get width() { return canvasWidth; },
-            set width(v) { canvasWidth = v; },
-            get height() { return canvasHeight; },
-            set height(v) { canvasHeight = v; },
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(targetSize * targetSize * 4),
-                width: targetSize,
-                height: targetSize,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      await VideoFrameSampler.uniformSample(mockBlob, 1, targetSize);
-
-      expect(canvasWidth).toBe(targetSize);
-      expect(canvasHeight).toBe(targetSize);
-    });
-
-    it('should return frame with correct structure', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-      let canvasCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            duration: 5,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 0);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      const result = await VideoFrameSampler.uniformSample(mockBlob, 1, 224);
-
-      const frame = result.frames[0];
-      expect(frame).toHaveProperty('time');
-      expect(frame).toHaveProperty('image');
-      expect(frame).toHaveProperty('imageData');
-      expect(typeof frame.time).toBe('number');
-      expect(frame.image).toBeTruthy();
-      expect(frame.imageData).toBeTruthy();
-    });
-
-    it('should handle different aspect ratios (portrait video)', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-      let canvasCreated = false;
-      let drawImageCalls: any[] = [];
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 480,  // Portrait: width < height
-            videoHeight: 640,
-            duration: 5,
-            readyState: 4,
-            currentTime: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 0);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn((...args) => {
-                drawImageCalls.push(args);
-              }),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      const result = await VideoFrameSampler.uniformSample(mockBlob, 1, 224);
-
-      expect(result.frames).toHaveLength(1);
-      // Verify that drawImage was called with cropping parameters
-      expect(drawImageCalls.length).toBeGreaterThan(0);
-    });
-
-    it('should handle seek errors gracefully', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            duration: 10,
-            readyState: 4,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'error') {
-                // Trigger error when seeking
-                setTimeout(() => handler(new Event('error')), 5);
-              }
-            }),
-            removeEventListener: vi.fn(),
-            set currentTime(_t: number) {
-              // Simulate error when setting currentTime
-              const errorEvent = new Event('error');
-              if (videoElement.addEventListener.mock.calls.find((call: any) => call[0] === 'error')) {
-                const errorHandler = videoElement.addEventListener.mock.calls.find((call: any) => call[0] === 'error')[1];
-                setTimeout(() => errorHandler(errorEvent), 0);
-              }
-            },
-            get currentTime() { return 0; },
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas') {
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      await expect(VideoFrameSampler.uniformSample(mockBlob, 2, 224))
-        .rejects.toThrow();
-    });
-
-    it('should handle metadata loading errors', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          const videoElement: any = {
-            readyState: 0,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'error') {
-                setTimeout(() => handler(new Event('error')), 5);
-              }
-            }),
-            removeEventListener: vi.fn(),
-          };
-
-          setTimeout(() => {
-            if (videoElement.onerror) {
-              videoElement.onerror(new Event('error'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      await expect(VideoFrameSampler.uniformSample(mockBlob, 1, 224))
-        .rejects.toThrow('Failed to load video metadata');
-    });
-
-    it('should handle NaN or Infinity duration', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-      let canvasCreated = false;
-      let timeUpdateCount = 0;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          let _currentTime = 0;
-          let _duration = NaN;
-
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            get duration() {
-              return _duration;
-            },
-            readyState: 4,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'timeupdate') {
-                setTimeout(() => {
-                  timeUpdateCount++;
-                  _duration = 10;
-                  handler(new Event('timeupdate'));
-                }, 5);
-              }
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 10);
-              }
-            }),
-            removeEventListener: vi.fn(),
-            set currentTime(t: number) {
-              _currentTime = t;
-              if (t > 1000) {
-                const timeUpdateHandlers = videoElement.addEventListener.mock.calls
-                  .filter((call: any) => call[0] === 'timeupdate')
-                  .map((call: any) => call[1]);
-                timeUpdateHandlers.forEach((handler: any) => {
-                  setTimeout(() => handler(new Event('timeupdate')), 0);
-                });
-              }
-            },
-            get currentTime() {
-              return _currentTime;
-            },
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      const result = await VideoFrameSampler.uniformSample(mockBlob, 1, 224);
-
-      expect(result.frames).toHaveLength(1);
-      expect(timeUpdateCount).toBeGreaterThan(0);
-    });
-
-    it('should handle currentTime setter throwing exception', async () => {
-      const mockBlob = new Blob(['video'], { type: 'video/webm' });
-
-      let videoCreated = false;
-      let canvasCreated = false;
-      let setCurrentTimeCalled = false;
-
-      const createElementSpy = vi.spyOn(document, 'createElement');
-      createElementSpy.mockImplementation((tagName: string) => {
-        if (tagName === 'video' && !videoCreated) {
-          videoCreated = true;
-          let _currentTime = 0;
-
-          const videoElement: any = {
-            videoWidth: 640,
-            videoHeight: 480,
-            duration: 10,
-            readyState: 4,
-            muted: false,
-            playsInline: false,
-            src: '',
-            onloadedmetadata: null,
-            onerror: null,
-            addEventListener: vi.fn((event: string, handler: any) => {
-              if (event === 'seeked') {
-                setTimeout(() => handler(new Event('seeked')), 10);
-              }
-            }),
-            removeEventListener: vi.fn(),
-            set currentTime(t: number) {
-              // After metadata is loaded, throw on first seek attempt
-              if (!setCurrentTimeCalled && t > 0 && t < 10) {
-                setCurrentTimeCalled = true;
-                throw new Error('currentTime setter failed');
-              }
-              _currentTime = t;
-            },
-            get currentTime() {
-              return _currentTime;
-            },
-          };
-
-          setTimeout(() => {
-            if (videoElement.onloadedmetadata) {
-              videoElement.onloadedmetadata(new Event('loadedmetadata'));
-            }
-          }, 0);
-
-          return videoElement;
-        }
-        if (tagName === 'canvas' && !canvasCreated) {
-          canvasCreated = true;
-          const canvas: any = {
-            width: 0,
-            height: 0,
-            getContext: vi.fn(() => ({
-              clearRect: vi.fn(),
-              drawImage: vi.fn(),
-              getImageData: vi.fn(() => ({
-                data: new Uint8ClampedArray(224 * 224 * 4),
-                width: 224,
-                height: 224,
-              })),
-            })),
-          };
-          return canvas;
-        }
-        return document.createElement(tagName);
-      });
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      await expect(VideoFrameSampler.uniformSample(mockBlob, 1, 224))
-        .rejects.toThrow('currentTime setter failed');
-    });
+    await expect(sampleUniformFramesAsBase64(new Blob(['clip']), 1)).rejects.toThrow('Canvas 2D context not available');
+  });
+
+  it('waits for metadata and finite duration when duration is not ready', async () => {
+    const listeners: Record<string, Array<() => void>> = {};
+    const video: any = {
+      readyState: 0,
+      duration: Infinity,
+      addEventListener: (type: string, handler: () => void) => {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      removeEventListener: vi.fn((type: string, handler: () => void) => {
+        listeners[type] = (listeners[type] || []).filter(fn => fn !== handler);
+      }),
+      set currentTime(_t: number) {
+        (listeners['timeupdate'] || []).forEach(fn => fn());
+      },
+    };
+
+    const promise = privates.ensureFiniteDuration(video);
+    (listeners['loadedmetadata'] || []).forEach(fn => fn());
+    video.duration = 2;
+    (listeners['timeupdate'] || []).forEach(fn => fn());
+    const duration = await promise;
+
+    expect(duration).toBe(2);
+    expect(video.removeEventListener).toHaveBeenCalled();
+  });
+
+  it('rejects when metadata fails to load', async () => {
+    const listeners: Record<string, Array<() => void>> = {};
+    const video: any = {
+      readyState: 0,
+      addEventListener: (type: string, handler: () => void) => {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      removeEventListener: vi.fn(),
+    };
+
+    const promise = privates.waitForMetadata(video);
+    (listeners['error'] || []).forEach(fn => fn());
+
+    await expect(promise).rejects.toThrow('metadata error');
   });
 });

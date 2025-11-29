@@ -119,7 +119,7 @@ describe('ClipVideoEmbedder', () => {
 
       expect((embedder as any).needTextFeeds).toBe(false);
       expect((embedder as any).inputName).toBe('pixel_values');
-      expect((embedder as any).outputName).toBe('image_embeds');
+      expect((embedder as any).imageOutputName).toBe('image_embeds');
     });
 
     it('detects unified CLIP model with text support', async () => {
@@ -145,7 +145,7 @@ describe('ClipVideoEmbedder', () => {
       const embedder = await ClipVideoEmbedder.get();
 
       expect((embedder as any).inputName).toBe('custom_input');
-      expect((embedder as any).outputName).toBe('custom_output');
+      expect((embedder as any).imageOutputName).toBe('custom_output');
     });
 
     it('prioritizes standard output names in correct order', async () => {
@@ -154,7 +154,7 @@ describe('ClipVideoEmbedder', () => {
 
       const embedder = await ClipVideoEmbedder.get();
 
-      expect((embedder as any).outputName).toBe('image_embeds');
+      expect((embedder as any).imageOutputName).toBe('image_embeds');
     });
   });
 
