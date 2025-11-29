@@ -15,7 +15,7 @@ import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
-import { sampleUniformFramesAsBase64 } from '@/embedding/video-sampler';
+import { sampleUniformFramesAsBase64, sampleUniformFrames } from '@/embedding/video-sampler';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 import type { VideoCandidate } from '@/types/video';
@@ -517,7 +517,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           console.log('No videos to sample.');
           return;
         }
-        console.log('[VLM Debug] Sampling frames exactly as sent to LLM (224px, 10 frames)...');
+        console.log('[VLM Debug] Sampling frames exactly as sent to LLM');
 
         // videoSamplingTargets -> selectedDocs 로 변경
         const allSamples = await Promise.all(
@@ -525,7 +525,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             const frames = await sampleUniformFramesAsBase64(
                doc.blob,
                1,
-               { size: 224, format: 'image/jpeg', quality: 0.92 }
+               { keepOriginal: true, format: 'image/jpeg', quality: 0.92 }
             );
             return { idx, frames, setId: doc.video_set_id ?? doc.id };
           })
@@ -592,7 +592,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
               const frames = await sampleUniformFramesAsBase64(
                 doc.blob,
                 1,
-                { size: 224, format: 'image/jpeg', quality: 0.92 }
+                { keepOriginal: true, format: 'image/jpeg', quality: 0.92 }
               );
               const frame = frames[0];
               if (frame) {
@@ -1158,9 +1158,78 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
               videoSetCount += 1;
 
               const debugKey = `__ragVideoSet${videoSetCount}`;
+
+              const openDebugPopup = (title: string, contentHtml: string) => {
+                const win = window.open('', '_blank', 'width=500,height=500');
+                if (!win) return console.error('Popup blocked');
+                win.document.write(`
+                  <html>
+                    <head><title>${title}</title></head>
+                    <body style="background:#111;color:#eee;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;">
+                      <h3 style="margin-bottom:10px;color:#4ade80">${title}</h3>
+                      ${contentHtml}
+                    </body>
+                  </html>
+                `);
+                win.document.close();
+              };
+
               (window as any)[debugKey] = {
                 videos: sequenceVideos,
                 representative: representativeVideo,
+
+                view: () => {
+                  openDebugPopup(
+                    `Video Set ${videoSetCount} - Representative`, 
+                    `<video src="${representativeVideo.url}" controls autoplay style="max-width:100%;max-height:80vh;border:1px solid #444"></video>
+                     <p style="font-size:12px;color:#aaa;margin-top:10px">ID: ${representativeVideo.id}</p>`
+                  );
+                },
+
+                embeddingFrame: async () => {
+                  console.log(`[Debug] Extracting embedding frame for ${representativeVideo.id}...`);
+                  try {
+                    const frames = await sampleUniformFrames(representativeVideo.blob, 1, { size: 224 });
+                    const frame = frames[0];
+                    if (!frame) return console.error('No frame extracted');
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 224;
+                    canvas.height = 224;
+                    const ctx = canvas.getContext('2d');
+                    if (frame.image instanceof ImageData) {
+                       ctx?.putImageData(frame.image, 0, 0);
+                    } else {
+                       ctx?.drawImage(frame.image as any, 0, 0, 224, 224);
+                    }
+                    
+                    openDebugPopup(
+                      `Embedding Input (Simulated)`,
+                      `<img src="${canvas.toDataURL()}" style="width:224px;height:224px;border:2px solid #f00;" />
+                       <p style="font-size:12px;color:#aaa;margin-top:10px">Logic: sampleUniformFrames (Squashed 224px)</p>`
+                    );
+                  } catch (e) { console.error(e); }
+                },
+
+                promptFrame: async () => {
+                  console.log(`[Debug] Extracting VLM frame for ${representativeVideo.id}...`);
+                  try {
+                    const frames = await sampleUniformFramesAsBase64(
+                      representativeVideo.blob, 
+                      1, 
+                      { keepOriginal: true, format: 'image/jpeg', quality: 0.92 }
+                    );
+                    const base64 = frames[0]?.base64;
+                    if (!base64) return console.error('No frame extracted');
+
+                    openDebugPopup(
+                      `VLM Input (Actual)`,
+                      `<img src="data:image/jpeg;base64,${base64}" style="width:224px;height:224px;border:2px solid #00f;" />
+                       <p style="font-size:12px;color:#aaa;margin-top:10px">Logic: sampleUniformFramesAsBase64 (JPEG q=0.92)</p>`
+                    );
+                  } catch (e) { console.error(e); }
+                },
+                
                 viewSequence: () => {
                   const win = window.open('', '_blank');
                   if (!win) return console.error('Popup blocked');

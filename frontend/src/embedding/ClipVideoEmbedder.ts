@@ -142,7 +142,7 @@ export class ClipVideoEmbedder {
   async embedVideo(videoBlob: Blob, frameCount = DEFAULT_VIDEO_SAMPLE_FRAMES): Promise<ClipVideoEmbedding> {
     await this.ensureReady();
 
-    const sampled = await sampleUniformFrames(videoBlob, frameCount, { size: 224, crop: 'center' });
+    const sampled = await sampleUniformFrames(videoBlob, frameCount, { size: 224 });
     const perFrame: { time: number; emb: Float32Array }[] = [];
 
     for (const f of sampled) {
