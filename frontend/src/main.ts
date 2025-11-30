@@ -10,13 +10,14 @@ import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
 import * as fs from 'node:fs';
 import { extractFramesFromVideos } from './utils/video-frame-extractor';
+import { DEFAULT_SYSTEM_PROMPT } from './config/system-prompt';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
-const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
+const S3_BASE_URL = 'https://clone-api.s3.amazonaws.com/static/embeddings/dragon';
 
 const CHAT_QUERY_ENCODER_FILES = [
   {
@@ -152,10 +153,27 @@ function isOllamaDownloaded(): boolean {
 
     // Check if the ollama binary exists in the latest version
     // electron-ollama stores at: electron-ollama/v{version}/darwin/arm64/ollama
-    const latestVersion = versions[versions.length - 1];
+    const sortedVersions = versions.sort();
+    const latestVersion = sortedVersions[sortedVersions.length - 1];
     const platform = process.platform;
     const arch = process.arch;
-    const binaryPath = path.join(ollamaBasePath, latestVersion, platform, arch, 'ollama');
+
+    const platformDir = platform === 'win32'
+      ? 'windows'
+      : platform === 'darwin'
+        ? 'darwin'
+        : platform === 'linux'
+          ? 'linux'
+          : platform;
+
+    const archDir = arch === 'x64'
+      ? 'amd64'
+      : arch === 'arm64'
+        ? 'arm64'
+        : arch;
+
+    const executableName = platform === 'win32' ? 'ollama.exe' : 'ollama';
+    const binaryPath = path.join(ollamaBasePath, latestVersion, platformDir, archDir, executableName);
 
     return existsSync(binaryPath);
   } catch (error) {
@@ -497,10 +515,20 @@ function setupLLMHandlers() {
     });
   });
 
+  ipcMain.handle('llm:stream-stop', async (_event, streamId: string) => {
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    if (!streamId) {
+      return;
+    }
+    await ollamaManager.stopStream(streamId);
+  });
+
   // Session management
   ipcMain.handle('llm:create-session', async (_event, systemPrompt?: string) => {
     if (!ollamaManager) throw new Error('LLM not initialized');
-    return await ollamaManager.createSession(systemPrompt);
+    // Use the secure backend system prompt by default
+    const promptToUse = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    return await ollamaManager.createSession(promptToUse);
   });
 
   ipcMain.handle('llm:clear-session', async (_event, sessionId: string) => {
@@ -536,7 +564,7 @@ function setupLLMHandlers() {
           modelName: 'Ollama Server',
           percent: 0,
           transferred: 0,
-          total: 25_000_000 // ~25MB actual size
+          total: 1_879_954_938
         });
 
         let versionToDownload: `v${number}.${number}.${number}` | null = null;
@@ -569,6 +597,7 @@ function setupLLMHandlers() {
 
         // Check if binary is downloaded
         const isDownloaded = await electronOllama.isDownloaded(versionToDownload);
+        const totalBytes = (await electronOllama.getMetadata(versionToDownload)).size;
 
         if (!isDownloaded) {
           console.log(`Downloading Ollama ${versionToDownload}...`);
@@ -578,8 +607,8 @@ function setupLLMHandlers() {
               mainWindow?.webContents.send('model:download-progress', {
                 modelName: 'Ollama Server',
                 percent: percent / 100,
-                transferred: Math.floor((percent / 100) * 25_000_000),
-                total: 25_000_000
+                transferred: Math.floor((percent / 100) * totalBytes),
+                total: totalBytes
               });
             }
           });

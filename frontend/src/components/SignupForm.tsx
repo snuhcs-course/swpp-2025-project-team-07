@@ -31,7 +31,7 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
     const newErrors: Record<string, string> = {};
     
     if (!formData.name) {
-      newErrors.name = 'Full name is required';
+      newErrors.name = 'Username is required';
     } else if (formData.name.length < 2) {
       newErrors.name = 'Name must be at least 2 characters';
     }
@@ -112,15 +112,25 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
       </CardHeader>
       
       <CardContent className="space-y-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          {errors.form && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className="rounded-md border border-destructive/60 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive"
+            >
+              {errors.form}
+            </motion.div>
+          )}
           <div className="space-y-2">
-            <Label htmlFor="name">Full name</Label>
+            <Label htmlFor="name">Username</Label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 id="name"
                 type="text"
-                placeholder="Enter your full name"
+                placeholder="Enter your username"
                 value={formData.name}
                 onChange={(e) => updateFormData('name', e.target.value)}
                 className={`pl-10 bg-input-background border-border/50 focus:border-primary/50 transition-colors ${
@@ -187,6 +197,9 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Password must be at least 8 characters and include uppercase, lowercase, and a number.
+            </p>
             {errors.password && (
               <motion.p
                 initial={{ opacity: 0, y: -10 }}

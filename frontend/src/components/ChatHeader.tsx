@@ -103,7 +103,7 @@ export function ChatHeader({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="h-16 border-b border-border bg-card/70 backdrop-blur-xl flex items-center justify-between px-6 shadow-sm text-primary"
+      className="h-16 bg-card/70 backdrop-blur-xl flex items-center justify-between px-6 shadow-sm text-primary"
     >
       {/* Left side - Sidebar toggle and current chat info */}
       <div className="flex items-center space-x-4">
@@ -170,7 +170,7 @@ export function ChatHeader({
           <Button
             size="sm"
             onClick={handleStartRecording}
-            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer tour-recording-button"
             disabled={isProcessing}
             title="Start screen recording"
           >
@@ -192,7 +192,7 @@ export function ChatHeader({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg cursor-pointer"
+              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg cursor-pointer tour-profile-button"
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             >
               <Avatar className="h-9 w-9 bg-primary text-primary-foreground items-center justify-center">

@@ -10,6 +10,54 @@ export type LoginResponse = {
 };
 export type SignupResponse = LoginResponse;
 
+type ErrorPayload = Record<string, unknown>;
+
+const extractErrorMessage = (payload: unknown): string | null => {
+  if (!payload) {
+    return null;
+  }
+
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (typeof payload === 'object') {
+    const { detail, message, error } = payload as ErrorPayload;
+    if (typeof detail === 'string') {
+      return detail;
+    }
+    if (typeof message === 'string') {
+      return message;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    const collectMessages = (value: unknown): string[] => {
+      if (!value) {
+        return [];
+      }
+      if (typeof value === 'string') {
+        return [value];
+      }
+      if (Array.isArray(value)) {
+        return value.flatMap(collectMessages);
+      }
+      if (typeof value === 'object') {
+        return Object.values(value).flatMap(collectMessages);
+      }
+      return [];
+    };
+
+    const messages = collectMessages(payload);
+    if (messages.length > 0) {
+      return messages.join(' ');
+    }
+  }
+
+  return null;
+};
+
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -25,7 +73,9 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   const data = isJson ? await response.json() : undefined;
 
   if (!response.ok) {
-    const errorMessage = (data && (data.detail || data.error)) || 'Request failed';
+    const errorMessage =
+      extractErrorMessage(data) ||
+      'Request failed';
     throw new Error(errorMessage);
   }
 
@@ -86,6 +136,20 @@ export function loadAuth(): { tokens: AuthTokens | null; user: AuthUser | null }
 export function clearAuth() {
   localStorage.removeItem('auth_tokens');
   localStorage.removeItem('auth_user');
+}
+
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/api/auth/password-reset/', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function confirmPasswordReset(email: string, otp: string, password: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/api/auth/password-reset-confirm/', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp, password }),
+  });
 }
 
 

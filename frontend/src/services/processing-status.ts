@@ -17,21 +17,25 @@ export interface PhaseMetrics {
 }
 
 export interface PhaseStartedEvent {
+  sessionId: string;
   phase: ProcessingPhaseKey;
   startedAt: number;
 }
 
 export interface PhaseCompletedEvent {
+  sessionId: string;
   phase: ProcessingPhaseKey;
   elapsedMs: number;
   metrics?: PhaseMetrics;
 }
 
 export interface TokensStartedEvent {
+  sessionId: string;
   timestamp: number;
 }
 
 export interface ProcessingCompleteEvent {
+  sessionId: string;
   totalElapsedMs: number;
   phaseBreakdown: Record<ProcessingPhaseKey, number>;
   retrievalMetrics: RetrievalMetrics;
@@ -39,12 +43,14 @@ export interface ProcessingCompleteEvent {
 }
 
 export interface ProcessingErrorEvent {
+  sessionId: string;
   message: string;
   phase?: ProcessingPhaseKey;
   timestamp: number;
 }
 
 export interface ProcessingResetEvent {
+  sessionId: string;
   timestamp: number;
 }
 
@@ -102,31 +108,41 @@ class ProcessingStatusService {
     this.listeners[event].delete(handler);
   }
 
-  reset(): void {
-    this.emit('processing-reset', { timestamp: now() });
+  reset(sessionId: string): void {
+    this.emit('processing-reset', { sessionId, timestamp: now() });
   }
 
-  startPhase(phase: ProcessingPhaseKey): void {
-    this.emit('phase-started', { phase, startedAt: now() });
+  startPhase(sessionId: string, phase: ProcessingPhaseKey): void {
+    this.emit('phase-started', { sessionId, phase, startedAt: now() });
   }
 
-  completePhase(phase: ProcessingPhaseKey, elapsedMs: number, metrics?: PhaseMetrics): void {
-    this.emit('phase-completed', { phase, elapsedMs, metrics });
+  completePhase(
+    sessionId: string,
+    phase: ProcessingPhaseKey,
+    elapsedMs: number,
+    metrics?: PhaseMetrics,
+  ): void {
+    this.emit('phase-completed', { sessionId, phase, elapsedMs, metrics });
   }
 
-  tokensStarted(): void {
-    this.emit('tokens-started', { timestamp: now() });
+  tokensStarted(sessionId: string): void {
+    this.emit('tokens-started', { sessionId, timestamp: now() });
   }
 
-  completeProcessing(event: Omit<ProcessingCompleteEvent, 'completedAt'>): void {
+  completeProcessing(
+    sessionId: string,
+    event: Omit<ProcessingCompleteEvent, 'completedAt' | 'sessionId'>,
+  ): void {
     this.emit('processing-complete', {
+      sessionId,
       ...event,
       completedAt: now(),
     });
   }
 
-  fail(message: string, phase?: ProcessingPhaseKey): void {
+  fail(sessionId: string, message: string, phase?: ProcessingPhaseKey): void {
     this.emit('processing-error', {
+      sessionId,
       message,
       phase,
       timestamp: now(),

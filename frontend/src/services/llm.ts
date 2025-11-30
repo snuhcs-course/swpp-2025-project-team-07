@@ -8,6 +8,14 @@ import { v4 as uuidv4 } from 'uuid';
 export class LLMService {
   private static instance: LLMService;
   private currentSessionId: string | null = null;
+  private activeStream:
+    | {
+        streamId: string;
+        chunkHandler: (chunk: LLMStreamChunk) => void;
+        isStopped: boolean;
+        promise: Promise<void>;
+      }
+    | null = null;
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -40,33 +48,98 @@ export class LLMService {
 
   /**
    * Send a message and receive streaming response
+   * @param message - The current message to send
+   * @param onChunk - Callback for streaming chunks
+   * @param options - Optional chat options including message history
    */
   async streamMessage(
     message: string,
     onChunk: (chunk: string) => void,
     options?: LLMChatOptions
   ): Promise<void> {
+    if (this.activeStream) {
+      const previousStream = this.activeStream;
+      if (!previousStream.isStopped) {
+        await previousStream.promise.catch(() => undefined);
+      } else {
+        window.llmAPI.offStreamChunk(previousStream.chunkHandler);
+      }
+      if (this.activeStream === previousStream) {
+        this.activeStream = null;
+      }
+    }
+
     // Generate unique stream ID for this request
     const streamId = uuidv4();
 
     // Set up listeners with streamId filtering
     const chunkHandler = (chunk: LLMStreamChunk) => {
       // Only process chunks from this specific stream
-      if (chunk.streamId === streamId && !chunk.done) {
+      if (
+        chunk.streamId === streamId &&
+        !chunk.done &&
+        this.activeStream &&
+        !this.activeStream.isStopped
+      ) {
         onChunk(chunk.chunk);
       }
     };
 
     window.llmAPI.onStreamChunk(chunkHandler);
 
+    const streamPromise = window.llmAPI.streamChat(message, {
+      ...options,
+      sessionId: options?.sessionId || this.currentSessionId || undefined,
+      streamId,
+      messages: options?.messages // Pass conversation history if provided
+    });
+
+    const activeStreamState = {
+      streamId,
+      chunkHandler,
+      isStopped: false,
+      promise: streamPromise
+    };
+
+    this.activeStream = activeStreamState;
+
     try {
-      await window.llmAPI.streamChat(message, {
-        ...options,
-        sessionId: options?.sessionId || this.currentSessionId || undefined,
-        streamId
-      });
+      await streamPromise;
     } finally {
       window.llmAPI.offStreamChunk(chunkHandler);
+      if (this.activeStream === activeStreamState) {
+        this.activeStream = null;
+      }
+    }
+
+    if (activeStreamState.isStopped) {
+      const error = new Error('StreamCancelledError');
+      error.name = 'StreamCancelledError';
+      throw error;
+    }
+  }
+
+  async stopStreaming(): Promise<void> {
+    const active = this.activeStream;
+    if (!active || active.isStopped) {
+      return;
+    }
+
+    active.isStopped = true;
+    window.llmAPI.offStreamChunk(active.chunkHandler);
+
+    try {
+      await window.llmAPI.stopStream(active.streamId);
+    } catch (error) {
+      console.warn('[LLMService] Failed to stop stream via IPC:', error);
+    }
+
+    try {
+      await active.promise;
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== 'StreamCancelledError') {
+        throw error;
+      }
     }
   }
 

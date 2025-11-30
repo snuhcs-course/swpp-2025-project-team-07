@@ -24,7 +24,7 @@ npm install
 The `.env` file is already configured to use the production API:
 
 ```env
-VITE_API_BASE_URL=http://43.202.157.112:8000
+VITE_API_BASE_URL=http://3.35.36.43:8000
 ```
 
 No changes needed unless you want to point to a different backend server.
@@ -38,7 +38,7 @@ cd frontend
 npm run dev
 ```
 
-The Electron desktop app will launch automatically and connect to the production API server at `http://43.202.157.112:8000`.
+The Electron desktop app will launch automatically and connect to the production API server at `http://3.35.36.43:8000`.
 
 ### **Test the Demo**
 1. **Download Required Packages**: If not already downloaded, the user is prompted to install required models such as Gemma 3 before continuing
