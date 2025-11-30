@@ -66,7 +66,7 @@ export async function transformQuery(context: QueryContext): Promise<Transformed
   // Build the prompt for the LLM
   const conversationHistoryStr = buildConversationHistory(conversation_history);
 
-  const prompt = `You are a query transformation assistant. Your job is to analyze a potentially vague user query and convert it into a highly specific search object optimized for screen recording retrieval.
+  const prompt = `You are a query transformation assistant. Your job is to analyze a user query and convert it into a specific query optimized for screen recording retrieval and response generation.
 
 Context:
 Conversation History (last 3 turns):
@@ -84,7 +84,7 @@ Analyze the query and provide a structured JSON output with the following fields
    - 0.3-0.6: Low confidence, clarification needed
    - 0.6-0.8: Moderate confidence, likely to succeed
    - 0.8-1.0: High confidence, very specific query
-3. response_guidance: Instructions for how to craft the final response after retrieval (e.g., "User wants to recall a red Nike shoe they viewed. Answer to the user query by referencing the retrieved data.")
+3. response_guidance: Instructions for how to craft the final response using the retrieved data (e.g., "User wants to recall a red Nike shoe they viewed. Answer to the user query by referencing the retrieved data.")
 
 Important Guidelines:
 - Only extract content present in the conversation. Do not add keywords based on speculation.
