@@ -208,40 +208,40 @@ Visit the [Swagger Documentation](http://43.202.157.112:8000/swagger/) for inter
 ## What This Demo Demonstrates
 
 ### **Goals Achieved in Iteration 5**
-✅ **Service Onboarding Tutorial**: Interactive tutorial for new users to learn the application
-✅ **Reset Password**: Complete password reset functionality for user account recovery
-✅ **VideoSet RAG Logic**: Implemented RAG logic for VideoSet with improved retrieval accuracy
-✅ **Video Sampling Optimization**: Updated video sampling logic for better VideoSet performance
-✅ **Parallel Video Upload**: Parallelized video chunk uploading for faster processing
-✅ **Retrieved Screen Selection UI**: New UI for selecting and viewing retrieved screen recordings
-✅ **Image Inference Latency Reduction**: Optimized image inference for faster response times
-✅ **Video RAG Query Generation**: Enhanced query generation for video-based retrieval
-✅ **Auto Sign-in After Signup**: Seamless user experience with automatic login after registration
-✅ **VideoBlob Storage in RDB**: Improved video storage architecture using relational database
-✅ **Video Search Button Enhancement**: Improved video search trigger icon and functionality
-✅ **Frontend Unit Testing**: Comprehensive unit testing with enhanced coverage and stability
-✅ **UI Bug Fixes**: Fixed text input area animation, overflow issues, and line-break bugs
-✅ **Server Optimizations**: Downsized RDS provisioned size and added VideoSet Representative ID
-✅ **Design Documentation**: Updated design documentation for frontend and overall architecture
+✅ **Service Onboarding Tutorial**: Interactive tutorial for new users to learn the application  
+✅ **Reset Password**: Complete password reset functionality for user account recovery  
+✅ **VideoSet RAG Logic**: Implemented RAG logic for VideoSet with improved retrieval accuracy  
+✅ **Video Sampling Optimization**: Updated video sampling logic for better VideoSet performance  
+✅ **Parallel Video Upload**: Parallelized video chunk uploading for faster processing  
+✅ **Retrieved Screen Selection UI**: New UI for selecting and viewing retrieved screen recordings  
+✅ **Image Inference Latency Reduction**: Optimized image inference for faster response times  
+✅ **Video RAG Query Generation**: Enhanced query generation for video-based retrieval  
+✅ **Auto Sign-in After Signup**: Seamless user experience with automatic login after registration  
+✅ **VideoBlob Storage in RDB**: Improved video storage architecture using relational database  
+✅ **Video Search Button Enhancement**: Improved video search trigger icon and functionality  
+✅ **Frontend Unit Testing**: Comprehensive unit testing with enhanced coverage and stability  
+✅ **UI Bug Fixes**: Fixed text input area animation, overflow issues, and line-break bugs  
+✅ **Server Optimizations**: Downsized RDS provisioned size and added VideoSet Representative ID  
+✅ **Design Documentation**: Updated design documentation for frontend and overall architecture  
 
 ### **Goals Achieved in Iteration 4**
-✅ **Chat Memory Retrieval Performance**: Improved retrieval performance for chat memory
-✅ **LLM Prompt Generation Performance**: Enhanced prompt generation for better AI responses
-✅ **Chat Status Indicator**: Visual indicator showing chat processing status per session
-✅ **Electron App Deployment**: Migrated to Vite & Forge for improved build and deployment
-✅ **LLM Inference Termination**: Added button to stop LLM inference mid-generation
-✅ **Delete Chat Sessions**: Feature to delete chat sessions from the sidebar
-✅ **Duplicate Username Support**: Allow multiple users to have the same username
-✅ **Sign Up/Sign In Failure UI**: Improved error handling with clear failure messages
-✅ **Mean Pooling Hidden Method**: Added mean_pooling_hidden method for embedding generation (hiding Clone app screen)
-✅ **Video Search Trigger Icon**: New icon to trigger video search in chat
-✅ **VideoSet Server Changes**: Backend changes to support VideoSet functionality
-✅ **VectorDB Collection ID Suffix**: Added suffix to collection IDs for better organization
-✅ **Clear VectorDB API**: API endpoint to clear VectorDB collections
-✅ **Query During LLM Inference**: Ability to write queries while LLM is processing
-✅ **Recording Pipeline Refactoring**: Refactored recording pipeline to reuse stream across chunks
-✅ **Video Sending Logic**: Implemented video sending logic for VideoSet
-✅ **Bug Fixes**: Fixed model download paths, checkbox styles, Ollama download size, and various runtime errors
+✅ **Chat Memory Retrieval Performance**: Improved retrieval performance for chat memory  
+✅ **LLM Prompt Generation Performance**: Enhanced prompt generation for better AI responses  
+✅ **Chat Status Indicator**: Visual indicator showing chat processing status per session  
+✅ **Electron App Deployment**: Migrated to Vite & Forge for improved build and deployment  
+✅ **LLM Inference Termination**: Added button to stop LLM inference mid-generation  
+✅ **Delete Chat Sessions**: Feature to delete chat sessions from the sidebar  
+✅ **Duplicate Username Support**: Allow multiple users to have the same username  
+✅ **Sign Up/Sign In Failure UI**: Improved error handling with clear failure messages  
+✅ **Mean Pooling Hidden Method**: Added mean_pooling_hidden method for embedding generation (hiding Clone app screen)  
+✅ **Video Search Trigger Icon**: New icon to trigger video search in chat  
+✅ **VideoSet Server Changes**: Backend changes to support VideoSet functionality  
+✅ **VectorDB Collection ID Suffix**: Added suffix to collection IDs for better organization  
+✅ **Clear VectorDB API**: API endpoint to clear VectorDB collections  
+✅ **Query During LLM Inference**: Ability to write queries while LLM is processing  
+✅ **Recording Pipeline Refactoring**: Refactored recording pipeline to reuse stream across chunks  
+✅ **Video Sending Logic**: Implemented video sending logic for VideoSet  
+✅ **Bug Fixes**: Fixed model download paths, checkbox styles, Ollama download size, and various runtime errors  
 
 ### **Goals Achieved in Iteration 3**
 ✅ **End-to-End RAG System**: Complete Retrieval-Augmented Generation with dual memory  
