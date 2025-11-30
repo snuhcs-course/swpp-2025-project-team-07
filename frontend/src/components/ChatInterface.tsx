@@ -16,6 +16,7 @@ import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
 import { sampleUniformFramesAsBase64, sampleUniformFrames } from '@/embedding/video-sampler';
+import { queryTransformationService, type TransformedQuery } from '@/services/query-transformation';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 import type { VideoCandidate } from '@/types/video';
@@ -270,6 +271,28 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       localStorage.setItem('onboarding_completed', 'true');
     }
   };
+
+  // Query transformation state
+  const [queryTransformEnabled, setQueryTransformEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('queryTransformEnabled');
+    return stored ? JSON.parse(stored) : true; // Enabled by default
+  });
+
+  // Save queryTransformEnabled to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('queryTransformEnabled', JSON.stringify(queryTransformEnabled));
+  }, [queryTransformEnabled]);
+
+  // Expose query transformation controls to console for debugging
+  useEffect(() => {
+    (window as any).__queryTransform = {
+      enabled: queryTransformEnabled,
+      toggle: () => {
+        setQueryTransformEnabled(prev => !prev);
+        console.log(`Query transformation ${!queryTransformEnabled ? 'enabled' : 'disabled'}`);
+      },
+    };
+  }, [queryTransformEnabled]);
 
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
@@ -572,7 +595,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             return { idx, frames, setId: doc.video_set_id ?? doc.id };
           })
         );
-        
+
         // 팝업 창 생성
         const win = window.open('', '_blank');
         if(!win) return console.error('Popup blocked. Please allow popups.');
@@ -979,6 +1002,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
     const runStartTime = getTimestamp();
     const phaseDurations: Record<ProcessingPhaseKey, number> = {
+      understanding: 0,
       searching: 0,
       processing: 0,
       generating: 0,
@@ -1067,22 +1091,82 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         activeRunRef.current = activeRun;
       }
 
+      // =========================================================================
+      // QUERY TRANSFORMATION LAYER
+      // =========================================================================
+      let transformedQuery: TransformedQuery | null = null;
+      let chatSearchQuery = content; // Default to raw content if transformation is disabled
+      let videoSearchQuery = content; // Default to raw content if transformation is disabled
+
+      if (queryTransformEnabled && videoRagEnabled) {
+        processingStatusService.startPhase(sessionId, 'understanding');
+        const understandPhaseStart = getTimestamp();
+        try {
+          console.log('[QueryTransform] Starting query transformation...');
+
+          // Build context for transformation
+          const conversationHistory = session.messages
+            .slice(-6) // Last 3 turns (6 messages)
+            .map(msg => ({
+              role: msg.isUser ? ('user' as const) : ('assistant' as const),
+              content: msg.content,
+            }));
+
+          // Transform query
+          transformedQuery = await queryTransformationService.transformQuery({
+            current_query: content,
+            conversation_history: conversationHistory,
+          });
+
+          // Use transformed query for search - different queries for chat vs video
+          if (transformedQuery) {
+            chatSearchQuery = queryTransformationService.getChatSearchQuery(transformedQuery);
+            videoSearchQuery = queryTransformationService.getVideoSearchQuery(transformedQuery);
+            console.log('[QueryTransform] Using transformed queries:', {
+              original: content,
+              chatQuery: chatSearchQuery,
+              videoQuery: videoSearchQuery,
+              confidence: transformedQuery.confidence_score,
+            });
+          }
+        } catch (error) {
+          console.error('[QueryTransform] Transformation failed, falling back to original query:', error);
+          // Continue with original query if transformation fails
+          transformedQuery = null;
+          chatSearchQuery = content;
+          videoSearchQuery = content;
+        } finally {
+          const understandElapsed = getTimestamp() - understandPhaseStart;
+          phaseDurations.understanding = understandElapsed;
+          processingStatusService.completePhase(sessionId, 'understanding', understandElapsed, {
+            retrievalMetrics: {
+              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+              screenRecordings: retrievalSummary.screenRecordings,
+              embeddingsSearched: retrievalSummary.embeddingsSearched,
+            },
+          });
+        }
+      }
+
+      // =========================================================================
       // RAG: Retrieve relevant context from past conversations and screen recordings
+      // =========================================================================
       processingStatusService.startPhase(sessionId, 'searching');
       const searchPhaseStart = getTimestamp();
 
       try {
-        // Generate embeddings for the user's query
-        // - DRAGON (768-dim) for chat search
-        // - CLIP (512-dim) for video/screen search
+        // Generate embeddings for the search queries (potentially transformed)
+        // - DRAGON (768-dim) for chat search - uses keywords + action context
+        // - CLIP (512-dim) for video/screen search - uses keywords + visual cues
         const chatQueryEmbedding = await runWithCancellation(() =>
-          embeddingService.embedQuery(content)
+          embeddingService.embedQuery(chatSearchQuery)
         );
         ensureNotCancelled();
 
         const videoQueryEmbedding = videoRagEnabled
           ? await runWithCancellation(() =>
-              embeddingService.embedVideoQuery(content)
+              embeddingService.embedVideoQuery(videoSearchQuery)
             )
           : undefined;
 
