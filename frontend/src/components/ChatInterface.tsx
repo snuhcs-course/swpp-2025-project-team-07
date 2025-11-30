@@ -196,6 +196,7 @@ type PendingGenerationData = {
   retrievalSummary: RetrievalMetrics;
   shouldGenerateTitle: boolean;
   videoDebugUrls: string[];
+  responseGuidance?: string;
 };
 
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
@@ -494,6 +495,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       retrievalSummary,
       shouldGenerateTitle,
       videoDebugUrls,
+      responseGuidance,
     } = pendingData;
 
     const selectedDocs =
@@ -503,9 +505,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     const contextPrompt = buildContextPrompt(chatContexts, selectedDocs.length);
 
     let messageWithContext = '';
+
+    // Add response guidance if available (from query transformation)
+    if (responseGuidance) {
+      messageWithContext += `<instructions>\n${responseGuidance}\n</instructions>\n\n`;
+    }
+
+    // Add retrieved context (memories and videos)
     if (contextPrompt) {
       messageWithContext += contextPrompt + '\n\n';
     }
+
+    // Add user query
     messageWithContext += userMessageContent;
 
     let fullResponse = '';
@@ -531,14 +542,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       conversationHistory: conversationMessages,
       videos: debugVideoBlobs,
       videoSets: debugVideoSets,
+      responseGuidance: responseGuidance,
       view: () => {
         console.log('=== RAG Prompt Debug ===');
         console.log('User Query:', userMessageContent);
+        console.log('\nResponse Guidance:', responseGuidance || 'None');
         console.log('\nContext Added:', contextPrompt.length > 0 ? 'Yes' : 'No');
         console.log('Chat Memories:', chatContexts.length);
         console.log('Selected Videos:', selectedDocs.length);
         console.log('\n--- Full Prompt ---');
         console.log(messageWithContext);
+        console.log('\n--- Response Guidance ---');
+        console.log(responseGuidance || 'None');
         console.log('\n--- Context Only ---');
         console.log(contextPrompt);
       },
@@ -1120,8 +1135,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
           // Use transformed query for search - different queries for chat vs video
           if (transformedQuery) {
-            chatSearchQuery = queryTransformationService.getChatSearchQuery(transformedQuery);
-            videoSearchQuery = queryTransformationService.getVideoSearchQuery(transformedQuery);
+            chatSearchQuery = queryTransformationService.getChatSearchQuery(content, transformedQuery);
+            videoSearchQuery = queryTransformationService.getVideoSearchQuery(content, transformedQuery);
             console.log('[QueryTransform] Using transformed queries:', {
               original: content,
               chatQuery: chatSearchQuery,
@@ -1503,6 +1518,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         retrievalSummary,
         shouldGenerateTitle: session.messages.length === 0 && session.title === 'New Conversation',
         videoDebugUrls: Array.from(videoUrls),
+        responseGuidance: transformedQuery?.response_guidance,
       };
 
       let selectedIdsForRun: string[] = [];
