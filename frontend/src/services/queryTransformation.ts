@@ -7,10 +7,8 @@
  *
  * Flow:
  * 1. TransformQuery: Convert vague query to structured search object with confidence score
- * 2. Confidence Check: If score > threshold (0.6), proceed to RAG. Otherwise, ask for clarification
- * 3. GenerateClarification: Create targeted question to gather missing information
- * 4. RefineQuery: After user responds, create final high-confidence query
- * 5. Proceed to RAG/VLM execution with optimized query
+ * 2. RefineQuery: After user responds, create final high-confidence query
+ * 3. Proceed to RAG/VLM execution with optimized query
  */
 
 import { llmService } from './llm';
@@ -33,16 +31,6 @@ export interface TransformedQuery {
   original_query: string;
   /** Guidance for how to craft the final response */
   response_guidance: string;
-}
-
-/**
- * Clarification prompt generated for low-confidence queries
- */
-export interface ClarificationPrompt {
-  /** The generated clarifying question */
-  question: string;
-  /** The transformed query that led to low confidence */
-  transformed_query: TransformedQuery;
 }
 
 /**
@@ -189,162 +177,11 @@ Analyze the query and provide a structured JSON output with the following fields
   }
 }
 
-// ============================================================================
-// Phase 2: Generate Clarification
-// ============================================================================
 
-/**
- * Generate a clarifying question for low-confidence queries.
- *
- * @param transformedQuery - The low-confidence transformed query
- * @param context - Original query context
- * @returns Clarification prompt with targeted question
- */
-export async function generateClarification(
-  transformedQuery: TransformedQuery,
-  context: QueryContext
-): Promise<ClarificationPrompt> {
-  const conversationHistoryStr = buildConversationHistory(context.conversation_history);
-
-  const prompt = `You are a clarification assistant. The user's query was transformed but the confidence score is low (${transformedQuery.confidence_score.toFixed(2)}), indicating missing information.
-
-**Original User Query:**
-"${transformedQuery.original_query}"
-
-**Current Transformation:**
-- Search Keywords: ${transformedQuery.search_keywords}
-- Visual Cues: ${transformedQuery.visual_cues}
-
-**Conversation History:**
-${conversationHistoryStr}
-
-**Your Task:**
-Generate a single, highly relevant, concrete, and engaging question to elicit the necessary detail from the user. The question should:
-1. Be specific and focused on the missing information
-2. Provide context from what we know (e.g., mention specific timeframes if available)
-3. Give examples or options to make it easy for the user to respond
-4. Be natural and conversational
-
-**Example Format:**
-"Did you mean the red high-top shoe you scrolled past at 5:20, or the blue low-top shoe you clicked on at 5:45?"
-
-**Output (just the question, no JSON):**`;
-
-  try {
-    const response = await llmService.sendMessage(prompt, {
-      temperature: 0.7, // Higher temperature for more natural questions
-      maxTokens: 150,
-    });
-
-    // Clean up response
-    const question = response.trim().replace(/^["']|["']$/g, ''); // Remove quotes if present
-
-    console.log('[QueryTransform] Generated clarification:', question);
-    return {
-      question,
-      transformed_query: transformedQuery,
-    };
-  } catch (error) {
-    console.error('[QueryTransform] Failed to generate clarification:', error);
-    // Return generic fallback
-    return {
-      question: `Could you please provide more details about "${transformedQuery.original_query}"? For example, when did you see it or what did it look like?`,
-      transformed_query: transformedQuery,
-    };
-  }
-}
-
-// ============================================================================
-// Phase 3: Refine Query
-// ============================================================================
-
-/**
- * Refine the query after receiving user's clarification response.
- * This combines the original query, clarification, and user's response
- * to create a high-confidence final query.
- *
- * @param originalQuery - The original vague query
- * @param clarificationQuestion - The clarification question that was asked
- * @param userResponse - The user's response to the clarification
- * @param context - Original query context
- * @returns Refined high-confidence query
- */
-export async function refineQuery(
-  originalQuery: string,
-  clarificationQuestion: string,
-  userResponse: string,
-  context: QueryContext
-): Promise<TransformedQuery> {
-  const conversationHistoryStr = buildConversationHistory(context.conversation_history);
-
-  const prompt = `You are a query refinement assistant. You previously asked for clarification, and the user has responded.
-
-**Original User Query:**
-"${originalQuery}"
-
-**Clarification Question Asked:**
-"${clarificationQuestion}"
-
-**User's Clarification Response:**
-"${userResponse}"
-
-**Conversation History:**
-${conversationHistoryStr}
-
-**Your Task:**
-Combine all this information to generate a final, highly specific structured search object. The confidence_score should be near 1.0 (0.8-1.0) due to the added information. Also generate response_guidance explaining what the user wants and how to respond.
-
-**Output Format (JSON only, no explanation):**
-{
-  "search_keywords": "...",
-  "visual_cues": "...",
-  "confidence_score": 0.9,
-  "response_guidance": "..."
-}`;
-
-  try {
-    const response = await llmService.sendMessage(prompt, {
-      temperature: 0.3,
-      maxTokens: 500,
-    });
-
-    const parsed = parseJSONFromLLM(response);
-
-    const refined: TransformedQuery = {
-      search_keywords: parsed.search_keywords || userResponse,
-      visual_cues: parsed.visual_cues || '',
-      confidence_score: typeof parsed.confidence_score === 'number'
-        ? Math.max(0.8, Math.min(1, parsed.confidence_score)) // Ensure high confidence after clarification
-        : 0.9,
-      original_query: `${originalQuery} [clarified: ${userResponse}]`,
-      response_guidance: parsed.response_guidance || `User clarified they want: ${userResponse}. Reference the specific item from screen recordings and be detailed.`,
-    };
-
-    console.log('[QueryTransform] Refined query:', refined);
-    return refined;
-  } catch (error) {
-    console.error('[QueryTransform] Failed to refine query:', error);
-    // Return high-confidence fallback using user's clarification
-    return {
-      search_keywords: `${originalQuery} ${userResponse}`,
-      visual_cues: userResponse,
-      confidence_score: 0.8,
-      original_query: `${originalQuery} [clarified: ${userResponse}]`,
-      response_guidance: `User clarified they want: ${userResponse}. Reference the specific item from screen recordings and be detailed.`,
-    };
-  }
-}
 
 // ============================================================================
 // Main Orchestration
 // ============================================================================
-
-/**
- * Check if a transformed query needs clarification
- */
-export function needsClarification(transformedQuery: TransformedQuery): boolean {
-  return transformedQuery.confidence_score <= LOW_CONFIDENCE_THRESHOLD;
-}
 
 /**
  * Get optimized search query for chat/text search (DRAGON embeddings)
@@ -387,11 +224,7 @@ export function getSearchQuery(transformedQuery: TransformedQuery): string {
 
 export const queryTransformationService = {
   transformQuery,
-  generateClarification,
-  refineQuery,
-  needsClarification,
   getChatSearchQuery,
   getVideoSearchQuery,
-  getSearchQuery, // Keep for backwards compatibility
   LOW_CONFIDENCE_THRESHOLD,
 };

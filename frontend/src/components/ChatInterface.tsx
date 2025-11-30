@@ -14,7 +14,7 @@ import { memoryService } from '@/services/memory';
 import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
-import { queryTransformationService, type TransformedQuery, type ClarificationPrompt } from '@/services/queryTransformation';
+import { queryTransformationService, type TransformedQuery } from '@/services/queryTransformation';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 
@@ -158,10 +158,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     localStorage.setItem('videoRagEnabled', JSON.stringify(videoRagEnabled));
   }, [videoRagEnabled]);
 
-  // Query transformation and clarification state
-  const [awaitingClarification, setAwaitingClarification] = useState(false);
-  const [currentClarification, setCurrentClarification] = useState<ClarificationPrompt | null>(null);
-  const [originalQuery, setOriginalQuery] = useState<string>('');
+  // Query transformation state
   const [queryTransformEnabled, setQueryTransformEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem('queryTransformEnabled');
     return stored ? JSON.parse(stored) : true; // Enabled by default
@@ -347,9 +344,6 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     if (runState === 'awaitingFirstToken' || runState === 'streaming') {
       return;
     }
-
-    // Check if this is a clarification response
-    const isRespondingToClarification = awaitingClarification && currentClarification !== null;
 
     // Auto-create session if none exists
     let session = currentSession;
@@ -543,76 +537,11 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
               content: msg.content,
             }));
 
-          // Handle clarification response
-          if (isRespondingToClarification && currentClarification) {
-            console.log('[QueryTransform] Refining query with clarification response...');
-            transformedQuery = await queryTransformationService.refineQuery(
-              originalQuery,
-              currentClarification.question,
-              content,
-              {
-                current_query: originalQuery,
-                conversation_history: conversationHistory,
-              }
-            );
-
-            // Clear clarification state
-            setAwaitingClarification(false);
-            setCurrentClarification(null);
-            setOriginalQuery('');
-          } else {
-            // Initial transformation
-            transformedQuery = await queryTransformationService.transformQuery({
-              current_query: content,
-              conversation_history: conversationHistory,
-            });
-
-            // Check if clarification is needed
-            if (queryTransformationService.needsClarification(transformedQuery)) {
-              console.log(
-                `[QueryTransform] Low confidence (${transformedQuery.confidence_score.toFixed(2)}), generating clarification...`
-              );
-
-              // Generate clarification question
-              const clarificationPrompt = await queryTransformationService.generateClarification(
-                transformedQuery,
-                {
-                  current_query: content,
-                  conversation_history: conversationHistory,
-                }
-              );
-
-              // Update AI message with clarification question
-              // TODO: Split into tokens then update to simulate streaming behavior.
-              const clarificationMessage = `I need a bit more detail to help you better. ${clarificationPrompt.question}`;
-              setSessions(prevSessions =>
-                prevSessions.map(s =>
-                  s.id === sessionId
-                    ? {
-                        ...s,
-                        messages: (s.messages || []).map(msg =>
-                          msg.id === aiMessageId
-                            ? { ...msg, content: clarificationMessage }
-                            : msg
-                        ),
-                      }
-                    : s
-                )
-              );
-
-              // Save clarification state and wait for user response
-              setAwaitingClarification(true);
-              setCurrentClarification(clarificationPrompt);
-              setOriginalQuery(content);
-              setRunState('completed');
-
-              // Save assistant clarification message to backend
-              await chatService.sendMessage(sessionIdNum, 'assistant', clarificationMessage);
-
-              console.log('[QueryTransform] Awaiting clarification from user...');
-              return; // Stop here, wait for user to respond
-            }
-          }
+          // Transform query
+          transformedQuery = await queryTransformationService.transformQuery({
+            current_query: content,
+            conversation_history: conversationHistory,
+          });
 
           // Use transformed query for search - different queries for chat vs video
           if (transformedQuery) {
