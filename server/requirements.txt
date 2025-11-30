@@ -3,6 +3,9 @@ djangorestframework==3.16.1
 django-cors-headers==4.8.0
 mysqlclient==2.2.7
 
+# Email
+sendgrid==6.12.5
+
 # JWT Authentication
 djangorestframework-simplejwt==5.5.1
 

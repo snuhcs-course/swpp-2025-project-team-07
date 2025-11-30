@@ -6,7 +6,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .vectordb_client import vectordb_client
-from .models import VideoSetMetadata
+from .models import ScreenRecording
 
 # -----------------------------------------------------------------------------
 # OpenAPI Schemas (drf-yasg)
@@ -91,20 +91,25 @@ def insert_to_collection(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Call vectordb in parallel
+    # Extract and store video content in RDB for screen data
+    vectordb_screen_data = screen_data
+    if screen_data:
+        vectordb_screen_data = _extract_and_store_video_content(
+            user_id=request.user.id,
+            screen_data=screen_data,
+            collection_version=collection_version,
+        )
+
+    # Call vectordb in parallel with modified data
     success, results, error = vectordb_client.insert_parallel(
         user_id=request.user.id,
         chat_data=chat_data if chat_data else None,
-        screen_data=screen_data if screen_data else None,
+        screen_data=vectordb_screen_data if vectordb_screen_data else None,
         collection_version=collection_version,
     )
 
     if not success:
         return Response({"detail": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # Store video metadata if screen_data contains video_set_id
-    if screen_data:
-        _store_video_metadata(request.user.id, screen_data, collection_version)
 
     return Response({"ok": True, "result": results}, status=status.HTTP_201_CREATED)
 
@@ -306,8 +311,16 @@ def query_collection(request):
     if not success:
         return Response({"detail": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # Group screen results by video_set_id if requested
+    # Populate screen results with content from RDB
     screen_results = results.get("screen_results", [])
+    if screen_results:
+        screen_results = _populate_video_content(
+            user_id=request.user.id,
+            screen_results=screen_results,
+            collection_version=collection_version,
+        )
+
+    # Group screen results by video_set_id if requested
     if query_video_sets and video_set_mapping:
         screen_results = _group_by_video_sets(
             screen_results, video_set_mapping, original_screen_ids
@@ -393,14 +406,15 @@ def clear_collections(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    # Delete VideoSetMetadata entries when clearing screen collection
+    # Delete ScreenRecording entries when clearing screen collection
     if clear_screen:
-        query = VideoSetMetadata.objects.filter(user_id=user_id)
+        query = ScreenRecording.objects.filter(user_id=user_id)
         if collection_version is not None:
             query = query.filter(collection_version=collection_version)
         deleted_count, _ = query.delete()
+
         print(
-            f"[clear_collections] Deleted {deleted_count} VideoSetMetadata entries for user {user_id}"
+            f"[clear_collections] Deleted {deleted_count} ScreenRecording entries for user {user_id}"
         )
 
     # Re-create the collections that were dropped
@@ -432,50 +446,128 @@ def clear_collections(request):
 # -----------------------------------------------------------------------------
 
 
-def _store_video_metadata(user_id: int, screen_data: list, collection_version: str = None):
+def _extract_and_store_video_content(
+    user_id: int, screen_data: list, collection_version: str = None
+) -> list:
     """
-    Store video set metadata to database for screen recordings.
+    Extract encrypted content from screen_data and store in relational database.
+    Also stores video_set_id and timestamp for grouping functionality.
+    Returns modified screen_data with content field removed.
 
     Args:
-        user_id: ID of the user who owns the videos
-        screen_data: List of screen recording entries from request
-        collection_version: Optional collection version string
+        user_id: User ID for ownership
+        screen_data: List of screen recording data with encrypted content
+        collection_version: Optional collection version
 
-    Note:
-        Only entries with 'video_set_id' field will be stored.
-        Uses bulk_create with ignore_conflicts for idempotency.
-        Prepends user_id to video_id to ensure uniqueness across users.
+    Returns:
+        Modified screen_data list with content removed
     """
-    from .models import VideoSetMetadata
+    if not screen_data:
+        return screen_data
 
-    metadata_objects = []
+    recording_objects = []
+    modified_screen_data = []
+
     for entry in screen_data:
-        video_set_id = entry.get("video_set_id")
-        if video_set_id is not None:  # Only store if video_set_id provided
-            # Prepend user_id to video_id for uniqueness across users
-            unique_video_id = f"user_{user_id}_{entry['id']}"
-            metadata_objects.append(
-                VideoSetMetadata(
-                    video_id=unique_video_id,
-                    video_set_id=str(video_set_id),  # Ensure string type
+        video_id = entry.get("id")
+        encrypted_content = entry.get("content")
+
+        if not video_id:
+            # Skip entries without id
+            modified_screen_data.append(entry)
+            continue
+
+        if encrypted_content:
+            # Store content and metadata in database
+            recording_objects.append(
+                ScreenRecording(
+                    video_id=video_id,
                     user_id=user_id,
-                    timestamp=entry.get("timestamp", 0),
+                    encrypted_content=encrypted_content,
+                    video_set_id=entry.get("video_set_id"),  # Optional grouping
+                    timestamp=entry.get("timestamp"),  # Optional timestamp
                     collection_version=collection_version,
                 )
             )
 
-    if metadata_objects:
+        # Create modified entry WITHOUT content for VectorDB
+        modified_entry = {k: v for k, v in entry.items() if k != "content"}
+        modified_screen_data.append(modified_entry)
+
+    # Bulk insert to database
+    if recording_objects:
         try:
-            VideoSetMetadata.objects.bulk_create(
-                metadata_objects,
-                ignore_conflicts=True,  # Skip if video_id already exists (idempotent)
+            ScreenRecording.objects.bulk_create(
+                recording_objects,
+                ignore_conflicts=True,
+                update_fields=["encrypted_content", "video_set_id", "timestamp", "updated_at"],
+                unique_fields=["video_id"],
             )
-        except Exception as e:
-            # Log error but don't fail the request - metadata is supplementary
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to store video metadata: {e}", exc_info=True)
+            logger.info(
+                f"Stored {len(recording_objects)} screen recordings in RDB for user {user_id}"
+            )
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to store screen recordings in RDB: {e}", exc_info=True)
+            raise  # Re-raise to fail the request - content storage is critical
+
+    return modified_screen_data
+
+
+def _populate_video_content(
+    user_id: int, screen_results: list, collection_version: str = None
+) -> list:
+    """
+    Populate screen results with encrypted content from relational database.
+
+    Args:
+        user_id: User ID for security filtering
+        screen_results: List of results from VectorDB (without content)
+        collection_version: Optional collection version
+
+    Returns:
+        Screen results with content field added
+    """
+    if not screen_results:
+        return screen_results
+
+    # Extract video IDs from results
+    video_ids = [result.get("id") for result in screen_results if result.get("id")]
+
+    if not video_ids:
+        return screen_results
+
+    # Fetch content from database
+    query = ScreenRecording.objects.filter(user_id=user_id, video_id__in=video_ids)
+
+    if collection_version is not None:
+        query = query.filter(collection_version=collection_version)
+
+    # Create mapping of video_id -> encrypted_content
+    content_map = {rec.video_id: rec.encrypted_content for rec in query}
+
+    # Populate results with content
+    populated_results = []
+    for result in screen_results:
+        video_id = result.get("id")
+        if video_id in content_map:
+            result["content"] = content_map[video_id]
+        else:
+            # Log warning but don't fail - might be old data before migration
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"No content found in RDB for video_id={video_id}, user_id={user_id}")
+            result["content"] = None
+
+        populated_results.append(result)
+
+    return populated_results
 
 
 def _expand_to_video_sets_with_mapping(
@@ -491,8 +583,8 @@ def _expand_to_video_sets_with_mapping(
 
     Returns:
         Tuple of (expanded_video_ids, mapping) where:
-        - expanded_video_ids: List of all video IDs (original format, for vectordb query)
-        - mapping: Dict of {original_video_id: {"video_set_id": str, "timestamp": int}}
+        - expanded_video_ids: List of all video IDs for vectordb query
+        - mapping: Dict of {video_id: {"video_set_id": str, "timestamp": int}}
 
     Example:
         Input: ["screen_100", "screen_300"]
@@ -505,16 +597,13 @@ def _expand_to_video_sets_with_mapping(
             }
         )
     """
-    from .models import VideoSetMetadata
-
     if not video_ids:
         return video_ids, {}
 
-    # Prepend user_id to video_ids for database lookup
-    prefixed_video_ids = [f"user_{user_id}_{vid}" for vid in video_ids]
-
     # Find which video sets these videos belong to
-    query = VideoSetMetadata.objects.filter(user_id=user_id, video_id__in=prefixed_video_ids)
+    query = ScreenRecording.objects.filter(
+        user_id=user_id, video_id__in=video_ids, video_set_id__isnull=False
+    )
 
     if collection_version:
         query = query.filter(collection_version=collection_version)
@@ -522,31 +611,27 @@ def _expand_to_video_sets_with_mapping(
     video_set_ids = list(query.values_list("video_set_id", flat=True).distinct())
 
     if not video_set_ids:
-        # No metadata found - return original list without mapping
+        # No video sets found - return original list without mapping
         return video_ids, {}
 
-    # Get ALL videos from these video sets with their metadata
-    full_query = VideoSetMetadata.objects.filter(user_id=user_id, video_set_id__in=video_set_ids)
+    # Get ALL videos from these video sets
+    full_query = ScreenRecording.objects.filter(user_id=user_id, video_set_id__in=video_set_ids)
 
     if collection_version:
         full_query = full_query.filter(collection_version=collection_version)
 
     # Build mapping and get IDs
-    # Mapping keys should be original video IDs (without user_id prefix) for grouping
     mapping = {}
-    original_video_ids = []
+    expanded_video_ids = []
 
-    for metadata in full_query.select_related():
-        # Remove user_id prefix to get original video_id
-        original_video_id = metadata.video_id.replace(f"user_{user_id}_", "", 1)
-
-        mapping[original_video_id] = {
-            "video_set_id": metadata.video_set_id,
-            "timestamp": metadata.timestamp,
+    for recording in full_query:
+        mapping[recording.video_id] = {
+            "video_set_id": recording.video_set_id,
+            "timestamp": recording.timestamp,
         }
-        original_video_ids.append(original_video_id)
+        expanded_video_ids.append(recording.video_id)
 
-    return original_video_ids, mapping
+    return expanded_video_ids, mapping
 
 
 def _group_by_video_sets(videos: list, video_set_mapping: dict, original_screen_ids: list) -> list:
