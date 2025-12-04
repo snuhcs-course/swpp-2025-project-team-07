@@ -1,3 +1,6 @@
+// Load environment variables from .env file (must be first!)
+import 'dotenv/config';
+
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import fsp from 'node:fs/promises';
@@ -5,6 +8,8 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { OllamaManager } from './llm/ollama-manager';
+import { OpenAIManager } from './llm/openai-manager';
+import type { LLMProviderType } from './llm/llm-provider';
 import { downloadFile } from './utils/downloader';
 import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
@@ -183,8 +188,10 @@ function isOllamaDownloaded(): boolean {
 }
 
 let ollamaManager: OllamaManager | null = null;
+let openaiManager: OpenAIManager | null = null;
 let electronOllama: ElectronOllama | null = null;
 let embeddingManager: EmbeddingManager | null = null;
+
 let mainWindow: BrowserWindow | null = null;
 let embeddingWorkerWindow: BrowserWindow | null = null;
 const pendingEmbedTasks = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
@@ -448,12 +455,13 @@ function setupLLMHandlers() {
     return await ollamaManager.chat(message, options);
   });
 
-  // Streaming chat handler
+  // Streaming chat handler - routes to Ollama or OpenAI based on provider
   ipcMain.handle('llm:stream-start', async (_event, message: string, options?: any) => {
-    if (!ollamaManager) throw new Error('LLM not initialized');
-
+    const provider: LLMProviderType = options?.provider || 'ollama';
     const sessionId = options?.sessionId || 'default';
     const streamId = options?.streamId || 'default';
+
+    console.log(`[IPC] stream-start: provider=${provider}, sessionId=${sessionId}, streamId=${streamId}`);
 
     // Use pre-sampled images when provided; otherwise fall back to extracting from videos
     let images: string[] | undefined =
@@ -461,7 +469,7 @@ function setupLLMHandlers() {
         ? options.images
         : undefined;
 
-    // Extract frames from videos at 1 fps and convert to base64 images for Ollama
+    // Extract frames from videos at 1 fps and convert to base64 images
     if (!images && options?.videos && Array.isArray(options.videos)) {
       console.log(`[IPC] Processing ${options.videos.length} video(s) for frame extraction...`);
 
@@ -483,9 +491,6 @@ function setupLLMHandlers() {
       }
 
       // Extract frames at 1 fps from all videos
-      // Note: maxFrames is a cap, not a target
-      // - 10 second video → 10 frames
-      // - 60 second video → 50 frames (capped)
       try {
         console.log(`[IPC] Starting frame extraction: ${videoBuffers.length} video(s), total size: ${videoBuffers.reduce((sum, buf) => sum + buf.length, 0) / 1024 / 1024} MB`);
 
@@ -502,14 +507,13 @@ function setupLLMHandlers() {
       } catch (error) {
         console.error('[IPC] ✗ Error extracting frames from videos:', error);
         console.error('[IPC] Stack trace:', (error as Error).stack);
-        // Continue without images if extraction fails
         images = undefined;
       }
     }
 
-    await ollamaManager.streamChat(message, {
+    const streamOptions = {
       ...options,
-      images, // Pass base64 encoded images
+      images,
       onChunk: (chunk: string) => {
         if (mainWindow) {
           mainWindow.webContents.send('llm:stream-chunk', {
@@ -525,15 +529,36 @@ function setupLLMHandlers() {
           mainWindow.webContents.send('llm:stream-end', sessionId);
         }
       }
-    });
+    };
+
+    // Route to appropriate provider
+    if (provider === 'openai') {
+      if (!openaiManager || !openaiManager.isInitialized()) {
+        throw new Error('OpenAI not initialized. Please set your API key first.');
+      }
+      // Use the same system prompt as Ollama for consistency
+      await openaiManager.streamChat(message, {
+        ...streamOptions,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      });
+    } else {
+      // Default to Ollama
+      if (!ollamaManager) throw new Error('LLM not initialized');
+      await ollamaManager.streamChat(message, streamOptions);
+    }
   });
 
-  ipcMain.handle('llm:stream-stop', async (_event, streamId: string) => {
-    if (!ollamaManager) throw new Error('LLM not initialized');
+  ipcMain.handle('llm:stream-stop', async (_event, streamId: string, _provider?: LLMProviderType) => {
     if (!streamId) {
       return;
     }
-    await ollamaManager.stopStream(streamId);
+    // Stop stream on both providers to ensure cleanup
+    if (openaiManager) {
+      await openaiManager.stopStream(streamId);
+    }
+    if (ollamaManager) {
+      await ollamaManager.stopStream(streamId);
+    }
   });
 
   // Session management
@@ -854,7 +879,7 @@ function setupLLMHandlers() {
   console.log('LLM and Embedding IPC handlers registered');
 
   // 
-  ipcMain.handle('video-embed:run', async (event, videoBlob: Buffer) => {
+  ipcMain.handle('video-embed:run', async (_event, videoBlob: Buffer) => {
     if (!embeddingWorkerWindow) {
       throw new Error('Embedding worker is not ready.');
     }
@@ -870,7 +895,7 @@ function setupLLMHandlers() {
     return promise;
   });
 
-  ipcMain.on('video-embed:result', (event, { taskId, result, error }) => {
+  ipcMain.on('video-embed:result', (_event, { taskId, result, error }) => {
     const task = pendingEmbedTasks.get(taskId);
     if (task) {
       if (error) {
@@ -919,12 +944,27 @@ app.on('ready', async () => {
   }
 
   await Promise.all([
-    waitLoad(mainWindow.webContents),
+    waitLoad(mainWindow!.webContents),
     waitLoad(embeddingWorkerWindow.webContents),
   ]);
 
   // Setup IPC handlers first
   setupLLMHandlers();
+
+  // Initialize OpenAI from environment variable
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (openaiApiKey) {
+    try {
+      console.log('Found OPENAI_API_KEY in environment, initializing...');
+      openaiManager = new OpenAIManager();
+      await openaiManager.initialize(openaiApiKey);
+      console.log('OpenAI initialized successfully');
+    } catch (error) {
+      console.warn('Failed to initialize OpenAI:', error);
+    }
+  } else {
+    console.log('OPENAI_API_KEY not found in environment, GPT 5 will be unavailable');
+  }
 
   // Check if embedding models are downloaded
   const embeddingsReady = isEmbeddingModelDownloaded(CHAT_QUERY_ENCODER_INFO) &&
@@ -1031,6 +1071,11 @@ app.on('before-quit', async () => {
   if (ollamaManager) {
     console.log('Cleaning up Ollama Manager...');
     await ollamaManager.cleanup();
+  }
+
+  if (openaiManager) {
+    console.log('Cleaning up OpenAI Manager...');
+    await openaiManager.cleanup();
   }
 
   if (embeddingManager) {

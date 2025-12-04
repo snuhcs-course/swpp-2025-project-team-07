@@ -3,7 +3,9 @@ import { motion } from 'motion/react';
 import { Send, Square, Video } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+import { ModelSelector } from './ModelSelector';
 import type { ChatRunState } from './ChatInterface';
+import type { LLMProviderType } from '@/types/electron';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
@@ -13,6 +15,9 @@ interface ChatInputProps {
   isStopping?: boolean;
   videoRagEnabled?: boolean;
   onToggleVideoRag?: () => void;
+  // Model selection
+  selectedModel?: LLMProviderType;
+  onSelectModel?: (model: LLMProviderType) => void;
 }
 
 export function ChatInput({
@@ -23,6 +28,8 @@ export function ChatInput({
   isStopping = false,
   videoRagEnabled = true,
   onToggleVideoRag,
+  selectedModel = 'ollama',
+  onSelectModel,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -102,34 +109,44 @@ export function ChatInput({
               />
             </div>
 
-            {/* Buttons row - Video RAG and Send button */}
+            {/* Buttons row - Model selector, Video RAG, and Send button */}
             <div className="flex items-center justify-between">
-              {/* Video RAG toggle button */}
-              {onToggleVideoRag ? (
-                <Button
-                  onClick={onToggleVideoRag}
-                  disabled={isStreaming}
-                  variant="ghost"
-                  title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
-                  className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full tour-video-search ${
-                    videoRagEnabled
-                      ? 'bg-linear-to-br from-primary/90 to-primary text-primary-foreground hover:from-primary hover:text-primary-foreground shadow-lg hover:shadow-xl'
-                      : 'bg-muted/50 text-muted-foreground/70 hover:text-muted-foreground/50 hover:bg-muted/10'
-                  } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <motion.div
-                    className="flex items-center gap-1.5"
-                    whileHover={{ scale: isStreaming ? 1 : 1.02 }}
-                    whileTap={{ scale: isStreaming ? 1 : 0.98 }}
-                    transition={{ duration: 0.15 }}
+              {/* Left side: Model selector and Video RAG toggle */}
+              <div className="flex items-center w-full justify-between pr-4">
+                {/* Video RAG toggle button */}
+                {onToggleVideoRag && (
+                  <Button
+                    onClick={onToggleVideoRag}
+                    disabled={isStreaming}
+                    variant="ghost"
+                    title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
+                    className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full tour-video-search ${
+                      videoRagEnabled
+                        ? 'bg-linear-to-br from-primary/90 to-primary text-primary-foreground hover:from-primary hover:text-primary-foreground shadow-lg hover:shadow-xl'
+                        : 'bg-muted/50 text-muted-foreground/70 hover:text-muted-foreground/50 hover:bg-muted/10'
+                    } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <Video className="w-3.5 h-3.5" />
-                    <span className="text-xs font-medium">Video search</span>
-                  </motion.div>
-                </Button>
-              ) : (
-                <div />
-              )}
+                    <motion.div
+                      className="flex items-center gap-1.5"
+                      whileHover={{ scale: isStreaming ? 1 : 1.02 }}
+                      whileTap={{ scale: isStreaming ? 1 : 0.98 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Video className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Video search</span>
+                    </motion.div>
+                  </Button>
+                )}
+
+                {/* Model selector */}
+                {onSelectModel && (
+                  <ModelSelector
+                    selectedModel={selectedModel}
+                    onSelectModel={onSelectModel}
+                    disabled={isStreaming}
+                  />
+                )}
+              </div>
 
               {/* Send button */}
               <Button
