@@ -114,10 +114,14 @@ async function videoBlobToBase64(blob: Blob): Promise<string> {
 export async function storeVideoEmbedding(
   embedding: Float32Array | number[],
   videoBlob: Blob,
-  metadata: { duration: number; width?: number; height?: number }
+  metadata: { duration: number; width?: number; height?: number },
+  collection_version: string = 'video_set',
+  video_set_id: string | null = null
 ): Promise<void> {
   try {
-    console.log(`[Memory] Storing video embedding, size: ${(videoBlob.size / 1024).toFixed(1)} KB`);
+    console.log(
+      `[Memory] Storing video embedding (version: ${collection_version}), size: ${(videoBlob.size / 1024).toFixed(1)} KB, duration: ${metadata.duration}ms`
+    );
 
     // Convert original video blob to base64
     const videoBase64 = await videoBlobToBase64(videoBlob);
@@ -145,8 +149,14 @@ export async function storeVideoEmbedding(
       role: 'screen_recording',
     };
 
-    await collectionService.insertScreenData([vectorData]);
-    console.log(`[Memory] Successfully stored video embedding with original video (${(videoBlob.size / 1024).toFixed(1)} KB)`);
+    if (video_set_id) {
+      vectorData.video_set_id = video_set_id;
+    }
+
+    await collectionService.insertScreenData([vectorData], collection_version);
+    console.log(
+      `[Memory] Successfully stored video embedding for version "${collection_version}" (${(videoBlob.size / 1024).toFixed(1)} KB)`
+    );
   } catch (error) {
     console.error('[Memory] Failed to store video embedding:', error);
     throw error;

@@ -225,6 +225,14 @@ const createWindow = () => {
     mainWindow?.show();
   });
 
+  mainWindow.on('focus', () => {
+    mainWindow?.webContents.send('app:focus');
+  });
+
+  mainWindow.on('blur', () => {
+    mainWindow?.webContents.send('app:blur');
+  });
+
   return mainWindow;
 };
 
@@ -447,9 +455,14 @@ function setupLLMHandlers() {
     const sessionId = options?.sessionId || 'default';
     const streamId = options?.streamId || 'default';
 
+    // Use pre-sampled images when provided; otherwise fall back to extracting from videos
+    let images: string[] | undefined =
+      Array.isArray(options?.images) && options.images.length > 0
+        ? options.images
+        : undefined;
+
     // Extract frames from videos at 1 fps and convert to base64 images for Ollama
-    let images: string[] | undefined = undefined;
-    if (options?.videos && Array.isArray(options.videos)) {
+    if (!images && options?.videos && Array.isArray(options.videos)) {
       console.log(`[IPC] Processing ${options.videos.length} video(s) for frame extraction...`);
 
       // Convert video buffers from IPC-serialized format

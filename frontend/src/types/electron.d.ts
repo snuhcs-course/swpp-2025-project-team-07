@@ -38,6 +38,11 @@ export interface LLMChatOptions {
    * - Maximum 30 frames total to stay within context window
    */
   videos?: ArrayBuffer[];
+  /**
+   * Optional pre-sampled image frames (base64 without data URL prefix).
+   * When provided, the main process can skip extracting frames from the raw videos.
+   */
+  images?: string[];
 }
 
 export interface ModelDownloadProgress {

@@ -2,7 +2,7 @@ import '@/test/mockMotion';
 import '@/test/mockUi';
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const authMocks = vi.hoisted(() => ({
@@ -10,12 +10,23 @@ const authMocks = vi.hoisted(() => ({
   saveAuthMock: vi.fn(),
 }));
 
+const collectionMocks = vi.hoisted(() => ({
+  clearCollectionsMock: vi.fn(),
+}));
+
 vi.mock('@/services/auth', () => ({
   signup: authMocks.signupMock,
   saveAuth: authMocks.saveAuthMock,
 }));
 
+vi.mock('@/services/collection', () => ({
+  collectionService: {
+    clearCollections: collectionMocks.clearCollectionsMock,
+  },
+}));
+
 const { signupMock, saveAuthMock } = authMocks;
+const { clearCollectionsMock } = collectionMocks;
 
 import { SignupForm } from './SignupForm';
 
@@ -23,6 +34,8 @@ describe('SignupForm', () => {
   beforeEach(() => {
     signupMock.mockReset();
     saveAuthMock.mockReset();
+    clearCollectionsMock.mockReset();
+    clearCollectionsMock.mockResolvedValue({ ok: true, message: 'cleared' });
   });
 
   it('shows validation errors for missing fields', async () => {
@@ -82,9 +95,23 @@ describe('SignupForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Create account' }));
 
-    expect(signupMock).toHaveBeenCalledWith('new@example.com', 'New User', 'Password1', 'Password1');
-    expect(saveAuthMock).toHaveBeenCalledWith({ access: 'access-token', refresh: 'refresh-token' }, expect.objectContaining({ email: 'new@example.com' }));
-    expect(onAuthSuccess).toHaveBeenCalledWith('new@example.com');
+    await waitFor(() => {
+      expect(signupMock).toHaveBeenCalledWith('new@example.com', 'New User', 'Password1', 'Password1');
+      expect(saveAuthMock).toHaveBeenCalledWith(
+        { access: 'access-token', refresh: 'refresh-token' },
+        expect.objectContaining({ email: 'new@example.com' })
+      );
+      expect(clearCollectionsMock).toHaveBeenCalledTimes(4);
+      expect(onAuthSuccess).toHaveBeenCalledWith('new@example.com');
+    });
+
+    const versionsCalled = clearCollectionsMock.mock.calls.map(call => call[1]);
+    expect(versionsCalled).toEqual([
+      'mean_pooling',
+      'mean_pooling_hidden',
+      'video_set',
+      'video_set_hidden',
+    ]);
   });
 
   it('toggles password visibility controls', async () => {

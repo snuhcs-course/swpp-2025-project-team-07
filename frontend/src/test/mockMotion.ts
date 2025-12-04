@@ -15,6 +15,5 @@ vi.mock('motion/react', () => {
     },
   });
 
-  return { motion: motionProxy };
+  return { motion: motionProxy, AnimatePresence: MotionComponent };
 });
-
