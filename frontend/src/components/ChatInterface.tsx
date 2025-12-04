@@ -16,6 +16,7 @@ import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
 import { sampleUniformFramesAsBase64, sampleUniformFrames } from '@/embedding/video-sampler';
+import { queryTransformationService, type TransformedQuery } from '@/services/query-transformation';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
 import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow } from '@/utils/frame-extractor-browser';
 import type { VideoCandidate } from '@/types/video';
@@ -195,6 +196,7 @@ type PendingGenerationData = {
   retrievalSummary: RetrievalMetrics;
   shouldGenerateTitle: boolean;
   videoDebugUrls: string[];
+  responseGuidance?: string;
 };
 
 export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
@@ -270,6 +272,28 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       localStorage.setItem('onboarding_completed', 'true');
     }
   };
+
+  // Query transformation state
+  const [queryTransformEnabled, setQueryTransformEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem('queryTransformEnabled');
+    return stored ? JSON.parse(stored) : true; // Enabled by default
+  });
+
+  // Save queryTransformEnabled to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('queryTransformEnabled', JSON.stringify(queryTransformEnabled));
+  }, [queryTransformEnabled]);
+
+  // Expose query transformation controls to console for debugging
+  useEffect(() => {
+    (window as any).__queryTransform = {
+      enabled: queryTransformEnabled,
+      toggle: () => {
+        setQueryTransformEnabled(prev => !prev);
+        console.log(`Query transformation ${!queryTransformEnabled ? 'enabled' : 'disabled'}`);
+      },
+    };
+  }, [queryTransformEnabled]);
 
   // Ref to prevent duplicate session creation during race conditions
   const sessionCreationInProgressRef = useRef(false);
@@ -471,6 +495,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       retrievalSummary,
       shouldGenerateTitle,
       videoDebugUrls,
+      responseGuidance,
     } = pendingData;
 
     const selectedDocs =
@@ -480,9 +505,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     const contextPrompt = buildContextPrompt(chatContexts, selectedDocs.length);
 
     let messageWithContext = '';
+
+    // Add response guidance if available (from query transformation)
+    if (responseGuidance) {
+      messageWithContext += `<instructions>\n${responseGuidance}\n</instructions>\n\n`;
+    }
+
+    // Add retrieved context (memories and videos)
     if (contextPrompt) {
       messageWithContext += contextPrompt + '\n\n';
     }
+
+    // Add user query
     messageWithContext += userMessageContent;
 
     let fullResponse = '';
@@ -508,14 +542,18 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
       conversationHistory: conversationMessages,
       videos: debugVideoBlobs,
       videoSets: debugVideoSets,
+      responseGuidance: responseGuidance,
       view: () => {
         console.log('=== RAG Prompt Debug ===');
         console.log('User Query:', userMessageContent);
+        console.log('\nResponse Guidance:', responseGuidance || 'None');
         console.log('\nContext Added:', contextPrompt.length > 0 ? 'Yes' : 'No');
         console.log('Chat Memories:', chatContexts.length);
         console.log('Selected Videos:', selectedDocs.length);
         console.log('\n--- Full Prompt ---');
         console.log(messageWithContext);
+        console.log('\n--- Response Guidance ---');
+        console.log(responseGuidance || 'None');
         console.log('\n--- Context Only ---');
         console.log(contextPrompt);
       },
@@ -572,7 +610,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             return { idx, frames, setId: doc.video_set_id ?? doc.id };
           })
         );
-        
+
         // 팝업 창 생성
         const win = window.open('', '_blank');
         if(!win) return console.error('Popup blocked. Please allow popups.');
@@ -979,6 +1017,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
 
     const runStartTime = getTimestamp();
     const phaseDurations: Record<ProcessingPhaseKey, number> = {
+      understanding: 0,
       searching: 0,
       processing: 0,
       generating: 0,
@@ -1067,22 +1106,82 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         activeRunRef.current = activeRun;
       }
 
+      // =========================================================================
+      // QUERY TRANSFORMATION LAYER
+      // =========================================================================
+      let transformedQuery: TransformedQuery | null = null;
+      let chatSearchQuery = content; // Default to raw content if transformation is disabled
+      let videoSearchQuery = content; // Default to raw content if transformation is disabled
+
+      if (queryTransformEnabled && videoRagEnabled) {
+        processingStatusService.startPhase(sessionId, 'understanding');
+        const understandPhaseStart = getTimestamp();
+        try {
+          console.log('[QueryTransform] Starting query transformation...');
+
+          // Build context for transformation
+          const conversationHistory = session.messages
+            .slice(-6) // Last 3 turns (6 messages)
+            .map(msg => ({
+              role: msg.isUser ? ('user' as const) : ('assistant' as const),
+              content: msg.content,
+            }));
+
+          // Transform query
+          transformedQuery = await queryTransformationService.transformQuery({
+            current_query: content,
+            conversation_history: conversationHistory,
+          });
+
+          // Use transformed query for search - different queries for chat vs video
+          if (transformedQuery) {
+            chatSearchQuery = queryTransformationService.getChatSearchQuery(content, transformedQuery);
+            videoSearchQuery = queryTransformationService.getVideoSearchQuery(content, transformedQuery);
+            console.log('[QueryTransform] Using transformed queries:', {
+              original: content,
+              chatQuery: chatSearchQuery,
+              videoQuery: videoSearchQuery,
+              confidence: transformedQuery.confidence_score,
+            });
+          }
+        } catch (error) {
+          console.error('[QueryTransform] Transformation failed, falling back to original query:', error);
+          // Continue with original query if transformation fails
+          transformedQuery = null;
+          chatSearchQuery = content;
+          videoSearchQuery = content;
+        } finally {
+          const understandElapsed = getTimestamp() - understandPhaseStart;
+          phaseDurations.understanding = understandElapsed;
+          processingStatusService.completePhase(sessionId, 'understanding', understandElapsed, {
+            retrievalMetrics: {
+              memoriesRetrieved: retrievalSummary.memoriesRetrieved,
+              encryptedDataProcessed: retrievalSummary.encryptedDataProcessed,
+              screenRecordings: retrievalSummary.screenRecordings,
+              embeddingsSearched: retrievalSummary.embeddingsSearched,
+            },
+          });
+        }
+      }
+
+      // =========================================================================
       // RAG: Retrieve relevant context from past conversations and screen recordings
+      // =========================================================================
       processingStatusService.startPhase(sessionId, 'searching');
       const searchPhaseStart = getTimestamp();
 
       try {
-        // Generate embeddings for the user's query
-        // - DRAGON (768-dim) for chat search
-        // - CLIP (512-dim) for video/screen search
+        // Generate embeddings for the search queries (potentially transformed)
+        // - DRAGON (768-dim) for chat search - uses keywords + action context
+        // - CLIP (512-dim) for video/screen search - uses keywords + visual cues
         const chatQueryEmbedding = await runWithCancellation(() =>
-          embeddingService.embedQuery(content)
+          embeddingService.embedQuery(chatSearchQuery)
         );
         ensureNotCancelled();
 
         const videoQueryEmbedding = videoRagEnabled
           ? await runWithCancellation(() =>
-              embeddingService.embedVideoQuery(content)
+              embeddingService.embedVideoQuery(videoSearchQuery)
             )
           : undefined;
 
@@ -1419,6 +1518,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         retrievalSummary,
         shouldGenerateTitle: session.messages.length === 0 && session.title === 'New Conversation',
         videoDebugUrls: Array.from(videoUrls),
+        responseGuidance: transformedQuery?.response_guidance,
       };
 
       let selectedIdsForRun: string[] = [];
