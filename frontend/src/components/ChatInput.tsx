@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, Square, Video } from 'lucide-react';
+import { Send, Square, Video, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { ModelSelector } from './ModelSelector';
@@ -94,7 +94,7 @@ export function ChatInput({
           className="relative bg-background border border-border rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl tour-chat-input"
         >
           {/* Input area */}
-          <div className="flex flex-col p-5 gap-3">
+          <div className="flex flex-col pt-5 pb-3 px-5 gap-5">
 
             {/* Text input row */}
             <div className="flex flex-col justify-end">
@@ -120,10 +120,10 @@ export function ChatInput({
                     disabled={isStreaming}
                     variant="ghost"
                     title={videoRagEnabled ? 'Disable video search for faster responses' : 'Enable video search for more context'}
-                    className={`transition-all duration-200 gap-1.5 px-3 py-2.5 h-auto rounded-full tour-video-search ${
+                    className={`transition-all duration-200 gap-1.5 px-3 py-2 h-auto rounded-full tour-video-search ${
                       videoRagEnabled
                         ? 'bg-linear-to-br from-primary/90 to-primary text-primary-foreground hover:from-primary hover:text-primary-foreground shadow-lg hover:shadow-xl'
-                        : 'bg-muted/50 text-muted-foreground/70 hover:text-muted-foreground/50 hover:bg-muted/10'
+                        : 'text-muted-foreground/70 hover:text-primary hover:bg-muted/10'
                     } ${isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <motion.div
@@ -134,6 +134,7 @@ export function ChatInput({
                     >
                       <Video className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Video search</span>
+                      {videoRagEnabled && <X className="size-3.5" />}
                     </motion.div>
                   </Button>
                 )}
