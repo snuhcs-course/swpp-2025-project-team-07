@@ -1681,15 +1681,17 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     }
   };
 
-  const indicatorSessionId = currentSession?.id ?? activeRunRef.current?.sessionId ?? null;
+  const activeProcessingSessionId = activeRunRef.current?.sessionId;
+  const isViewingActiveSession = currentSessionId === activeProcessingSessionId;
+
   const hasVideoCandidates = videoCandidates.length > 0;
   const showVideoGrid = hasVideoCandidates && isRetrievalComplete && !isGenerationInProgress;
 
   let statusIndicatorNode: ReactNode = null;
-  if (runState === 'awaitingFirstToken') {
+  if (runState === 'awaitingFirstToken' && isViewingActiveSession) {
     statusIndicatorNode = (
       <ChatStatusIndicators
-        sessionId={indicatorSessionId}
+        sessionId={activeProcessingSessionId}
         videoCandidates={videoCandidates}
         selectedVideoIds={selectedVideoIds}
         onToggleVideoSelection={handleToggleVideoSelection}
@@ -1701,7 +1703,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         isGenerationInProgress={isGenerationInProgress}
       />
     );
-  } else if (runState === 'stoppedBeforeTokens') {
+  } else if (runState === 'stoppedBeforeTokens' && isViewingActiveSession) {
     statusIndicatorNode = <StopIndicator isStopping={isStoppingGeneration} />;
   }
 
