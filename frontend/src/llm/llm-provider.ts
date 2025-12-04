@@ -19,7 +19,7 @@ export interface ProviderModelInfo {
   ollama: {
     name: 'Gemma 3';
     model: 'gemma3:4b';
-    contextSize: 8192;
+    contextSize: 128000;
     multimodal: true;
     local: true;
   };
