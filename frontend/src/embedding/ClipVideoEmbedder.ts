@@ -17,24 +17,9 @@ export type ClipVideoEmbedding = {
   modelOutput: string;
 };
 
-// Simple tokenizer for CLIP text (basic implementation)
-function tokenizeText(text: string, maxLength: number = 77): number[] {
-  // This is a simplified tokenizer. In production, use a proper CLIP tokenizer
-  // For now, use character-level encoding as a placeholder
-  const tokens = [49406]; // Start token (CLIP standard)
-
-  for (let i = 0; i < Math.min(text.length, maxLength - 2); i++) {
-    tokens.push(text.charCodeAt(i) % 49407);
-  }
-
-  tokens.push(49407); // End token (CLIP standard)
-
-  // Pad to maxLength
-  while (tokens.length < maxLength) {
-    tokens.push(0); // Padding token
-  }
-
-  return tokens.slice(0, maxLength);
+// CLIP tokenizer
+async function tokenizeText(text: string, maxLength: number = 77): Promise<number[]> {
+  return await (window as any).embeddingAPI.tokenizeClip(text, maxLength);
 }
 
 export class ClipVideoEmbedder {
@@ -160,7 +145,7 @@ export class ClipVideoEmbedder {
       pooled: l2norm(mean),
       frames: perFrame,
       modelInput: this.inputName,
-      modelOutput: this.outputName,
+      modelOutput: this.imageOutputName,
     };
   }
 
@@ -209,7 +194,7 @@ export class ClipVideoEmbedder {
       throw new Error('This CLIP model does not support text embedding (vision-only model). Text embedding requires a unified CLIP model.');
     }
 
-    const tokens = tokenizeText(text, this.textSeqLen);
+    const tokens = await tokenizeText(text, this.textSeqLen);
     const inputIds = new BigInt64Array(tokens.map(t => BigInt(t)));
     const attentionMask = new BigInt64Array(tokens.map(t => t !== 0 ? 1n : 0n));
 

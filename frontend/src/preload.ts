@@ -140,6 +140,9 @@ contextBridge.exposeInMainWorld('embeddingAPI', {
   embedContext: (text: string): Promise<number[]> =>
     ipcRenderer.invoke('embedding:context', text),
 
+  tokenizeClip: (text: string, maxLength?: number): Promise<number[]> =>
+    ipcRenderer.invoke('embedding:clip-tokenize', text, maxLength),
+
   isReady: (): Promise<boolean> =>
     ipcRenderer.invoke('embedding:is-ready'),
 

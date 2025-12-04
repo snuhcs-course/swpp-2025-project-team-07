@@ -115,6 +115,31 @@ const VIDEO_EMBEDDER_INFO = {
       relativePath: 'model.onnx',
       expectedSize: 605_778_322, // ~577.74 MB
       url: 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/12b36594d53414ecfba93c7200dbb7c7db3c900a/onnx/model.onnx?download=true'
+    },
+    // CLIP tokenizer files
+    {
+      fileName: 'vocab.json',
+      relativePath: 'vocab.json',
+      expectedSize: 862_328, // 862 KB
+      url: 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/vocab.json?download=true'
+    },
+    {
+      fileName: 'merges.txt',
+      relativePath: 'merges.txt',
+      expectedSize: 524_657, // ~525 KB
+      url: 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/merges.txt?download=true'
+    },
+    {
+      fileName: 'tokenizer_config.json',
+      relativePath: 'tokenizer_config.json',
+      expectedSize: 592,
+      url: 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/tokenizer_config.json?download=true'
+    },
+    {
+      fileName: 'tokenizer.json',
+      relativePath: 'tokenizer.json',
+      expectedSize: 2_224_041, // 2.22 MB
+      url: 'https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/tokenizer.json?download=true'
     }
   ]
 };
@@ -374,14 +399,17 @@ async function initializeOllama() {
     // Initialize Embedding Manager separately
     const chatQueryEncoderPath = getEmbeddingModelPath(CHAT_QUERY_ENCODER_INFO);
     const chatKeyEncoderPath = getEmbeddingModelPath(CHAT_KEY_ENCODER_INFO);
+    const clipTokenizerPath = getEmbeddingModelPath(VIDEO_EMBEDDER_INFO);
 
     console.log('Initializing Embedding Manager...');
     console.log('chatQueryEncoderPath:', chatQueryEncoderPath);
     console.log('chatKeyEncoderPath:', chatKeyEncoderPath);
+    console.log('clipTokenizerPath:', clipTokenizerPath);
 
     embeddingManager = new EmbeddingManager({
       chatQueryEncoderPath: chatQueryEncoderPath,
       chatKeyEncoderPath: chatKeyEncoderPath,
+      clipTokenizerPath: clipTokenizerPath,
     });
 
     try {
@@ -845,6 +873,13 @@ function setupLLMHandlers() {
       throw new Error('Embedding manager not initialized');
     }
     return await embeddingManager.embedContext(text);
+  });
+
+  ipcMain.handle('embedding:clip-tokenize', async (_event, text: string, maxLength: number = 77) => {
+    if (!embeddingManager || !embeddingManager.isReady()) {
+      throw new Error('Embedding manager not initialized');
+    }
+    return await embeddingManager.tokenizeClip(text, maxLength);
   });
 
   ipcMain.handle('embedding:is-ready', async () => {

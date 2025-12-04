@@ -83,7 +83,7 @@ Analyze the query and provide a structured JSON output with the following fields
    - 0.0-0.3: Very uncertain, major information missing
    - 0.3-0.6: Low confidence, clarification needed
    - 0.6-0.8: Moderate confidence, likely to succeed
-   - 0.8-1.0: High confidence, very specific query
+   - 0.8-1.0: High confidence, specific query
 3. response_guidance: Instructions for how to craft the final response using the retrieved data (e.g., "User wants to recall a red Nike shoe they viewed. Answer to the user query by referencing the retrieved data.")
 
 Important Guidelines:
