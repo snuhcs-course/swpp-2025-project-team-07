@@ -52,7 +52,6 @@ export class OpenAIManager {
 
       // Validate the API key by making a simple request
       await this.client.models.list();
-      console.log('OpenAI Manager initialized successfully');
     } catch (error) {
       this.client = null;
       this.apiKey = null;
@@ -68,13 +67,11 @@ export class OpenAIManager {
   async createSession(systemPrompt?: string): Promise<string> {
     const sessionId = `openai-session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     this.systemPrompts.set(sessionId, systemPrompt || this.fallbackSystemPrompt);
-    console.log(`Created OpenAI session: ${sessionId}`);
     return sessionId;
   }
 
   async clearSession(sessionId: string): Promise<void> {
     this.systemPrompts.delete(sessionId);
-    console.log(`Cleared OpenAI session: ${sessionId}`);
   }
 
   async chat(message: string, options: ChatOptions = {}): Promise<string> {
@@ -110,13 +107,6 @@ export class OpenAIManager {
 
     try {
       const messages = this.buildMessages(message, options);
-
-      if (options.images && options.images.length > 0) {
-        console.log(`[OpenAI] Processing message with ${options.images.length} image(s)`);
-        console.log(`[OpenAI] Image sizes:`, options.images.map((img, i) => `${i + 1}: ${(img.length / 1024).toFixed(1)} KB`));
-      } else {
-        console.log('[OpenAI] No images attached to this message');
-      }
 
       // GPT-5 mini only supports default temperature (1) and top_p values
       const stream = await this.client.chat.completions.create(
@@ -163,7 +153,6 @@ export class OpenAIManager {
     if (controller) {
       controller.abort();
       this.activeStreams.delete(streamId);
-      console.log(`[OpenAI] Stopped stream: ${streamId}`);
     }
   }
 
@@ -223,25 +212,10 @@ export class OpenAIManager {
     return messages;
   }
 
-  getModelInfo() {
-    return {
-      name: 'GPT 5 (GPT-5 Mini Multimodal)',
-      size: 0, // Cloud model, size not applicable
-      quantization: 'N/A (Cloud)',
-      contextSize: 128000,
-      loaded: this.isInitialized(),
-      provider: 'openai' as const,
-      multimodal: true,
-    };
-  }
-
   async cleanup(): Promise<void> {
-    console.log('Cleaning up OpenAI Manager...');
-
     // Stop all active streams
-    for (const [streamId, controller] of this.activeStreams) {
+    for (const [, controller] of this.activeStreams) {
       controller.abort();
-      console.log(`Aborted stream: ${streamId}`);
     }
     this.activeStreams.clear();
 
@@ -251,7 +225,5 @@ export class OpenAIManager {
     // Clear client reference
     this.client = null;
     this.apiKey = null;
-
-    console.log('OpenAI Manager cleanup complete');
   }
 }
