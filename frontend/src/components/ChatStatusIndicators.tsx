@@ -4,6 +4,7 @@ import {
   processingStatusService,
   type ProcessingErrorEvent,
   type ProcessingPhaseKey,
+  type SessionPhaseState,
 } from '@/services/processing-status';
 import { VideoCandidateGrid } from './VideoCandidateGrid';
 import { Button } from './ui/button';
@@ -98,7 +99,21 @@ export function ChatStatusIndicators({
     if (storedState) {
       setDisplayState(storedState);
     } else {
-      const initialState = createInitialState();
+      const serviceState = processingStatusService.getCurrentState();
+
+      let initialState: SessionIndicatorState;
+      if (serviceState.isActive && serviceState.currentPhase) {
+        // Initialize with the currently active phase
+        initialState = {
+          currentPhase: serviceState.currentPhase,
+          isRendered: true,
+          isFadingOut: false,
+          errorState: null,
+        };
+      } else {
+        initialState = createInitialState();
+      }
+
       sessionStatesRef.current.set(sessionId, initialState);
       setDisplayState(initialState);
     }

@@ -1,7 +1,5 @@
 export type ProcessingPhaseKey = 'searching' | 'processing' | 'generating';
 
-export type ProcessingPhase = ProcessingPhaseKey | 'complete';
-
 export interface RetrievalMetrics {
   memoriesRetrieved: number;
   encryptedDataProcessed: boolean;
@@ -67,6 +65,12 @@ export type ProcessingStatusEvent = keyof StatusEventPayloads;
 
 type Listener<K extends ProcessingStatusEvent> = (payload: StatusEventPayloads[K]) => void;
 
+export interface SessionPhaseState {
+  currentPhase: ProcessingPhaseKey | null;
+  isActive: boolean;
+  startedAt: number | null;
+}
+
 const now = (): number => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
     return performance.now();
@@ -79,6 +83,12 @@ class ProcessingStatusService {
 
   private listeners: {
     [K in ProcessingStatusEvent]: Set<Listener<K>>;
+  };
+
+  private currentState: SessionPhaseState = {
+    currentPhase: null,
+    isActive: false,
+    startedAt: null,
   };
 
   private constructor() {
@@ -108,12 +118,27 @@ class ProcessingStatusService {
     this.listeners[event].delete(handler);
   }
 
+  getCurrentState(): SessionPhaseState {
+    return { ...this.currentState };
+  }
+
   reset(sessionId: string): void {
+    this.currentState = {
+      currentPhase: null,
+      isActive: false,
+      startedAt: null,
+    };
     this.emit('processing-reset', { sessionId, timestamp: now() });
   }
 
   startPhase(sessionId: string, phase: ProcessingPhaseKey): void {
-    this.emit('phase-started', { sessionId, phase, startedAt: now() });
+    const startedAt = now();
+    this.currentState = {
+      currentPhase: phase,
+      isActive: true,
+      startedAt,
+    };
+    this.emit('phase-started', { sessionId, phase, startedAt });
   }
 
   completePhase(
@@ -126,6 +151,11 @@ class ProcessingStatusService {
   }
 
   tokensStarted(sessionId: string): void {
+    this.currentState = {
+      currentPhase: null,
+      isActive: false,
+      startedAt: null,
+    };
     this.emit('tokens-started', { sessionId, timestamp: now() });
   }
 
@@ -133,6 +163,11 @@ class ProcessingStatusService {
     sessionId: string,
     event: Omit<ProcessingCompleteEvent, 'completedAt' | 'sessionId'>,
   ): void {
+    this.currentState = {
+      currentPhase: null,
+      isActive: false,
+      startedAt: null,
+    };
     this.emit('processing-complete', {
       sessionId,
       ...event,
@@ -141,6 +176,11 @@ class ProcessingStatusService {
   }
 
   fail(sessionId: string, message: string, phase?: ProcessingPhaseKey): void {
+    this.currentState = {
+      currentPhase: null,
+      isActive: false,
+      startedAt: null,
+    };
     this.emit('processing-error', {
       sessionId,
       message,
