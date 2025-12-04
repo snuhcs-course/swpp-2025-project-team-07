@@ -1,6 +1,4 @@
-import type { LLMProviderType } from '../llm/llm-provider';
-
-export type { LLMProviderType } from '../llm/llm-provider';
+export type LLMProviderType = 'ollama' | 'openai';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';

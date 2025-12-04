@@ -8,7 +8,7 @@ import {
 import { VideoCandidateGrid } from './VideoCandidateGrid';
 import { Button } from './ui/button';
 import type { VideoCandidate } from '@/types/video';
-import type { LLMProviderType } from '@/llm/llm-provider';
+import type { LLMProviderType } from '@/types/electron';
 
 type PhaseConfig = { label: string; emoji: string; accent: string; description: string };
 

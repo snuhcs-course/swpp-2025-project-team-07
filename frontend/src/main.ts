@@ -9,7 +9,7 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { OllamaManager } from './llm/ollama-manager';
 import { OpenAIManager } from './llm/openai-manager';
-import type { LLMProviderType } from './llm/llm-provider';
+import type { LLMProviderType } from './types/electron';
 import { downloadFile } from './utils/downloader';
 import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
