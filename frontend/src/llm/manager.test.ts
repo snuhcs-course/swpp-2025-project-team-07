@@ -354,7 +354,7 @@ describe('LLMManager', () => {
     );
 
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[LLM] Prepared 2 video(s)')
+      expect.stringContaining('[LLM] Prepared 2 image(s)')
     );
 
     consoleLogSpy.mockRestore();

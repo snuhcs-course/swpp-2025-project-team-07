@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatInput } from './ChatInput';
 
@@ -12,17 +13,20 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
 
-    const textarea = screen.getByPlaceholderText('Type your message...');
+    const textarea = screen.getByRole('textbox');
     expect(textarea).toBeInTheDocument();
+    expect(textarea).toHaveAttribute('placeholder', 'Describe the video...');
   });
 
   it('should call onSendMessage when send button is clicked', async () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+    render(
+      <ChatInput onSendMessage={mockOnSendMessage} runState="idle" videoRagEnabled={false} />
+    );
 
-    const textarea = screen.getByPlaceholderText('Type your message...');
+    const textarea = screen.getByRole('textbox');
     const sendButton = screen.getByRole('button');
 
     // Type a message
@@ -39,9 +43,11 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+    render(
+      <ChatInput onSendMessage={mockOnSendMessage} runState="idle" videoRagEnabled={false} />
+    );
 
-    const textarea = screen.getByPlaceholderText('Type your message...');
+    const textarea = screen.getByRole('textbox');
     const sendButton = screen.getByRole('button');
 
     // Type and send a message
@@ -56,7 +62,9 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+    render(
+      <ChatInput onSendMessage={mockOnSendMessage} runState="idle" videoRagEnabled={false} />
+    );
 
     const sendButton = screen.getByRole('button');
 
@@ -67,15 +75,20 @@ describe('ChatInput', () => {
     expect(mockOnSendMessage).not.toHaveBeenCalled();
   });
 
-  it('should disable input when modelNotReady prop is true', () => {
+  it('should disable sending when modelNotReady prop is true', () => {
     const mockOnSendMessage = vi.fn();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" modelNotReady={true} />);
+    render(
+      <ChatInput
+        onSendMessage={mockOnSendMessage}
+        runState="idle"
+        modelNotReady={true}
+        videoRagEnabled={false}
+      />
+    );
 
-    const textarea = screen.getByPlaceholderText('Type your message...');
-    expect(textarea).toBeInTheDocument();
-    // Note: disabled attribute is not set in the current implementation
-    // The component only disables send button, not the textarea itself
+    const sendButton = screen.getByRole('button');
+    expect(sendButton).toBeDisabled();
   });
 
   it('should show AI is thinking placeholder when streaming', () => {
@@ -111,9 +124,11 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+    render(
+      <ChatInput onSendMessage={mockOnSendMessage} runState="idle" videoRagEnabled={false} />
+    );
 
-    const textarea = screen.getByPlaceholderText('Type your message...');
+    const textarea = screen.getByRole('textbox');
 
     // Type a message
     await user.type(textarea, 'Hello, world!');
@@ -129,9 +144,11 @@ describe('ChatInput', () => {
     const mockOnSendMessage = vi.fn();
     const user = userEvent.setup();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+    render(
+      <ChatInput onSendMessage={mockOnSendMessage} runState="idle" videoRagEnabled={false} />
+    );
 
-    const textarea = screen.getByPlaceholderText('Type your message...');
+    const textarea = screen.getByRole('textbox');
 
     // Type a message
     await user.type(textarea, 'Line 1');
@@ -144,23 +161,19 @@ describe('ChatInput', () => {
   });
 
   it('should auto-focus textarea on mount after delay', async () => {
-    vi.useFakeTimers();
     const mockOnSendMessage = vi.fn();
 
-    render(<ChatInput onSendMessage={mockOnSendMessage} runState="idle" />);
+    render(
+      <ChatInput onSendMessage={mockOnSendMessage} runState="idle" videoRagEnabled={false} />
+    );
 
-    const textarea = screen.getByPlaceholderText('Type your message...') as HTMLTextAreaElement;
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
     // Initially textarea is not focused
     expect(document.activeElement).not.toBe(textarea);
 
-    // Fast-forward time past the 100ms delay
-    vi.advanceTimersByTime(150);
-
-    // Now textarea should be focused
-    expect(document.activeElement).toBe(textarea);
-
-    vi.useRealTimers();
+    // Wait for the delayed focus effect to run
+    await waitFor(() => expect(textarea).toHaveFocus(), { timeout: 500 });
   });
 
   describe('Video RAG Toggle', () => {
@@ -221,7 +234,9 @@ describe('ChatInput', () => {
       );
 
       const videoToggleButton = screen.getByText('Video search').closest('button');
+      expect(videoToggleButton).toHaveClass('bg-linear-to-br');
       expect(videoToggleButton).toHaveClass('from-primary/90');
+      expect(videoToggleButton).toHaveClass('to-primary');
       expect(videoToggleButton).toHaveClass('text-primary-foreground');
     });
 
@@ -240,7 +255,7 @@ describe('ChatInput', () => {
 
       const videoToggleButton = screen.getByText('Video search').closest('button');
       expect(videoToggleButton).toHaveClass('bg-muted/50');
-      expect(videoToggleButton).toHaveClass('text-muted-foreground/50');
+      expect(videoToggleButton).toHaveClass('text-muted-foreground/70');
     });
 
     it('should disable video toggle button when streaming', () => {

@@ -43,6 +43,9 @@ export function VideoCandidateGrid({
       <div className="grid grid-cols-3 gap-3">
         {visibleVideos.map(video => {
           const isSelected = selectedIds.includes(video.id);
+          const sequence = video.sequence ?? [];
+          const sequenceLength = (video.sequenceLength ?? sequence.length) || 1;
+          const setLabel = video.videoSetId ?? video.id;
           return (
             <button
               key={video.id}

@@ -201,7 +201,9 @@ describe('ChatHeader', () => {
           duration: 5000,
           width: 1920,
           height: 1080,
-        }
+        },
+        undefined,
+        null,
       );
     }
   });
@@ -231,7 +233,7 @@ describe('ChatHeader', () => {
       });
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[video upload] failed:',
+        '[video upload] failed: ',
         expect.any(Error)
       );
     }
