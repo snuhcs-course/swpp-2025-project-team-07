@@ -19,6 +19,7 @@ export interface VectorData {
   video_set_id?: string | null; // REQUIRED primary key for each video set
   representative_id?: string; // ID of representative video for a set
   video_set_videos?: VectorData[];
+  _score?: number; // Similarity score from search (for sorting by relevance)
   [key: string]: any;
 }
 
@@ -352,6 +353,9 @@ export async function searchAndQuery(
   // Get top-K from EACH collection separately (not mixed)
   let chatIds: string[] = [];
   let screenIds: string[] = [];
+  // Maps to preserve score information for sorting results later
+  const chatScoreMap = new Map<string, number>();
+  const screenScoreMap = new Map<string, number>();
 
   // Get top-K chat results
   if (searchResult.ok && searchResult.chat_scores && searchResult.chat_ids &&
@@ -360,11 +364,14 @@ export async function searchAndQuery(
     const ids = searchResult.chat_ids[0];
 
     // Pair scores with IDs and sort by score (descending)
-    chatIds = scores
+    const sortedChatItems = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, chatTopK)
-      .map(item => item.id);
+      .slice(0, chatTopK);
+
+    chatIds = sortedChatItems.map(item => item.id);
+    // Build score map for later sorting
+    sortedChatItems.forEach(item => chatScoreMap.set(item.id, item.score));
   }
 
   // Get top-K screen results (only if video search was performed)
@@ -378,11 +385,14 @@ export async function searchAndQuery(
       : 15;
 
     // Pair scores with IDs and sort by score (descending)
-    screenIds = scores
+    const sortedScreenItems = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, videoTopK * videoSetSize)
-      .map(item => item.id);
+      .slice(0, videoTopK * videoSetSize);
+
+    screenIds = sortedScreenItems.map(item => item.id);
+    // Build score map for later sorting
+    sortedScreenItems.forEach(item => screenScoreMap.set(item.id, item.score));
   }
 
   if (chatIds.length === 0 && screenIds.length === 0) return [];
@@ -409,10 +419,31 @@ export async function searchAndQuery(
     videoTopK
   );
 
-  const allResults: VectorData[] = [
-    ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
-    ...screenResultsForRag.map(doc => ({ ...doc, source_type: 'screen' as const }))
-  ];
+  // Attach scores and sort chat results by score (descending)
+  const chatResults = (queryResult.chat_results || [])
+    .map(doc => ({
+      ...doc,
+      source_type: 'chat' as const,
+      _score: chatScoreMap.get(doc.id) ?? 0,
+    }))
+    .sort((a, b) => (b._score ?? 0) - (a._score ?? 0));
+
+  // Attach scores and sort screen results by score (descending)
+  // For video sets, use the representative_id or first video's score
+  const screenResults = screenResultsForRag
+    .map(doc => {
+      // Try to find score using representative_id, video_set_id, or doc.id
+      const scoreKey = doc.representative_id ?? doc.video_set_id ?? doc.id;
+      const score = screenScoreMap.get(scoreKey) ?? screenScoreMap.get(doc.id) ?? 0;
+      return {
+        ...doc,
+        source_type: 'screen' as const,
+        _score: score,
+      };
+    })
+    .sort((a, b) => (b._score ?? 0) - (a._score ?? 0));
+
+  const allResults: VectorData[] = [...chatResults, ...screenResults];
 
   // Filter out same-session memories
   const filteredResults = excludeSessionId !== undefined
