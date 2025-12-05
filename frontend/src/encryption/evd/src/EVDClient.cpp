@@ -291,7 +291,7 @@ MetricType stringToMetricType(const std::string &s) {
 
 EVDClient::EVDClient(const std::string &host, const std::string &port)
     : resolver_(io_context_), stream_(io_context_), host_(host), port_(port) {
-  ensureConnection();
+  // ensureConnection();
 
   const char *sec_key_path_env = std::getenv("EVD_SEC_KEY_PATH");
   std::string sec_key_path =
