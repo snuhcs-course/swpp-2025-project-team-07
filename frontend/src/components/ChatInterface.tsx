@@ -8,6 +8,7 @@ import { ChatInput } from './ChatInput';
 import { ChatStatusIndicators, StopIndicator } from './ChatStatusIndicators';
 import { ModelDownloadDialog } from './ModelDownloadDialog';
 import { VideoPlayerModal } from './VideoPlayerModal';
+import type { LLMProviderType } from '@/types/electron';
 import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
 import { chatService } from '@/services/chat';
@@ -140,9 +141,7 @@ const buildContextPrompt = (chatContexts: string[], selectedVideoCount: number):
     );
   }
 
-  return `<memory>
-${lines.join('\n')}
-</memory>`;
+  return ['<memory>', lines.join('\n'), '</memory>'].join('\n');
 };
 
 export type ChatRunState =
@@ -232,6 +231,30 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
   useEffect(() => {
     localStorage.setItem('videoRagEnabled', JSON.stringify(videoRagEnabled));
   }, [videoRagEnabled]);
+
+  // Model selection state - per-session + default, persisted in localStorage
+  const [sessionModels, setSessionModels] = useState<Record<string, LLMProviderType>>(() => {
+    const stored = localStorage.getItem('sessionModels');
+    return stored ? JSON.parse(stored) : {};
+  });
+  const [defaultModel, setDefaultModel] = useState<LLMProviderType>(() => {
+    const stored = localStorage.getItem('defaultModel');
+    return (stored === 'openai' || stored === 'ollama') ? stored : 'ollama';
+  });
+  // Save sessionModels to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('sessionModels', JSON.stringify(sessionModels));
+  }, [sessionModels]);
+
+  // Save defaultModel to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('defaultModel', defaultModel);
+  }, [defaultModel]);
+
+  // Get current session's selected model, or default if no session
+  const currentModel: LLMProviderType = currentSessionId
+    ? sessionModels[currentSessionId] || defaultModel
+    : defaultModel;
 
   // Onboarding state
   const [runTour, setRunTour] = useState(false);
@@ -504,20 +527,23 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         : [];
     const contextPrompt = buildContextPrompt(chatContexts, selectedDocs.length);
 
-    let messageWithContext = '';
+    // Build message with context using array join for explicit newlines
+    const messageParts: string[] = [];
 
     // Add response guidance if available (from query transformation)
     if (responseGuidance) {
-      messageWithContext += `<instructions>\n${responseGuidance}\n</instructions>\n\n`;
+      messageParts.push(['<instructions>', responseGuidance, '</instructions>'].join('\n'));
     }
 
     // Add retrieved context (memories and videos)
     if (contextPrompt) {
-      messageWithContext += contextPrompt + '\n\n';
+      messageParts.push(contextPrompt);
     }
 
     // Add user query
-    messageWithContext += userMessageContent;
+    messageParts.push(userMessageContent);
+
+    const messageWithContext = messageParts.join('\n\n');
 
     let fullResponse = '';
 
@@ -759,6 +785,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
           maxTokens: 2048,
           images: vlmImages.length > 0 ? vlmImages : undefined,
           messages: conversationMessages,
+          provider: currentModel,
         }
       );
     } catch (error) {
@@ -1660,6 +1687,20 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     setVideoRagEnabled(prev => !prev);
   };
 
+  // Model selection handlers
+  const handleSelectModel = (model: LLMProviderType) => {
+    // Update default model (used when no session is selected)
+    setDefaultModel(model);
+
+    // Also update the current session if one exists
+    if (currentSessionId) {
+      setSessionModels(prev => ({
+        ...prev,
+        [currentSessionId]: model,
+      }));
+    }
+  };
+
   const createNewChat = () => {
     setCurrentSessionId(null);
   };
@@ -1699,6 +1740,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         isRetrievalComplete={isRetrievalComplete}
         videoSearchActive={videoSearchUsed}
         isGenerationInProgress={isGenerationInProgress}
+        provider={currentModel}
       />
     );
   } else if (runState === 'stoppedBeforeTokens') {
@@ -1738,7 +1780,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         />
       )}
 
-      <div className="h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex">
+      <div className="h-screen bg-linear-to-br from-background via-background to-secondary/30 flex">
         {/* Animated background elements */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
@@ -1804,6 +1846,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                 isStopping={isStoppingGeneration}
                 videoRagEnabled={videoRagEnabled}
                 onToggleVideoRag={handleToggleVideoRag}
+                selectedModel={currentModel}
+                onSelectModel={handleSelectModel}
               />
             </div>
           </motion.div>

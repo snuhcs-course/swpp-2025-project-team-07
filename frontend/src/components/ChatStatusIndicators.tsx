@@ -8,11 +8,11 @@ import {
 import { VideoCandidateGrid } from './VideoCandidateGrid';
 import { Button } from './ui/button';
 import type { VideoCandidate } from '@/types/video';
+import type { LLMProviderType } from '@/types/electron';
 
-const PHASE_CONFIG: Record<
-  ProcessingPhaseKey,
-  { label: string; emoji: string; accent: string; description: string }
-> = {
+type PhaseConfig = { label: string; emoji: string; accent: string; description: string };
+
+const PHASE_CONFIG_LOCAL: Record<ProcessingPhaseKey, PhaseConfig> = {
   understanding: {
     label: 'Understanding your request...',
     emoji: '🤔',
@@ -37,6 +37,37 @@ const PHASE_CONFIG: Record<
     accent: 'border-amber-400/40 text-amber-500',
     description: 'Carefully combining context into a response',
   },
+};
+
+const PHASE_CONFIG_CLOUD: Record<ProcessingPhaseKey, PhaseConfig> = {
+  understanding: {
+    label: 'Understanding your request...',
+    emoji: '🤔',
+    accent: 'border-lime-400/40 text-lime-500',
+    description: 'Analyzing the requirements for the video search',
+  },
+  searching: {
+    label: 'Searching your memories...',
+    emoji: '🔍',
+    accent: 'border-blue-400/40 text-blue-500',
+    description: 'Retrieving relevant context',
+  },
+  processing: {
+    label: 'Processing with cloud LLM...',
+    emoji: '☁️',
+    accent: 'border-purple-400/40 text-purple-500',
+    description: 'Data is sent to the cloud LLM for processing',
+  },
+  generating: {
+    label: 'Thinking about the best response for you...',
+    emoji: '✨',
+    accent: 'border-amber-400/40 text-amber-500',
+    description: 'Carefully combining context into a response',
+  },
+};
+
+const getPhaseConfig = (provider: LLMProviderType): Record<ProcessingPhaseKey, PhaseConfig> => {
+  return provider === 'openai' ? PHASE_CONFIG_CLOUD : PHASE_CONFIG_LOCAL;
 };
 
 const HIDE_TRANSITION_MS = 220;
@@ -66,6 +97,7 @@ interface ChatStatusIndicatorsProps {
   isRetrievalComplete?: boolean;
   videoSearchActive?: boolean;
   isGenerationInProgress?: boolean;
+  provider?: LLMProviderType;
 }
 
 export function ChatStatusIndicators({
@@ -79,6 +111,7 @@ export function ChatStatusIndicators({
   isRetrievalComplete = false,
   videoSearchActive = false,
   isGenerationInProgress = false,
+  provider = 'ollama',
 }: ChatStatusIndicatorsProps) {
   const [displayState, setDisplayState] = useState<SessionIndicatorState>(createInitialState);
   const sessionStatesRef = useRef<Map<string, SessionIndicatorState>>(new Map());
@@ -227,7 +260,8 @@ export function ChatStatusIndicators({
   }
 
   const isError = Boolean(errorState);
-  const phaseConfig = currentPhase ? PHASE_CONFIG[currentPhase] : null;
+  const providerConfig = getPhaseConfig(provider);
+  const phaseConfig = currentPhase ? providerConfig[currentPhase] : null;
 
   return (
     <motion.section

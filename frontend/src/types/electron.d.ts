@@ -1,3 +1,5 @@
+export type LLMProviderType = 'ollama' | 'openai';
+
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -9,6 +11,8 @@ export interface LLMModelInfo {
   quantization: string;
   contextSize: number;
   loaded: boolean;
+  provider?: LLMProviderType;
+  multimodal?: boolean;
 }
 
 export interface LLMStreamChunk {
@@ -43,6 +47,12 @@ export interface LLMChatOptions {
    * When provided, the main process can skip extracting frames from the raw videos.
    */
   images?: string[];
+  /**
+   * LLM provider to use for this request.
+   * - 'ollama': Local Gemma 3 via Ollama (default)
+   * - 'openai': Cloud GPT via OpenAI API
+   */
+  provider?: LLMProviderType;
 }
 
 export interface ModelDownloadProgress {
@@ -97,6 +107,7 @@ declare global {
       onModelNotFound: (callback: () => void) => void;
       onLLMReady: (callback: () => void) => void;
       onLLMError: (callback: (error: {message: string; error: string}) => void) => void;
+
     };
     embeddingAPI: EmbeddingAPI;
   }
