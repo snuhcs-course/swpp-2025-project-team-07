@@ -50,7 +50,7 @@ EXPOSE 8000
 RUN echo '#!/bin/bash\n\
 python manage.py migrate --noinput\n\
 python manage.py collectstatic --noinput\n\
-exec python -m gunicorn --bind 0.0.0.0:8000 config.wsgi\n' > /usr/src/app/start.sh && \
+exec python -m gunicorn --timeout 75 --bind 0.0.0.0:8000 config.wsgi\n' > /usr/src/app/start.sh && \
     chmod +x /usr/src/app/start.sh
 
 # Define the command to run the application
