@@ -179,6 +179,7 @@ type VideoDoc = {
   video_set_id?: string | null;
   representative_id?: string;
   sequence?: VideoSequenceItem[]; // Ordered videos in the set
+  score?: number; // Similarity score from search (for sorting by relevance)
 };
 
 type PendingGenerationData = {
@@ -893,7 +894,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     clearCandidatePreviewUrls();
     const visibleDocs = docs.slice(0, MAX_VIDEO_CANDIDATES);
 
-    return visibleDocs.map(doc => {
+    const candidates = visibleDocs.map(doc => {
       const representativeUrl =
         doc.sequence?.[0]?.url ??
         (() => {
@@ -918,7 +919,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         id: doc.id,
         thumbnailUrl: representativeUrl,
         videoUrl: representativeUrl,
-        score: 0,
+        score: doc.score ?? 0,
         videoBlob: doc.blob,
         durationMs: doc.durationMs,
         timestamp: doc.timestamp,
@@ -928,6 +929,8 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
         sequence,
       };
     });
+
+    return candidates;
   };
 
   const handleGenerateWithSelectedVideos = () => {
@@ -1321,6 +1324,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
                 video_set_id: setId,
                 representative_id: representativeId,
                 sequence: sequenceVideos,
+                score: doc._score ?? 0, // Preserve search relevance score
               });
 
               videoSetCount += 1;
