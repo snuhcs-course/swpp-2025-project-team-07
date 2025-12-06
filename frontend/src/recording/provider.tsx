@@ -143,10 +143,6 @@ export function useChunkedEmbeddingQueue(opts?: {
         setProcessed(v => v + 1);
 
         try {
-          // Always write to the primary video_set collection
-          await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set' });
-
-          // Also add to the hidden collection when the Clone app was not focused
           if (!chunk.wasFocused) {
             await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set_hidden' });
           }
