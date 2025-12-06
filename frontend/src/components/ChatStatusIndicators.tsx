@@ -4,6 +4,7 @@ import {
   processingStatusService,
   type ProcessingErrorEvent,
   type ProcessingPhaseKey,
+  type SessionPhaseState,
 } from '@/services/processing-status';
 import { VideoCandidateGrid } from './VideoCandidateGrid';
 import { Button } from './ui/button';
@@ -137,7 +138,21 @@ export function ChatStatusIndicators({
     if (storedState) {
       setDisplayState(storedState);
     } else {
-      const initialState = createInitialState();
+      const serviceState = processingStatusService.getCurrentState();
+
+      let initialState: SessionIndicatorState;
+      if (serviceState.isActive && serviceState.currentPhase) {
+        // Initialize with the currently active phase
+        initialState = {
+          currentPhase: serviceState.currentPhase,
+          isRendered: true,
+          isFadingOut: false,
+          errorState: null,
+        };
+      } else {
+        initialState = createInitialState();
+      }
+
       sessionStatesRef.current.set(sessionId, initialState);
       setDisplayState(initialState);
     }
@@ -273,7 +288,7 @@ export function ChatStatusIndicators({
       aria-live={isError ? 'assertive' : 'polite'}
       className="max-w-xl rounded-xl px-4 py-3"
     >
-      {isError && errorState ? (
+      {!showVideoGrid && (isError && errorState ? (
         <div className="flex items-center gap-3 text-destructive">
           <span aria-hidden className="text-lg leading-none">
             ⚠️
@@ -307,7 +322,7 @@ export function ChatStatusIndicators({
             <span className="h-5 w-5 animate-spin rounded-full border-[2px] border-current border-t-transparent" />
           </span>
         </motion.div>
-      ) : null}
+      ) : null)}
 
       {showVideoGrid && hasVideoCandidates && onToggleVideoSelection && onOpenVideo ? (
         <div className="mt-4 space-y-3 rounded-2xl border border-dashed border-primary/40 bg-background/80 p-4 shadow-sm">
@@ -330,7 +345,7 @@ export function ChatStatusIndicators({
             <p className="text-xs text-muted-foreground">
               {selectedVideoIds.length === 0
                 ? 'You must select at least one video.'
-                : `${selectedVideoIds.length} of 3 videos selected.`}
+                : `${selectedVideoIds.length} of 3 selected.`}
             </p>
             <Button
               disabled={!canGenerate}
