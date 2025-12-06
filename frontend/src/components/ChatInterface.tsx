@@ -895,8 +895,12 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
     const visibleDocs = docs.slice(0, MAX_VIDEO_CANDIDATES);
 
     const candidates = visibleDocs.map(doc => {
+      const representativeItem = 
+        doc.sequence?.find(item => item.id === doc.representative_id) ?? 
+        doc.sequence?.[0];
+
       const representativeUrl =
-        doc.sequence?.[0]?.url ??
+        representativeItem?.url ??
         (() => {
           const createdUrl = URL.createObjectURL(doc.blob);
           candidatePreviewUrlsRef.current.set(`${doc.id}:rep`, createdUrl);
@@ -1229,7 +1233,7 @@ export function ChatInterface({ user, onSignOut }: ChatInterfaceProps) {
             videoQueryEmbedding || undefined,
             videoRagEnabled ? MAX_VIDEO_CANDIDATES : 0,
             sessionIdNum,
-            'video_set'
+            'video_set_hidden'
           )
         );
         ensureNotCancelled();

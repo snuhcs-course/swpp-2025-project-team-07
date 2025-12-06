@@ -54,7 +54,6 @@ export function ChatHeader({
     startChunked,
     stopChunked,
     isRecording,
-    isProcessing,
   } = useChunkedEmbeddingQueue({
     onEmbeddedChunk: async ({ chunk, pooled, method }) => {
       const shouldSendVideoSetID = method === 'video_set' || method === 'video_set_hidden';
@@ -159,21 +158,11 @@ export function ChatHeader({
             <Circle className="w-4 h-4 mr-1" />
             Stop
           </Button>
-        ) : isProcessing ? (
-          <Button
-            size="sm"
-            className="rounded-xl"
-            title="Embedding chunks..."
-            disabled
-          >
-            Processing...
-          </Button>
         ) : (
           <Button
             size="sm"
             onClick={handleStartRecording}
             className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer tour-recording-button"
-            disabled={isProcessing}
             title="Start screen recording"
           >
             <Circle className="w-4 h-4 mr-1" />

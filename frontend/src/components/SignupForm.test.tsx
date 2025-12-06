@@ -107,9 +107,6 @@ describe('SignupForm', () => {
 
     const versionsCalled = clearCollectionsMock.mock.calls.map(call => call[1]);
     expect(versionsCalled).toEqual([
-      'mean_pooling',
-      'mean_pooling_hidden',
-      'video_set',
       'video_set_hidden',
     ]);
   });
