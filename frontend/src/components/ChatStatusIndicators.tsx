@@ -311,7 +311,7 @@ export function ChatStatusIndicators({
             <p className="text-xs text-muted-foreground">
               {selectedVideoIds.length === 0
                 ? 'You must select at least one video.'
-                : `${selectedVideoIds.length} of ${videoCandidates.length} selected.`}
+                : `${selectedVideoIds.length} of 3 selected.`}
             </p>
             <Button
               disabled={!canGenerate}
