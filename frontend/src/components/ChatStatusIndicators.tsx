@@ -98,6 +98,9 @@ interface ChatStatusIndicatorsProps {
   isRetrievalComplete?: boolean;
   videoSearchActive?: boolean;
   isGenerationInProgress?: boolean;
+  onPageChange?: (pageNumber: number) => Promise<void>;
+  isLoadingPage?: boolean;
+  totalPages?: number;
   provider?: LLMProviderType;
 }
 
@@ -112,6 +115,9 @@ export function ChatStatusIndicators({
   isRetrievalComplete = false,
   videoSearchActive = false,
   isGenerationInProgress = false,
+  onPageChange,
+  isLoadingPage = false,
+  totalPages = 1,
   provider = 'ollama',
 }: ChatStatusIndicatorsProps) {
   const [displayState, setDisplayState] = useState<SessionIndicatorState>(createInitialState);
@@ -339,6 +345,9 @@ export function ChatStatusIndicators({
             selectedIds={selectedVideoIds}
             onToggleSelect={onToggleVideoSelection}
             onOpenVideo={onOpenVideo}
+            onPageChange={onPageChange}
+            isLoadingPage={isLoadingPage}
+            totalPages={totalPages}
           />
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

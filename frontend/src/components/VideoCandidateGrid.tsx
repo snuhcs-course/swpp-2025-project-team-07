@@ -7,6 +7,9 @@ interface VideoCandidateGridProps {
   selectedIds: string[];
   onToggleSelect: (id: string) => void;
   onOpenVideo: (id: string) => void;
+  onPageChange?: (pageNumber: number) => Promise<void>;
+  isLoadingPage?: boolean;
+  totalPages?: number;
 }
 
 const PAGE_SIZE = 6;
@@ -18,21 +21,27 @@ export function VideoCandidateGrid({
   selectedIds,
   onToggleSelect,
   onOpenVideo,
+  onPageChange,
+  isLoadingPage = false,
+  totalPages: externalTotalPages,
 }: VideoCandidateGridProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const limitedVideos = useMemo(
     () => videos.slice(0, MAX_VISIBLE_VIDEOS),
     [videos],
   );
-  const totalPages = Math.min(
+
+  // Use externalTotalPages if provided (for lazy loading), otherwise calculate from videos
+  const totalPages = externalTotalPages ?? Math.min(
     Math.ceil(limitedVideos.length / PAGE_SIZE) || 1,
     MAX_PAGES,
   );
   const maxPageIndex = Math.max(totalPages - 1, 0);
   const clampedPage = Math.min(currentPage, maxPageIndex);
-  const startIndex = clampedPage * PAGE_SIZE;
-  const visibleVideos = limitedVideos.slice(startIndex, startIndex + PAGE_SIZE);
-  const showPagination = limitedVideos.length > PAGE_SIZE;
+
+  // For lazy loading, videos are already for the current page
+  const visibleVideos = onPageChange ? videos : limitedVideos.slice(clampedPage * PAGE_SIZE, (clampedPage * PAGE_SIZE) + PAGE_SIZE);
+  const showPagination = totalPages > 1;
 
   useEffect(() => {
     setCurrentPage(0);
@@ -40,8 +49,20 @@ export function VideoCandidateGrid({
 
   return (
     <>
-      <div className="grid grid-cols-3 gap-3">
-        {visibleVideos.map(video => {
+      <div className="relative">
+        {isLoadingPage && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/90 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-sm font-medium text-foreground">
+                Retrieving next closest matches...
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-3 gap-3">
+          {visibleVideos.map(video => {
           const isSelected = selectedIds.includes(video.id);
           const sequence = video.sequence ?? [];
           const sequenceLength = (video.sequenceLength ?? sequence.length) || 1;
@@ -103,15 +124,22 @@ export function VideoCandidateGrid({
             </button>
           );
         })}
+        </div>
       </div>
       {showPagination ? (
         <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
           <button
             type="button"
-            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 0))}
-            disabled={clampedPage === 0}
+            onClick={async () => {
+              const prevPage = Math.max(clampedPage - 1, 0);
+              if (onPageChange) {
+                await onPageChange(prevPage);
+              }
+              setCurrentPage(prevPage);
+            }}
+            disabled={clampedPage === 0 || isLoadingPage}
             className={`rounded-full border px-3 py-1 font-medium transition ${
-              clampedPage === 0
+              clampedPage === 0 || isLoadingPage
                 ? 'cursor-not-allowed border-border text-muted-foreground/50'
                 : 'border-border hover:border-primary hover:text-primary'
             }`}
@@ -123,10 +151,16 @@ export function VideoCandidateGrid({
           </span>
           <button
             type="button"
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, maxPageIndex))}
-            disabled={clampedPage === maxPageIndex}
+            onClick={async () => {
+              const nextPage = clampedPage + 1;
+              if (onPageChange) {
+                await onPageChange(nextPage);
+              }
+              setCurrentPage(nextPage);
+            }}
+            disabled={clampedPage === maxPageIndex || isLoadingPage}
             className={`rounded-full border px-3 py-1 font-medium transition ${
-              clampedPage === maxPageIndex
+              clampedPage === maxPageIndex || isLoadingPage
                 ? 'cursor-not-allowed border-border text-muted-foreground/50'
                 : 'border-border hover:border-primary hover:text-primary'
             }`}

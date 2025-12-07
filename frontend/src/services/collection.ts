@@ -320,6 +320,41 @@ async function processRetrievedDocument(doc: VectorData): Promise<VectorData> {
   return processedDoc;
 }
 
+// Search-only function for video retrieval (returns IDs without fetching blobs)
+export async function searchVideos(
+  videoQueryVector: number[],
+  videoTopK: number = 18,
+  collectionVersion: string = 'video_set'
+): Promise<string[]> {
+  const searchResult = await apiRequestWithAuth<SearchResponse>('/api/collections/search/', {
+    method: 'POST',
+    body: JSON.stringify({
+      screen_data: [{ vector: videoQueryVector }],
+      collection_version: collectionVersion,
+    }),
+  });
+
+  if (!searchResult.ok || !searchResult.screen_scores || !searchResult.screen_ids ||
+      searchResult.screen_scores.length === 0 || searchResult.screen_ids.length === 0) {
+    return [];
+  }
+
+  const scores = searchResult.screen_scores[0];
+  const ids = searchResult.screen_ids[0];
+
+  const videoSetSize = (import.meta as any).env?.VITE_VIDEO_SET_SIZE
+    ? Number((import.meta as any).env.VITE_VIDEO_SET_SIZE)
+    : 15;
+
+  // Pair scores with IDs and sort by score (descending)
+  const sortedItems = scores
+    .map((score: number, index: number) => ({ score, id: ids[index] }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, videoTopK * videoSetSize);
+
+  return sortedItems.map(item => item.id);
+}
+
 // Complete RAG flow: Search + Query top-K + Decrypt (unified chat + video)
 export async function searchAndQuery(
   chatQueryVector: number[],
@@ -466,5 +501,6 @@ export const collectionService = {
   queryChatData,
   queryScreenData,
   searchAndQuery,
+  searchVideos,
   getTopKIndices,
 };
