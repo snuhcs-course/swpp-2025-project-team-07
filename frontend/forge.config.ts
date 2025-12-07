@@ -49,6 +49,9 @@ const config: ForgeConfig = {
       unpack:
         '{**/node_modules/node-llama-cpp/**,**/node_modules/onnxruntime-node/**,**/node_modules/sharp/**,**/node_modules/@img/**,**/node_modules/@ffmpeg-installer/**,**/node_modules/ffmpeg-static/**}',
     },
+    extraResource: [
+      path.join(__dirname, '.env'),
+    ],
   },
   rebuildConfig: {},
   hooks: {

@@ -1,11 +1,26 @@
 // Load environment variables from .env file (must be first!)
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { existsSync as envExistsSync } from 'node:fs';
+
+// In production, .env is in extraResources; in dev, it's in project root
+// process.resourcesPath is only available in packaged apps
+const isPackaged = !process.defaultApp;
+const envPath = isPackaged
+  ? path.join(process.resourcesPath, '.env')
+  : path.join(process.cwd(), '.env');
+
+if (envExistsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log(`Loaded .env from: ${envPath}`);
+} else {
+  console.warn(`Warning: .env file not found at ${envPath}`);
+}
 
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import fsp from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { OllamaManager } from './llm/ollama-manager';
 import { OpenAIManager } from './llm/openai-manager';
@@ -13,7 +28,6 @@ import type { LLMProviderType } from './types/electron';
 import { downloadFile } from './utils/downloader';
 import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
-import * as fs from 'node:fs';
 import { extractFramesFromVideos } from './utils/video-frame-extractor';
 import { DEFAULT_SYSTEM_PROMPT } from './config/system-prompt';
 
