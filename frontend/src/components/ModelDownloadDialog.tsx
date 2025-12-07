@@ -188,7 +188,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Models:</span>
-                <span className="font-medium">Gemma-3n-E4B (LLM) + Embedders</span>
+                <span className="font-medium">Gemma 3 4B (LLM) + Embedders</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Size:</span>
@@ -196,7 +196,7 @@ export function ModelDownloadDialog({ open, onOpenChange }: ModelDownloadDialogP
               </div>
               <div className="flex justify-between">
                 <span>Context:</span>
-                <span className="font-medium">8192 tokens</span>
+                <span className="font-medium">128,000 tokens</span>
               </div>
             </div>
           )}
