@@ -39,17 +39,21 @@ export type VideoChunk = {
   fps?: number;
   recordingId?: string;
   chunkIndex: number;
+  wasFocused: boolean;
+  video_set_id: string | null;
 };
 
 export type EmbeddedChunk = {
   chunk: VideoChunk;
   pooled: Float32Array;
   frames: ClipVideoEmbedding['frames'];
+  method: 'video_set' | 'video_set_hidden';
 };
 
 export function useChunkedEmbeddingQueue(opts?: {
   chunkMs?: number;
   frameCount?: number;
+  setSize?: number;
   onEmbeddedChunk?: (r: EmbeddedChunk) => void | Promise<void>;
 }) {
   const recorder = useRecorder();
@@ -64,6 +68,11 @@ export function useChunkedEmbeddingQueue(opts?: {
       ? Number((import.meta as any).env.VITE_VIDEO_SAMPLING_FRAMES)
       : 10
   );
+  const setSize = opts?.setSize ?? (
+    (import.meta as any).env?.VITE_VIDEO_SET_SIZE
+      ? Number((import.meta as any).env.VITE_VIDEO_SET_SIZE)
+      : 15
+  );
 
   const onEmbeddedChunk = opts?.onEmbeddedChunk;
 
@@ -77,11 +86,41 @@ export function useChunkedEmbeddingQueue(opts?: {
   const stoppingRef = useRef(false);
   const recordingIdRef = useRef<string | null>(null);
   const chunkIndexRef = useRef(0);
+  const videoSetIdRef = useRef<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const segmentStartRef = useRef<number | null>(null);
 
   const embedderRef = useRef<ClipVideoEmbedder | null>(null);
+
+  // Ref to track the *current* focus state of the app
+  // We default to true (focused) as a safe starting point.
+  const isAppFocusedRef = useRef(true);
+
+  // Ref to track if the *current chunk* has been focused at *any point*
+  // This is the "chunk's state variable" from the requirements.
+  const wasFocusedDuringChunkRef = useRef(true);
+
+  // Listen for focus/blur events from the preload script
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('[FocusTracker] App FOCUS');
+      isAppFocusedRef.current = true;
+      wasFocusedDuringChunkRef.current = true;
+    };
+    const handleBlur = () => {
+      console.log('[FocusTracker] App BLUR');
+      isAppFocusedRef.current = false;
+    };
+
+    window.addEventListener('clone:app-focus', handleFocus);
+    window.addEventListener('clone:app-blur', handleBlur);
+    
+    return () => {
+      window.removeEventListener('clone:app-focus', handleFocus);
+      window.removeEventListener('clone:app-blur', handleBlur);
+    };
+  }, []);
 
   const enqueue = (chunk: VideoChunk) => {
     queueRef.current.push(chunk);
@@ -104,7 +143,9 @@ export function useChunkedEmbeddingQueue(opts?: {
         setProcessed(v => v + 1);
 
         try {
-          await onEmbeddedChunk?.({ chunk, pooled, frames });
+          if (!chunk.wasFocused) {
+            await onEmbeddedChunk?.({ chunk, pooled, frames, method: 'video_set_hidden' });
+          }
         } catch (e) {
           console.error('[upload:onEmbeddedChunk] failed:', e);
           // TODO: Implement retry policy when faided to upload 
@@ -121,13 +162,19 @@ export function useChunkedEmbeddingQueue(opts?: {
   const rotateSegment = async () => {
     try {
       const startedAt = segmentStartRef.current!;
-      const stopped = await recorder.stop();
+      const stopped = await recorder.stop({ releaseStream: false });
       const now = Date.now();
       if (!recordingIdRef.current) {
         console.warn('[rotateSegment] missing recording id; dropping chunk');
         return;
       }
+      const wasFocused = wasFocusedDuringChunkRef.current;
       const currentIndex = chunkIndexRef.current++;
+
+      // Check if we need a new set ID
+      if (currentIndex > 0 && currentIndex % setSize == 0) {
+        videoSetIdRef.current = `set-${Date.now()}`;
+      }
       enqueue({
         blob: stopped.blob,
         objectUrl: stopped.objectUrl,
@@ -140,7 +187,11 @@ export function useChunkedEmbeddingQueue(opts?: {
         fps: stopped.fps,
         recordingId: recordingIdRef.current,
         chunkIndex: currentIndex,
+        wasFocused: wasFocused,
+        video_set_id: videoSetIdRef.current,
       });
+
+      wasFocusedDuringChunkRef.current = isAppFocusedRef.current;
 
       if (!stoppingRef.current) {
         await recorder.start();
@@ -157,7 +208,9 @@ export function useChunkedEmbeddingQueue(opts?: {
     const id = recordingId ?? generateRecordingId();
     recordingIdRef.current = id;
     chunkIndexRef.current = 0;
+    videoSetIdRef.current = `set-${Date.now()}`;
     try {
+      wasFocusedDuringChunkRef.current = isAppFocusedRef.current;
       await recorder.start();
       segmentStartRef.current = Date.now();
       setIsRecording(true);
@@ -167,6 +220,8 @@ export function useChunkedEmbeddingQueue(opts?: {
       recordingIdRef.current = null;
       chunkIndexRef.current = 0;
       stoppingRef.current = true;
+      videoSetIdRef.current = null;
+      wasFocusedDuringChunkRef.current = true;
       throw error;
     }
   };
@@ -179,12 +234,19 @@ export function useChunkedEmbeddingQueue(opts?: {
     try {
       const startedAt = segmentStartRef.current;
       if (startedAt) {
-        const stopped = await recorder.stop();
+        const stopped = await recorder.stop({ releaseStream: true });
         const end = Date.now();
         if (!recordingIdRef.current) {
           console.warn('[stopChunked] missing recording id; dropping final chunk');
         } else {
+          const wasFocused = wasFocusedDuringChunkRef.current;
           const currentIndex = chunkIndexRef.current++;
+
+          // Check if we need a new set ID
+          if (currentIndex > 0 && currentIndex % setSize == 0) {
+            videoSetIdRef.current = `set-${Date.now()}`;
+          }
+
           enqueue({
             blob: stopped.blob,
             objectUrl: stopped.objectUrl,
@@ -197,6 +259,8 @@ export function useChunkedEmbeddingQueue(opts?: {
             fps: stopped.fps,
             recordingId: recordingIdRef.current,
             chunkIndex: currentIndex,
+            wasFocused: wasFocused,
+            video_set_id: videoSetIdRef.current,
           });
         }
       }
@@ -206,6 +270,8 @@ export function useChunkedEmbeddingQueue(opts?: {
       segmentStartRef.current = null;
       recordingIdRef.current = null;
       setIsRecording(false);
+      videoSetIdRef.current = null;
+      wasFocusedDuringChunkRef.current = true;
       // process remaining chunks in queue
       await processQueue();
       chunkIndexRef.current = 0;

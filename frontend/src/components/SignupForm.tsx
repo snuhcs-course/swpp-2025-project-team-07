@@ -8,6 +8,7 @@ import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { Checkbox } from './ui/checkbox';
 import { signup, saveAuth } from '@/services/auth';
+import { collectionService } from '@/services/collection';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -76,6 +77,22 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
         formData.confirmPassword
       );
       saveAuth({ access: res.access, refresh: res.refresh }, res.user);
+
+      const collectionVersions = [
+        'video_set_hidden'              // video_set structure + hide the Clone app screen
+      ]
+
+      const creationPromises = collectionVersions.map(version =>
+        collectionService.clearCollections(
+          res.user,
+          version,
+          false,
+          true
+        )
+      );
+
+      await Promise.all(creationPromises);
+
       onAuthSuccess(res.user.email);
     } catch (err: any) {
       const message = err.message || 'Signup failed';

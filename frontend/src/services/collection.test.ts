@@ -36,6 +36,7 @@ const mockApiRequest = apiRequestWithAuth as ReturnType<typeof vi.fn>;
 describe('collectionService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockApiRequest.mockReset();
   });
 
   describe('insertChatData', () => {
@@ -202,6 +203,10 @@ describe('collectionService', () => {
         body: JSON.stringify({
           screen_ids: indices,
           screen_output_fields: outputFields,
+          chat_ids: [],
+          chat_output_fields: outputFields,
+          query_video_sets: true,
+          collection_version: 'video_set',
         }),
       });
       expect(result.ok).toBe(true);
@@ -316,9 +321,6 @@ describe('collectionService', () => {
               role: 'user',
             },
           ],
-        })
-        .mockResolvedValueOnce({
-          ok: true,
           screen_results: [
             {
               id: 'screen1',

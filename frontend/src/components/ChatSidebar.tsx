@@ -87,6 +87,7 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3, delay: index * 0.05 }}
+              onClick={() => onSelectSession(session.id)}
               className={`relative w-full p-3 rounded-xl transition-all group hover:bg-accent backdrop-blur-sm cursor-pointer ${
                 currentSessionId === session.id
                   ? 'bg-accent text-accent-foreground shadow-lg'
@@ -94,14 +95,11 @@ export function ChatSidebar({ sessions, currentSessionId, onSelectSession, onNew
               }`}
             >
               <div className="flex items-center justify-between">
-                <button
-                  onClick={() => onSelectSession(session.id)}
-                  className="flex items-center space-x-3 flex-1 min-w-0 text-left"
-                >
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
                   <div className="flex-1 min-w-0 w-[200px]">
                     <h4 className="truncate text-sm font-medium overflow-ellipsis">{session.title}</h4>
                   </div>
-                </button>
+                </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button

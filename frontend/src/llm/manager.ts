@@ -200,11 +200,11 @@ answer confidently using that information as if you already know it.
         }
       };
 
-      // Add videos if provided (for Gemma 3n multimodal support)
-      // NOTE: Current GGUF model doesn't support multimodal yet - this is prepared for future use
-      if (options.videos && options.videos.length > 0) {
-        promptOptions.images = options.videos;
-        console.log(`[LLM] Prepared ${options.videos.length} video(s) for multimodal input (not yet supported by current model)`);
+      // Add images/videos if provided (for future multimodal support)
+      const preparedImages = (options as any).images ?? options.videos;
+      if (preparedImages && preparedImages.length > 0) {
+        promptOptions.images = preparedImages;
+        console.log(`[LLM] Prepared ${preparedImages.length} image(s) for multimodal input (not yet supported by current model)`);
       }
 
       await sessionData.session.prompt(message, promptOptions);

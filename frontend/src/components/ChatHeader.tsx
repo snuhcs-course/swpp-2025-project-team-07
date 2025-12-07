@@ -54,22 +54,23 @@ export function ChatHeader({
     startChunked,
     stopChunked,
     isRecording,
-    isProcessing,
   } = useChunkedEmbeddingQueue({
-    onEmbeddedChunk: async ({ chunk, pooled }) => {
-      try {
-        await memoryService.storeVideoEmbedding(
-          pooled,
-          chunk.blob,
-          {
-            duration: chunk.durationMs,
-            width: chunk.width,
-            height: chunk.height,
-          }
-        );
-      } catch (error) {
-        console.error('[video upload] failed:', error);
-      }
+    onEmbeddedChunk: async ({ chunk, pooled, method }) => {
+      const shouldSendVideoSetID = method === 'video_set' || method === 'video_set_hidden';
+      const videoSetIdToSend = shouldSendVideoSetID ? chunk.video_set_id : null;
+      memoryService.storeVideoEmbedding(
+        pooled,
+        chunk.blob,
+        {
+          duration: chunk.durationMs,
+          width: chunk.width,
+          height: chunk.height,
+        },
+        method,
+        videoSetIdToSend
+      ).catch((error) => {
+        console.error('[video upload] failed: ', error);
+      });
     },
   });
 
@@ -157,21 +158,11 @@ export function ChatHeader({
             <Circle className="w-4 h-4 mr-1" />
             Stop
           </Button>
-        ) : isProcessing ? (
-          <Button
-            size="sm"
-            className="rounded-xl"
-            title="Embedding chunks..."
-            disabled
-          >
-            Embedding...
-          </Button>
         ) : (
           <Button
             size="sm"
             onClick={handleStartRecording}
             className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer tour-recording-button"
-            disabled={isProcessing}
             title="Start screen recording"
           >
             <Circle className="w-4 h-4 mr-1" />

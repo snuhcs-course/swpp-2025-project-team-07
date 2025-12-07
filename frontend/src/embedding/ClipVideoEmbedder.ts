@@ -1,12 +1,12 @@
 // src/embedding/ClipVideoEmbedder.ts
 import ort from './ort';
-import { sampleUniformFrames, type SampledFrame } from './video-sampler';
+import {
+  DEFAULT_VIDEO_SAMPLE_FRAMES,
+  sampleUniformFrames,
+} from './video-sampler';
 
 const MEAN = [0.48145466, 0.4578275, 0.40821073] as const;
 const STD  = [0.26862954, 0.26130258, 0.27577711] as const;
-
-const DEFAULT_FRAMES =
-  Number((import.meta as any)?.env?.VITE_VIDEO_SAMPLING_FRAMES ?? 10) || 10;
 
 type ImgLike = ImageData | ImageBitmap | HTMLCanvasElement;
 
@@ -17,24 +17,9 @@ export type ClipVideoEmbedding = {
   modelOutput: string;
 };
 
-// Simple tokenizer for CLIP text (basic implementation)
-function tokenizeText(text: string, maxLength: number = 77): number[] {
-  // This is a simplified tokenizer. In production, use a proper CLIP tokenizer
-  // For now, use character-level encoding as a placeholder
-  const tokens = [49406]; // Start token (CLIP standard)
-
-  for (let i = 0; i < Math.min(text.length, maxLength - 2); i++) {
-    tokens.push(text.charCodeAt(i) % 49407);
-  }
-
-  tokens.push(49407); // End token (CLIP standard)
-
-  // Pad to maxLength
-  while (tokens.length < maxLength) {
-    tokens.push(0); // Padding token
-  }
-
-  return tokens.slice(0, maxLength);
+// CLIP tokenizer
+async function tokenizeText(text: string, maxLength: number = 77): Promise<number[]> {
+  return await (window as any).embeddingAPI.tokenizeClip(text, maxLength);
 }
 
 export class ClipVideoEmbedder {
@@ -47,7 +32,9 @@ export class ClipVideoEmbedder {
 
   private session!: ort.InferenceSession;
   private inputName!: string; 
-  private outputName!: string;
+  
+  private imageOutputName!: string;
+  private textOutputName!: string;
 
   private needTextFeeds = false;
   private textSeqLen = 77;
@@ -102,9 +89,17 @@ export class ClipVideoEmbedder {
       ins.includes('pixel_values') ? 'pixel_values' :
       (ins[0] ?? 'pixel_values');
 
-    this.outputName =
+    this.imageOutputName =
       outs.find(n => n === 'image_embeds') ??
       outs.find(n => n === 'pooled_output') ??
+      outs.find(n => n === 'output') ??
+      outs.find(n => n === 'last_hidden_state') ??
+      outs[0];
+
+    this.textOutputName =
+      outs.find(n => n === 'text_embeds') ??
+      outs.find(n => n === 'text_projection') ??
+      outs.find(n => n === 'pooled_output') ?? // fallback
       outs.find(n => n === 'output') ??
       outs.find(n => n === 'last_hidden_state') ??
       outs[0];
@@ -121,17 +116,18 @@ export class ClipVideoEmbedder {
     }
 
     console.log('[clip] inputs=', ins, ' chosen=', this.inputName);
-    console.log('[clip] outputs=', outs, ' chosen=', this.outputName);
+    console.log('[clip] outputs=', outs, ' chosen=', outs);
+
     if (this.needTextFeeds) {
       console.log('[clip] unified CLIP detected → textSeqLen=', this.textSeqLen,
                   ' dtypes=', this.inputDTypes);
     }
   }
 
-  async embedVideo(videoBlob: Blob, frameCount = DEFAULT_FRAMES): Promise<ClipVideoEmbedding> {
+  async embedVideo(videoBlob: Blob, frameCount = DEFAULT_VIDEO_SAMPLE_FRAMES): Promise<ClipVideoEmbedding> {
     await this.ensureReady();
 
-    const sampled = await sampleUniformFrames(videoBlob, frameCount, { size: 224, crop: 'center' });
+    const sampled = await sampleUniformFrames(videoBlob, frameCount, { size: 224 });
     const perFrame: { time: number; emb: Float32Array }[] = [];
 
     for (const f of sampled) {
@@ -149,7 +145,7 @@ export class ClipVideoEmbedder {
       pooled: l2norm(mean),
       frames: perFrame,
       modelInput: this.inputName,
-      modelOutput: this.outputName,
+      modelOutput: this.imageOutputName,
     };
   }
 
@@ -172,8 +168,8 @@ export class ClipVideoEmbedder {
     }
 
     const outMap = await this.session.run(feeds);
-    const out = outMap[this.outputName];
-    if (!out) throw new Error(`output "${this.outputName}" not found: ${Object.keys(outMap)}`);
+    const out = outMap[this.imageOutputName];
+    if (!out) throw new Error(`output "${this.imageOutputName}" not found: ${Object.keys(outMap)}`);
 
     if (out.dims.length <= 2) {
       const data = out.data as Float32Array | number[];
@@ -198,7 +194,7 @@ export class ClipVideoEmbedder {
       throw new Error('This CLIP model does not support text embedding (vision-only model). Text embedding requires a unified CLIP model.');
     }
 
-    const tokens = tokenizeText(text, this.textSeqLen);
+    const tokens = await tokenizeText(text, this.textSeqLen);
     const inputIds = new BigInt64Array(tokens.map(t => BigInt(t)));
     const attentionMask = new BigInt64Array(tokens.map(t => t !== 0 ? 1n : 0n));
 
@@ -213,8 +209,8 @@ export class ClipVideoEmbedder {
     }
 
     const outMap = await this.session.run(feeds);
-    const out = outMap[this.outputName];
-    if (!out) throw new Error(`output "${this.outputName}" not found: ${Object.keys(outMap)}`);
+    const out = outMap[this.textOutputName];
+    if (!out) throw new Error(`output "${this.textOutputName}" not found: ${Object.keys(outMap)}`);
 
     if (out.dims.length <= 2) {
       const data = out.data as Float32Array | number[];

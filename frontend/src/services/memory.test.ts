@@ -202,7 +202,7 @@ describe('memoryService', () => {
       );
     });
 
-    it('filters and processes only user messages when STORE_ASSISTANT_MESSAGES is false', async () => {
+    it('bundles both user and assistant messages when configured to store assistants', async () => {
       const messages: ChatMessage[] = [
         {
           id: 1,
@@ -227,8 +227,9 @@ describe('memoryService', () => {
 
       expect(mockEmbedContext).toHaveBeenCalled();
       const embedCall = mockEmbedContext.mock.calls[0][0];
-      // Should only contain user message
+      // Should contain both user and assistant content
       expect(embedCall).toContain('User message');
+      expect(embedCall).toContain('Assistant message');
     });
   });
 
@@ -264,7 +265,8 @@ describe('memoryService', () => {
             session_id: 0,
             role: 'screen_recording',
           }),
-        ])
+        ]),
+        'video_set'
       );
     });
 
