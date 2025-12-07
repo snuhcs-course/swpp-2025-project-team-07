@@ -455,7 +455,7 @@ def clear_collections(request):
             ),
         },
         required=["sleep_seconds"],
-    )
+    ),
 )
 @api_view(["POST"])
 @authentication_classes([])
