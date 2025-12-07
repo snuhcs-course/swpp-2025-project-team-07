@@ -79,9 +79,6 @@ export function SignupForm({ onSwitchToLogin, onAuthSuccess }: SignupFormProps) 
       saveAuth({ access: res.access, refresh: res.refresh }, res.user);
 
       const collectionVersions = [
-        'mean_pooling',                 // mean_pooling
-        'mean_pooling_hidden',          // mean_pooling + hide the Clone app screen
-        'video_set',                    // video_set structure
         'video_set_hidden'              // video_set structure + hide the Clone app screen
       ]
 

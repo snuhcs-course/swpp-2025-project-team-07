@@ -181,7 +181,7 @@ export function ChatInput({
           transition={{ duration: 0.3, delay: 0.2 }}
           className="text-center text-xs text-muted-foreground mt-2"
         >
-          {showStopButton ? 'Stop the AI response' : 'Press Enter to send, Shift + Enter for new line'}
+          {showStopButton ? '' : 'Press Enter to send, Shift + Enter for new line'}
         </motion.div>
       </div>
     </motion.div>
