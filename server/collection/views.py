@@ -1,3 +1,5 @@
+import time
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny
@@ -436,6 +438,56 @@ def clear_collections(request):
         {
             "ok": True,
             "message": "Collections cleared and recreated successfully",
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_description="[DEBUG ONLY] Sleep for specified number of seconds before returning success response.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            "sleep_seconds": openapi.Schema(
+                type=openapi.TYPE_NUMBER,
+                description="Number of seconds to sleep",
+            ),
+        },
+        required=["sleep_seconds"],
+    )
+)
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def debug_sleep(request):
+    """Sleep for specified duration before returning success."""
+    sleep_seconds = request.data.get("sleep_seconds")
+
+    if sleep_seconds is None:
+        return Response(
+            {"detail": "sleep_seconds parameter is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        sleep_seconds = float(sleep_seconds)
+        if sleep_seconds < 0:
+            return Response(
+                {"detail": "sleep_seconds must be non-negative"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    except (ValueError, TypeError):
+        return Response(
+            {"detail": "sleep_seconds must be a valid number"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    time.sleep(sleep_seconds)
+
+    return Response(
+        {
+            "success": True,
         },
         status=status.HTTP_200_OK,
     )
