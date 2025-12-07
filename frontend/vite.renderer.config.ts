@@ -11,7 +11,21 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    exclude: ['onnxruntime-web'],
+  },
   build: {
     target: 'esnext',
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        'embedding-worker': path.resolve(__dirname, 'public/embedding-worker.html'),
+      },
+      output: {
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
+      },
+    },
   },
 });

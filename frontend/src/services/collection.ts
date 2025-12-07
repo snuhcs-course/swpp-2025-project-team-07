@@ -2,6 +2,8 @@
 
 import { apiRequestWithAuth } from '@/utils/apiRequest';
 
+const SCREEN_QUERY_BATCH_SIZE = 3;
+
 // Vector data for insertion (combined messages → 1 vector entry)
 export interface VectorData {
   id: string; // REQUIRED primary key
@@ -117,22 +119,6 @@ export function getTopKIndices(scores: number[], k: number): number[] {
     .map(item => item.index);
 }
 
-// Helper: Convert base64 to ImageData
-function base64ToImageData(base64: string, width: number, height: number): Promise<ImageData> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, width, height);
-      const imageData = ctx.getImageData(0, 0, width, height);
-      resolve(imageData);
-    };
-    img.onerror = reject;
-    img.src = `data:image/png;base64,${base64}`;
-  });
-}
-
 // Helper: Convert base64 to video Blob
 async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob> {
   try {
@@ -163,8 +149,10 @@ async function base64ToVideoBlob(base64: string, mimeType: string): Promise<Blob
 // Complete RAG flow: Search + Query top-K + Decrypt (unified chat + video)
 export async function searchAndQuery(
   chatQueryVector: number[],
-  topK: number = 3,
-  videoQueryVector?: number[] // Optional: separate embedding for video search
+  chatTopK: number = 7,
+  videoQueryVector?: number[], // Optional: separate embedding for video search
+  videoTopK: number = 3, // Optional: top-K for video (defaults to 3)
+  excludeSessionId?: number, // Optional: exclude memories from this session (to avoid redundancy)
 ): Promise<VectorData[]> {
   // Search both collections in parallel with appropriate embeddings
   let searchResult: SearchResponse;
@@ -197,7 +185,7 @@ export async function searchAndQuery(
     chatIds = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
+      .slice(0, chatTopK)
       .map(item => item.id);
   }
 
@@ -211,44 +199,59 @@ export async function searchAndQuery(
     screenIds = scores
       .map((score: number, index: number) => ({ score, id: ids[index] }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
+      .slice(0, videoTopK)
       .map(item => item.id);
   }
 
   if (chatIds.length === 0 && screenIds.length === 0) return [];
 
-  // Query collections based on what we have (use correct IDs for each collection)
-  let queryResult: QueryResponse;
   const outputFields = ['content', 'timestamp', 'session_id', 'role'];
 
-  if (chatIds.length > 0 && screenIds.length > 0) {
-    // Query both collections in parallel with their respective IDs
-    const [chatResult, screenResult] = await Promise.all([
-      queryChatData(chatIds, outputFields),
-      queryScreenData(screenIds, outputFields)
-    ]);
-    // Combine results
-    queryResult = {
-      ok: chatResult.ok && screenResult.ok,
-      chat_results: chatResult.chat_results,
-      screen_results: screenResult.screen_results,
-    };
-  } else if (chatIds.length > 0) {
-    queryResult = await queryChatData(chatIds, outputFields);
-  } else {
-    queryResult = await queryScreenData(screenIds, outputFields);
-  }
+  const fetchChatResults = async (): Promise<VectorData[]> => {
+    if (chatIds.length === 0) {
+      return [];
+    }
+    const chatResult = await queryChatData(chatIds, outputFields);
+    if (!chatResult.ok) {
+      throw new Error('Failed to query chat data');
+    }
+    return (chatResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const }));
+  };
 
-  // Combine results and tag with source type
-  const allResults: VectorData[] = [
-    // ...(queryResult.chat_results || []).map(doc => ({ ...doc, source_type: 'chat' as const })),
-    ...(queryResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }))
-  ];
+  const fetchScreenResults = async (): Promise<VectorData[]> => {
+    if (screenIds.length === 0) {
+      return [];
+    }
+
+    const aggregated: VectorData[] = [];
+    for (let i = 0; i < screenIds.length; i += SCREEN_QUERY_BATCH_SIZE) {
+      const chunkIds = screenIds.slice(i, i + SCREEN_QUERY_BATCH_SIZE);
+      const screenResult = await queryScreenData(chunkIds, outputFields);
+      if (!screenResult.ok) {
+        throw new Error('Failed to query screen data');
+      }
+      const docs = (screenResult.screen_results || []).map(doc => ({ ...doc, source_type: 'screen' as const }));
+      aggregated.push(...docs);
+    }
+    return aggregated;
+  };
+
+  const [chatResults, screenResults] = await Promise.all([
+    fetchChatResults(),
+    fetchScreenResults(),
+  ]);
+
+  const allResults: VectorData[] = [...chatResults, ...screenResults];
+
+  // Filter out same-session memories
+  const filteredResults = excludeSessionId !== undefined
+    ? allResults.filter(doc => doc.session_id === 0 || doc.session_id !== excludeSessionId)
+    : allResults;
 
   // Decrypt all results and reconstruct videos for screen recordings
   const { decryptText } = await import('@/utils/encryption');
   const decryptedResults = await Promise.all(
-    allResults.map(async (doc) => {
+    filteredResults.map(async (doc) => {
       const decryptedContent = await decryptText(doc.content).catch(() => '[Decryption Error]');
 
       // If this is a screen recording, reconstruct the original video blob

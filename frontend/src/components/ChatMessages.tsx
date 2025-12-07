@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { ScrollArea } from './ui/scroll-area';
 import { Message } from './ChatInterface';
@@ -10,6 +11,7 @@ interface ChatMessagesProps {
   user: AuthUser | null;
   messages: Message[];
   isLoading?: boolean;
+  statusIndicator?: ReactNode;
 }
 
 function UserMessageBubble({ content, className }: { content: string; className?: string }) {
@@ -50,10 +52,10 @@ function UserMessageBubble({ content, className }: { content: string; className?
   );
 }
 
-export function ChatMessages({ user, messages, isLoading = false }: ChatMessagesProps) {
+export function ChatMessages({ user, messages, isLoading = false, statusIndicator }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const userInitials = getUserInitials(user?.username, user?.email);
+  const userName = user?.username;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -65,42 +67,46 @@ export function ChatMessages({ user, messages, isLoading = false }: ChatMessages
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <motion.div
+        className="flex flex-col items-center justify-center gap-8 pb-12"
+        layout
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+      >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="text-center space-y-6"
+          className="text-center space-y-6 max-w-md"
         >
-          <div className="w-20 h-20 bg-gradient-to-br from-primary/30 to-primary/20 rounded-3xl flex items-center justify-center mx-auto shadow-xl">
-            <span className="text-3xl font-medium text-primary">AI</span>
-          </div>
           <div>
-            <h3 className="text-xl font-medium">Start a conversation</h3>
-            <p className="text-muted-foreground">
-              Ask me anything and I'll be happy to help!
-            </p>
+            <h3 className="text-4xl font-medium">Hello, {userName}</h3>
           </div>
         </motion.div>
-      </div>
+
+        {statusIndicator && (
+          <div className="w-full max-w-xl self-start sm:self-center">
+            {statusIndicator}
+          </div>
+        )}
+      </motion.div>
     );
   }
 
   return (
-    <ScrollArea className="flex-1 h-full p-4">
-      <div className="space-y-6 max-w-4xl mx-auto pb-4">
+    <ScrollArea className="flex-1 h-full px-4">
+      <div className="space-y-6 max-w-4xl mx-auto py-12">
         {messages.map((message, index) => (
           <motion.div
             key={message.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
-            className={`flex items-start space-x-4 ${
+            className={`flex min-w-0 items-start space-x-4 ${
               message.isUser ? 'flex-row-reverse space-x-reverse' : ''
             }`}
           >
             {/* Message content */}
-            <div className={`flex-1 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
+            <div className={`flex-1 min-w-0 ${message.isUser ? 'max-w-[70%] flex justify-end' : 'max-w-full'}`}>
               {message.isUser ? (
                 <motion.div
                   initial={{ scale: 1, opacity: 0.8 }}
@@ -122,6 +128,20 @@ export function ChatMessages({ user, messages, isLoading = false }: ChatMessages
             </div>
           </motion.div>
         ))}
+        {statusIndicator && (
+          <motion.div
+            layout
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="flex items-start space-x-4"
+          >
+            <div className="flex-1 max-w-full">
+              {statusIndicator}
+            </div>
+          </motion.div>
+        )}
         <div ref={bottomRef} />
       </div>
     </ScrollArea>

@@ -1,0 +1,74 @@
+name: Deploy Vector Database (Chat) to EC2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'vectordb/**'
+      - '!vectordb/encrypted_vectordb/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: swpp-vectordb-chat
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f vectordb/docker/Dockerfile_chat ./vectordb
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f vectordb/docker/Dockerfile_chat ./vectordb
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_VECTOR_DATABASE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.VECTORDB_SSH_PRIVATE_KEY }}
+          script: |
+            # Login to ECR
+            aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+
+            # Stop and remove old container
+            docker stop swpp-vectordb-chat || true
+            docker rm swpp-vectordb-chat || true
+
+            # Pull new image
+            docker pull ${{ steps.login-ecr.outputs.registry }}/swpp-vectordb-chat:latest
+
+            # Run new container with environment variables
+            docker run -d \
+              --name swpp-vectordb-chat \
+              --restart unless-stopped \
+              -v /home/ubuntu/vectordb/data/chat.db:/app/data/chat.db \
+              -p 8000:8000 \
+              -e DJANGO_SETTINGS_MODULE="config.settings.production" \
+              -e SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}" \
+              -e VECTOR_DATABASE_URI="${{ secrets.VECTOR_DATABASE_CHAT_URI }}" \
+              -e AWS_S3_BUCKET_NAME="clone-vectordb-chat" \
+              -e AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
+              -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+              -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+              ${{ steps.login-ecr.outputs.registry }}/swpp-vectordb-chat:latest
+
+            # Clean up old images
+            docker image prune -f

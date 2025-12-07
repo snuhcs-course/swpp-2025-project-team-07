@@ -1,0 +1,37 @@
+# Vector Database
+pymilvus[model]==2.5.3
+orjson==3.11.3
+
+# Django and REST Framework
+Django==5.2
+djangorestframework==3.16.1
+django-cors-headers==4.8.0
+
+# JWT Authentication
+djangorestframework-simplejwt==5.5.1
+
+# Swagger/OpenAPI Docs
+drf-yasg==1.21.10
+
+# Misc dependencies
+asgiref==3.8.1
+Pillow==11.3.0
+python-dotenv==1.0.1
+pytz==2025.2
+sqlparse==0.5.2
+gunicorn==23.0.0
+
+# AWS S3 Storage
+django-storages==1.14.2
+boto3==1.35.84
+
+# Formatting and Linting
+black==25.1.0
+
+# Debugging
+django-debug-toolbar==6.0.0
+django-extensions==4.1
+
+# Testing/Fixtures
+factory-boy==3.3.3
+Faker==37.3.0

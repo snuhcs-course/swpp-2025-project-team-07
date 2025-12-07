@@ -91,7 +91,7 @@ export class ClipVideoEmbedder {
     const bytes: ArrayBuffer = await (window as any).llmAPI.getVideoModelBytes();
 
     this.session = await ort.InferenceSession.create(bytes, {
-      executionProviders: ['wasm'],
+      executionProviders: ['webgpu', 'wasm'],
     } as any);
 
     const ins  = this.session.inputNames ?? [];

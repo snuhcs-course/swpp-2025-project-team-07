@@ -133,8 +133,9 @@ export async function downloadFile(
     }
   }
 
-  if (!fs.existsSync(saveDir)) {
-    fs.mkdirSync(saveDir, { recursive: true });
+  const fileDir = path.dirname(savePath);
+  if (!fs.existsSync(fileDir)) {
+    fs.mkdirSync(fileDir, { recursive: true });
   }
 
   try {
@@ -174,10 +175,6 @@ export async function downloadFile(
     );
 
     console.log('Download complete:', savePath);
-
-    if (!fs.existsSync(savePath)) {
-      throw new Error('Downloaded file not found');
-    }
 
     const stats = fs.statSync(savePath);
     console.log(`File downloaded: ${stats.size} bytes (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);

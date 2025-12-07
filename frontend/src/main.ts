@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, session, desktopCapturer, screen } from 'electron';
+import { v4 as uuidv4 } from 'uuid';
 import fsp from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -9,13 +10,14 @@ import { EmbeddingManager } from './llm/embedding';
 import { ElectronOllama } from 'electron-ollama';
 import * as fs from 'node:fs';
 import { extractFramesFromVideos } from './utils/video-frame-extractor';
+import { DEFAULT_SYSTEM_PROMPT } from './config/system-prompt';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
-const S3_BASE_URL = 'https://swpp-api.s3.amazonaws.com/static/embeddings/dragon';
+const S3_BASE_URL = 'https://clone-api.s3.amazonaws.com/static/embeddings/dragon';
 
 const CHAT_QUERY_ENCODER_FILES = [
   {
@@ -151,10 +153,27 @@ function isOllamaDownloaded(): boolean {
 
     // Check if the ollama binary exists in the latest version
     // electron-ollama stores at: electron-ollama/v{version}/darwin/arm64/ollama
-    const latestVersion = versions[versions.length - 1];
+    const sortedVersions = versions.sort();
+    const latestVersion = sortedVersions[sortedVersions.length - 1];
     const platform = process.platform;
     const arch = process.arch;
-    const binaryPath = path.join(ollamaBasePath, latestVersion, platform, arch, 'ollama');
+
+    const platformDir = platform === 'win32'
+      ? 'windows'
+      : platform === 'darwin'
+        ? 'darwin'
+        : platform === 'linux'
+          ? 'linux'
+          : platform;
+
+    const archDir = arch === 'x64'
+      ? 'amd64'
+      : arch === 'arm64'
+        ? 'arm64'
+        : arch;
+
+    const executableName = platform === 'win32' ? 'ollama.exe' : 'ollama';
+    const binaryPath = path.join(ollamaBasePath, latestVersion, platformDir, archDir, executableName);
 
     return existsSync(binaryPath);
   } catch (error) {
@@ -167,6 +186,8 @@ let ollamaManager: OllamaManager | null = null;
 let electronOllama: ElectronOllama | null = null;
 let embeddingManager: EmbeddingManager | null = null;
 let mainWindow: BrowserWindow | null = null;
+let embeddingWorkerWindow: BrowserWindow | null = null;
+const pendingEmbedTasks = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
 
 const createWindow = () => {
   // Get primary display dimensions
@@ -209,8 +230,13 @@ const createWindow = () => {
 
 // Initialize Ollama Server and Manager
 async function initializeOllama() {
-  if (ollamaManager) {
-    console.log('Ollama Manager already initialized');
+  const managersInitialized =
+    ollamaManager !== null &&
+    embeddingManager !== null &&
+    embeddingManager.isReady();
+
+  if (managersInitialized) {
+    console.log('Ollama and Embedding Managers already initialized');
     return;
   }
 
@@ -278,19 +304,23 @@ async function initializeOllama() {
       const ollamaBinary = path.join(binPath, electronOllama.getExecutableName(electronOllama.currentPlatformConfig()));
 
       if (existsSync(ollamaBinary)) {
-        console.log('Setting execute permissions on Ollama binary...');
-        const { exec } = await import('child_process');
-        await new Promise<void>((resolve, reject) => {
-          exec(`chmod +x "${ollamaBinary}"`, (error) => {
-            if (error) {
-              console.error('Failed to set execute permissions:', error);
-              reject(error);
-            } else {
-              console.log('Execute permissions set successfully');
-              resolve();
-            }
+        console.log('Ensuring Ollama binary is executable...');
+        if (process.platform === 'win32') {
+          console.log('Skipping chmod on Windows; executable permission not required.');
+        } else {
+          const { exec } = await import('child_process');
+          await new Promise<void>((resolve, reject) => {
+            exec(`chmod +x "${ollamaBinary}"`, (error) => {
+              if (error) {
+                console.error('Failed to set execute permissions:', error);
+                reject(error);
+              } else {
+                console.log('Execute permissions set successfully');
+                resolve();
+              }
+            });
           });
-        });
+        }
       } else {
         throw new Error(`Ollama binary not found at: ${ollamaBinary}`);
       }
@@ -307,13 +337,17 @@ async function initializeOllama() {
     }
 
     // Initialize Ollama Manager
-    ollamaManager = new OllamaManager({
-      onProgress: (progress) => {
-        if (mainWindow) {
-          mainWindow.webContents.send('llm:loading-progress', progress);
+    if (!ollamaManager) {
+      ollamaManager = new OllamaManager({
+        onProgress: (progress) => {
+          if (mainWindow) {
+            mainWindow.webContents.send('llm:loading-progress', progress);
+          }
         }
-      }
-    });
+      });
+    } else {
+      console.log('Reusing existing Ollama Manager instance');
+    }
 
     await ollamaManager.initialize();
 
@@ -481,10 +515,20 @@ function setupLLMHandlers() {
     });
   });
 
+  ipcMain.handle('llm:stream-stop', async (_event, streamId: string) => {
+    if (!ollamaManager) throw new Error('LLM not initialized');
+    if (!streamId) {
+      return;
+    }
+    await ollamaManager.stopStream(streamId);
+  });
+
   // Session management
   ipcMain.handle('llm:create-session', async (_event, systemPrompt?: string) => {
     if (!ollamaManager) throw new Error('LLM not initialized');
-    return await ollamaManager.createSession(systemPrompt);
+    // Use the secure backend system prompt by default
+    const promptToUse = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    return await ollamaManager.createSession(promptToUse);
   });
 
   ipcMain.handle('llm:clear-session', async (_event, sessionId: string) => {
@@ -520,7 +564,7 @@ function setupLLMHandlers() {
           modelName: 'Ollama Server',
           percent: 0,
           transferred: 0,
-          total: 25_000_000 // ~25MB actual size
+          total: 1_879_954_938
         });
 
         let versionToDownload: `v${number}.${number}.${number}` | null = null;
@@ -553,6 +597,7 @@ function setupLLMHandlers() {
 
         // Check if binary is downloaded
         const isDownloaded = await electronOllama.isDownloaded(versionToDownload);
+        const totalBytes = (await electronOllama.getMetadata(versionToDownload)).size;
 
         if (!isDownloaded) {
           console.log(`Downloading Ollama ${versionToDownload}...`);
@@ -562,8 +607,8 @@ function setupLLMHandlers() {
               mainWindow?.webContents.send('model:download-progress', {
                 modelName: 'Ollama Server',
                 percent: percent / 100,
-                transferred: Math.floor((percent / 100) * 25_000_000),
-                total: 25_000_000
+                transferred: Math.floor((percent / 100) * totalBytes),
+                total: totalBytes
               });
             }
           });
@@ -574,14 +619,19 @@ function setupLLMHandlers() {
         const ollamaBinary = path.join(binPath, electronOllama.getExecutableName(electronOllama.currentPlatformConfig()));
 
         if (existsSync(ollamaBinary)) {
-          const { exec } = await import('child_process');
-          await new Promise<void>((resolve, reject) => {
-            exec(`chmod +x "${ollamaBinary}"`, (error) => {
-              if (error) reject(error);
-              else resolve();
+          console.log('Ensuring Ollama binary is executable...');
+          if (process.platform === 'win32') {
+            console.log('Skipping chmod on Windows; executable permission not required.');
+          } else {
+            const { exec } = await import('child_process');
+            await new Promise<void>((resolve, reject) => {
+              exec(`chmod +x "${ollamaBinary}"`, (error) => {
+                if (error) reject(error);
+                else resolve();
+              });
             });
-          });
-          console.log('Execute permissions set on Ollama binary');
+            console.log('Execute permissions set on Ollama binary');
+          }
         }
 
         // Start server
@@ -678,7 +728,7 @@ function setupLLMHandlers() {
 
               await downloadFile(mainWindow, {
                 downloadUrl: file.url,
-                targetFileName: file.fileName,
+                targetFileName: file.relativePath,
                 targetDirectory: targetDir,
                 expectedSize: file.expectedSize,
                 modelName: `${task.name} - ${file.fileName}`
@@ -789,6 +839,42 @@ function setupLLMHandlers() {
   });
 
   console.log('LLM and Embedding IPC handlers registered');
+
+  // 
+  ipcMain.handle('video-embed:run', async (event, videoBlob: Buffer) => {
+    if (!embeddingWorkerWindow) {
+      throw new Error('Embedding worker is not ready.');
+    }
+
+    const taskId = uuidv4();
+
+    const promise = new Promise((resolve, reject) => {
+      pendingEmbedTasks.set(taskId, { resolve, reject });
+    });
+
+    embeddingWorkerWindow.webContents.send('video-embed:task', { taskId, videoBlob });
+
+    return promise;
+  });
+
+  ipcMain.on('video-embed:result', (event, { taskId, result, error }) => {
+    const task = pendingEmbedTasks.get(taskId);
+    if (task) {
+      if (error) {
+        task.reject(new Error(error));
+      } else {
+        task.resolve(result);
+      }
+      pendingEmbedTasks.delete(taskId);
+    }
+  });
+}
+
+function waitLoad(wc: Electron.WebContents) {
+  return new Promise<void>((res) => {
+    if (wc.isLoadingMainFrame()) wc.once('did-finish-load', () => res());
+    else res();
+  });
 }
 
 // This method will be called when Electron has finished
@@ -797,6 +883,32 @@ function setupLLMHandlers() {
 app.on('ready', async () => {
   await registerDisplayMediaHandler();
   createWindow();
+
+  // Create embedding worker window
+  embeddingWorkerWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'embedding-worker-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    }
+  })
+
+  // Load the HTML file for the worker window.
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    embeddingWorkerWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}/embedding-worker.html`);
+  } else {
+    embeddingWorkerWindow.loadFile(
+      path.join(__dirname, `../renderer/embedding-worker/index.html`),
+    );
+  }
+
+  await Promise.all([
+    waitLoad(mainWindow.webContents),
+    waitLoad(embeddingWorkerWindow.webContents),
+  ]);
 
   // Setup IPC handlers first
   setupLLMHandlers();

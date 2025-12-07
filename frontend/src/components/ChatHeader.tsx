@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { PanelLeft, Settings, LogOut, Circle, Square } from "lucide-react";
+import { PanelLeft, Settings, LogOut, Circle } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -15,9 +15,7 @@ import { ChatSession } from "./ChatInterface";
 import { SettingsDialog } from "./SettingsDialog";
 import { type AuthUser } from "@/services/auth";
 import { getUserInitials } from "@/utils/user";
-import { useRecorder } from '@/recording/provider';
-import { ClipVideoEmbedder } from '@/embedding/ClipVideoEmbedder';
-import { sampleUniformFrames } from '@/embedding/video-sampler';
+import { useRecorder, useChunkedEmbeddingQueue } from '@/recording/provider';
 import { memoryService } from '@/services/memory';
 
 
@@ -50,30 +48,41 @@ export function ChatHeader({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const [isRecording, setIsRecording] = useState(false);
   const recorder = useRecorder();
 
-  const [isEmbedding, setIsEmbedding] = useState(false);
-
+  const {
+    startChunked,
+    stopChunked,
+    isRecording,
+    isProcessing,
+  } = useChunkedEmbeddingQueue({
+    onEmbeddedChunk: async ({ chunk, pooled }) => {
+      try {
+        await memoryService.storeVideoEmbedding(
+          pooled,
+          chunk.blob,
+          {
+            duration: chunk.durationMs,
+            width: chunk.width,
+            height: chunk.height,
+          }
+        );
+      } catch (error) {
+        console.error('[video upload] failed:', error);
+      }
+    },
+  });
 
   async function handleStartRecording() {
     try {
-      // const sources = await window.recorder.listSources();
-      // // 화면(Entire Screen / Screen) 우선 선택
-      // const screenFirst =
-      //   sources.find((s) => /screen/i.test(s.name)) ?? sources[0];
-      // if (!screenFirst) return;
-      // await window.recorder.chooseSource(screenFirst.id);
-      // await window.recorder.start();
       const getSources = (recorder as any).getSources?.bind(recorder);
       const chooseSource = (recorder as any).chooseSource?.bind(recorder);
-    if (getSources && chooseSource) {
-      const sources = await getSources();
-      const screen = sources.find((s: any) => /screen/i.test(s.name)) ?? sources[0];
-      if (screen) await chooseSource(screen.id);
-    }
-    await recorder.start();
-      setIsRecording(true);
+      if (getSources && chooseSource) {
+        const sources = await getSources();
+        const screen = sources.find((s: any) => /screen/i.test(s.name)) ?? sources[0];
+        if (screen) await chooseSource(screen.id);
+      }
+      await startChunked();
     } catch (e) {
       console.error(e);
     }
@@ -81,55 +90,11 @@ export function ChatHeader({
 
   async function handleStopRecording() {
     try {
-      // 1) 녹화 중지 → 비디오 Blob 확보
-      const result = await recorder.stop();
-      console.log(
-        '[recording] size:',
-        (result.blob.size / (1024 * 1024)).toFixed(2),
-        'MB'
-      );
-      console.log('[recording] duration:', (result.durationMs / 1000).toFixed(2), 's');
-
-      // (선택) 미리보기는 유지
-      window.open(result.objectUrl ?? URL.createObjectURL(result.blob), '_blank');
-
-      // 2) Get video dimensions
-      const videoDimensions = await new Promise<{ width: number; height: number }>((resolve) => {
-        const video = document.createElement('video');
-        video.onloadedmetadata = () => {
-          resolve({ width: video.videoWidth, height: video.videoHeight });
-        };
-        video.src = result.objectUrl ?? URL.createObjectURL(result.blob);
-      });
-      console.log('[recording] Video dimensions:', videoDimensions);
-
-      // 3) Get CLIP embedding (sample frames for embedding only, not storage)
-      setIsEmbedding(true);
-      const frameCount = 10; // Sample 10 frames for embedding
-      const embedder = await ClipVideoEmbedder.get();
-      const { pooled } = await embedder.embedVideo(result.blob, frameCount);
-      console.log('[embedding] CLIP embedding:', pooled.length, 'dimensions');
-
-      // 4) Store ORIGINAL VIDEO BLOB + embedding in vectorDB for RAG (globally available)
-      await memoryService.storeVideoEmbedding(
-        pooled,
-        result.blob, // Store original video blob
-        {
-          duration: result.durationMs,
-          width: videoDimensions.width,
-          height: videoDimensions.height
-        }
-      );
-      console.log('[memory] Stored original video:', (result.blob.size / 1024).toFixed(1), 'KB');
-
+      await stopChunked();
     } catch (e) {
-      console.error('[recording] stop+embed failed:', e);
-    } finally {
-      setIsEmbedding(false);
-      setIsRecording(false);
+      console.error('[recording] stopChunked failed:', e);
     }
   }
-
 
   const userInitials = getUserInitials(user?.username, user?.email);
 
@@ -138,7 +103,7 @@ export function ChatHeader({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="h-16 border-b border-border bg-card/70 backdrop-blur-xl flex items-center justify-between px-6 shadow-sm text-primary"
+      className="h-16 bg-card/70 backdrop-blur-xl flex items-center justify-between px-6 shadow-sm text-primary"
     >
       {/* Left side - Sidebar toggle and current chat info */}
       <div className="flex items-center space-x-4">
@@ -155,7 +120,7 @@ export function ChatHeader({
             variant="ghost"
             size="icon"
             onClick={onToggleSidebar}
-            className="hover:bg-accent transition-all duration-300 rounded-xl"
+            className="hover:bg-accent transition-all duration-300 rounded-xl cursor-pointer"
             disabled={isSidebarOpen}
           >
             <PanelLeft className="w-5 h-5" />
@@ -181,33 +146,44 @@ export function ChatHeader({
 
       {/* Right side - Chat options, controls and profile */}
       <div className="flex items-center space-x-2">
-        {!isRecording ? (
+        {isRecording ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleStopRecording}
+            className="rounded-xl cursor-pointer"
+            title="Stop (enqueue last) & embed"
+          >
+            <Circle className="w-4 h-4 mr-1" />
+            Stop
+          </Button>
+        ) : isProcessing ? (
+          <Button
+            size="sm"
+            className="rounded-xl"
+            title="Embedding chunks..."
+            disabled
+          >
+            Embedding...
+          </Button>
+        ) : (
           <Button
             size="sm"
             onClick={handleStartRecording}
-            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+            className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer tour-recording-button"
+            disabled={isProcessing}
             title="Start screen recording"
           >
             <Circle className="w-4 h-4 mr-1" />
             Start
           </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleStopRecording}
-            className="rounded-xl"
-            title="Stop and embed"
-            disabled={isEmbedding}
-          >
-            {isEmbedding ? 'Embedding…' : (
-              <>
-                <Square className="w-4 h-4 mr-1" />
-                Stop
-              </>
-            )}
-          </Button>
         )}
+        {/* Show queue state simply */}
+        {/* {(isRecording || isProcessing) && (
+          <div className="text-xs text-muted-foreground ml-2">
+            Queue: {pending} pending • {processed} done
+          </div>
+        )} */}
         {/* Profile dropdown */}
         <DropdownMenu
           open={isProfileMenuOpen}
@@ -216,7 +192,7 @@ export function ChatHeader({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg"
+              className="relative h-10 w-10 rounded-full hover:bg-accent transition-all duration-300 backdrop-blur-lg cursor-pointer tour-profile-button"
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             >
               <Avatar className="h-9 w-9 bg-primary text-primary-foreground items-center justify-center">

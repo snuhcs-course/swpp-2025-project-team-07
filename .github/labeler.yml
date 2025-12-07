@@ -1,0 +1,27 @@
+# `server`, `frontend`, `vectordb` label when either:
+#   - respective branch is involved in PR
+#   - changes made to respective directories
+server:
+  - any:
+      - base-branch: ['server']
+      - head-branch: ['server']
+      - changed-files:
+          - any-glob-to-any-file: 'server/**'
+
+frontend:
+  - any:
+      - base-branch: ['frontend']
+      - head-branch: ['frontend']
+      - changed-files:
+          - any-glob-to-any-file: 'frontend/**'
+
+vectordb:
+  - any:
+      - base-branch: ['vectordb']
+      - head-branch: ['vectordb']
+      - changed-files:
+          - any-glob-to-any-file: 'vectordb/**'
+
+# `release` label when target branch is `main`
+release:
+  - base-branch: ['main']
