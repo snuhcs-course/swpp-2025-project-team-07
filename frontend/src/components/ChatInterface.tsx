@@ -12,7 +12,6 @@ import { type AuthUser } from '@/services/auth';
 import { llmService } from '@/services/llm';
 import { chatService } from '@/services/chat';
 import { memoryService } from '@/services/memory';
-import { collectionService } from '@/services/collection';
 import { embeddingService } from '@/services/embedding';
 import { processingStatusService, type ProcessingPhaseKey, type RetrievalMetrics } from '@/services/processing-status';
 import type { ChatSession as BackendChatSession, ChatMessage as BackendChatMessage } from '@/types/chat';
@@ -20,6 +19,9 @@ import { extractFramesFromVideoBlob, displayFramesInConsole, openFramesInWindow 
 import type { VideoCandidate } from '@/types/video';
 import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
 import { OnboardingTooltip } from './OnboardingTooltip';
+import type { VectorData } from '@/services/collection';
+import { loadCollection } from '@/services/collection-loader';
+const { collectionService } = await loadCollection();
 
 // Local UI types
 export interface Message {

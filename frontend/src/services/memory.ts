@@ -1,9 +1,11 @@
 // Memory management - bundles messages and extracts embeddings for vectorDB
 
 import { embeddingService } from './embedding';
-import { collectionService, type VectorData } from './collection';
 import { encryptText } from '@/utils/encryption';
 import type { ChatMessage } from '@/types/chat';
+import type { VectorData } from './collection';
+import { loadCollection } from './collection-loader';
+const { collectionService } = await loadCollection();
 
 // Configuration
 const STORE_ASSISTANT_MESSAGES = true; // Set to true to include assistant responses in memory
