@@ -11,6 +11,8 @@ ALLOWED_HOSTS = [
     "ec2-3-35-36-43.ap-northeast-2.compute.amazonaws.com",
     "13.125.201.254",
     "ec2-13-125-201-254.ap-northeast-2.compute.amazonaws.com",
+    "54.180.1.108",
+    "ec2-54-180-1-108.ap-northeast-2.compute.amazonaws.com",
 ]
 
 # django-storages configuration for S3
